@@ -1,0 +1,733 @@
+--- a/backend/app/services/job_control.py	2026-10-03 18:34:40.000000000 +0000
++++ b/backend/app/services/job_control.py	2026-10-04 16:44:07.175745097 +0000
+@@ -207,7 +207,40 @@
+     if getattr(updated, "tzinfo", None) is None:
+         updated = updated.replace(tzinfo=timezone.utc)
+     age = (datetime.now(timezone.utc) - updated).total_seconds()
+-    return age > threshold_sec
++    if age <= threshold_sec:
++        return False
++    # V45.5: jobs.updated_at is a weak signal (only some steps write it). Before
++    # declaring the worker dead, consult its Redis lease heartbeat, which the
++    # worker refreshes from inside the process regardless of which step runs.
++    try:
++        from app.services.job_locks import cpu_heavy_lease_for_job
++
++        lease = cpu_heavy_lease_for_job(str(row.get("id") or ""))
++        if lease and float(lease.get("heartbeat_age_sec") or 0) <= 180.0:
++            return False
++    except Exception:
++        pass
++    return True
++
++
++def extract_worker_liveness(row: dict | None) -> dict | None:
++    """V45.5: {alive, heartbeat_age_sec, pid, since} for the UI/API, or None when no worker holds this job."""
++    if not row or row.get("status") not in ("building_disk", "processing"):
++        return None
++    try:
++        from app.services.job_locks import cpu_heavy_lease_for_job
++
++        lease = cpu_heavy_lease_for_job(str(row.get("id") or ""))
++    except Exception:
++        return None
++    if not lease:
++        return {"alive": False}
++    return {
++        "alive": float(lease.get("heartbeat_age_sec") or 0) <= 180.0,
++        "heartbeat_age_sec": lease.get("heartbeat_age_sec"),
++        "pid": lease.get("pid"),
++        "reason": lease.get("reason"),
++    }
+ 
+ 
+ def set_celery_task_id(db, job_id: str, task_id: str | None) -> None:
+--- a/backend/app/services/job_locks.py	2026-10-03 18:34:40.000000000 +0000
++++ b/backend/app/services/job_locks.py	2026-10-04 16:43:06.454175962 +0000
+@@ -538,6 +538,49 @@
+         return 1
+ 
+ 
++def describe_gpu_lane_state() -> str:
++    """Human-readable reason the GPU lane could not be taken (V45.1).
++
++    Distinguishes the three cases that previously all read "timed out after 0s":
++    held by another GPU task (who / how long), thermal pause (capacity 0), or a
++    stale lease that is about to be reclaimed.
++    """
++    try:
++        cap = _gpu_heavy_max_slots()
++    except Exception:
++        cap = -1
++    parts: list[str] = []
++    try:
++        for key in _gpu_slot_keys():
++            holder = _lock_held(key)
++            if not holder:
++                continue
++            age = time.time() - float(holder.get("started") or time.time())
++            stale = heavy_holder_is_stale(holder)
++            parts.append(
++                f"lane held by {holder.get('reason') or '?'} (pid {holder.get('pid') or '?'}, "
++                f"{age:.0f}s{', STALE — will be reclaimed' if stale else ''})"
++            )
++    except Exception:
++        pass
++    if cap == 0:
++        temp = None
++        try:
++            from app.services.adaptive_semaphore import _host_snapshot
++
++            temp = getattr(_host_snapshot(), "gpu_temp_c", None)
++        except Exception:
++            pass
++        parts.append(
++            f"GPU admission paused by thermal guard (capacity 0"
++            + (f", temp {int(temp)}°C ≥ GPU_THERMAL_PAUSE_C" if temp is not None else "")
++            + ")"
++        )
++    if not parts:
++        parts.append(f"no holder visible, capacity={cap} — likely released between checks; retry will succeed")
++    return "; ".join(parts)
++
++
+ def _gpu_heavy_max_slots() -> int:
+     """Live GPU admission capacity (may be zero at the thermal pause point)."""
+     configured = _gpu_heavy_configured_slots()
+@@ -956,6 +999,33 @@
+     lease.release()
+ 
+ 
++def cpu_heavy_lease_for_job(job_id: str) -> dict | None:
++    """V45.5: the live CPU-heavy lease (holder + heartbeat age) copying this job, else None.
++
++    This is the authoritative "is the extract worker alive" signal: the lease
++    heartbeat thread refreshes it every 15-60 s from inside the worker process.
++    """
++    if not job_id:
++        return None
++    for key in _cpu_slot_keys():
++        holder = _lock_held(key)
++        if not holder or heavy_holder_is_stale(holder):
++            continue
++        if str(holder.get("job_id") or "") == str(job_id):
++            try:
++                hb_age = _holder_heartbeat_age_sec(holder)
++            except Exception:
++                hb_age = 0.0
++            return {
++                "key": key,
++                "reason": holder.get("reason"),
++                "pid": holder.get("pid"),
++                "started": holder.get("started"),
++                "heartbeat_age_sec": round(float(hb_age), 1),
++            }
++    return None
++
++
+ def cpu_heavy_slot_owned_by_job(job_id: str) -> bool:
+     """True when a live CPU slot is already copying this job."""
+     if not job_id:
+@@ -1098,6 +1168,7 @@
+ 
+         if local_lease is None:
+             msg = f"GPU local slot wait timed out for {reason} after {wait_budget:.0f}s"
++            msg += f" — {describe_gpu_lane_state()}"
+             if fail_closed:
+                 raise GpuHeavySlotTimeout(msg)
+             log.warning("%s", msg)
+--- a/backend/app/services/disk.py	2026-10-03 18:34:40.000000000 +0000
++++ b/backend/app/services/disk.py	2026-10-04 16:43:06.454595569 +0000
+@@ -279,10 +279,20 @@
+ 
+     from app.services.job_locks import CpuHeavySlotTimeout, ExtractSlotAlreadyHeld, cpu_heavy_slot
+ 
++    # V45.5: one liveness thread for the entire build - CPU-lane wait, image open,
++    # enumerate, filter, plan, shards, finalize. Bumps jobs.updated_at every 20 s
++    # and logs the current step every 90 s, so no stall detector can misfire on a
++    # healthy worker and the operator can see which step is slow.
++    from app.services.job_liveness import JobLiveness
++
++    _live = JobLiveness(schema_name, job_id, stage="extract", label="Extraction", lock_kind="extract")
++    _live.__enter__()
++    _live.step("waiting for CPU lane")
+     _extract_slot = cpu_heavy_slot("extract", wait_sec=180.0, fail_closed=True, job_id=job_id)
+     try:
+         _extract_slot.__enter__()
+     except ExtractSlotAlreadyHeld:
++        _live.__exit__(None, None, None)
+         write_disk_log(
+             db,
+             job_id,
+@@ -293,6 +303,7 @@
+         db.commit()
+         return {"status": "already_running"}
+     except CpuHeavySlotTimeout as exc:
++        _live.__exit__(None, None, None)
+         write_disk_log(
+             db,
+             job_id,
+@@ -303,6 +314,7 @@
+         db.commit()
+         raise
+     try:
++        _live.step("open virtual disk")
+         execute(db, "UPDATE jobs SET status='building_disk', error=NULL, updated_at=NOW() WHERE id=:job_id", {"job_id": job_id})
+         db.flush()
+         write_disk_log(
+@@ -382,6 +394,7 @@
+         from app.services.extracted_disk import build_extracted_disk_to_minio
+ 
+         try:
++            _live.step("extract")
+             # Adaptive shared CPU/I/O admission across Disk/Android/iOS products. GPU OCR/RAG has a separate governed lane.
+             result = build_extracted_disk_to_minio(db, job_id, vd, schema_name=schema_name)
+         except Exception as exc:
+@@ -609,4 +622,9 @@
+         db.flush()
+         return result
+     finally:
++        try:
++            _live.write_summary(db)
++        except Exception:
++            pass
++        _live.__exit__(None, None, None)
+         _extract_slot.__exit__(None, None, None)
+--- a/backend/app/services/pipeline_supervisor.py	2026-10-04 09:37:37.000000000 +0000
++++ b/backend/app/services/pipeline_supervisor.py	2026-10-04 16:43:31.546619056 +0000
+@@ -523,6 +523,15 @@
+     )
+     extract_complete = extract_uri and (files_total <= 0 or files_done >= files_total)
+     heartbeat_stale = _job_age_sec(row) > stale_sec
++    # V45.5: a worker heartbeating its CPU lease is alive regardless of updated_at.
++    try:
++        from app.services.job_locks import cpu_heavy_lease_for_job
++
++        _lease = cpu_heavy_lease_for_job(job_id)
++        if _lease and float(_lease.get("heartbeat_age_sec") or 0) <= 180.0:
++            heartbeat_stale = False
++    except Exception:
++        pass
+     if extract_complete and status in ("processing", "building_disk", "extracting"):
+         from app.services.disk import restore_status_if_extract_complete
+ 
+--- a/backend/app/routers/jobs.py	2026-10-04 12:27:25.000000000 +0000
++++ b/backend/app/routers/jobs.py	2026-10-04 16:43:06.456681260 +0000
+@@ -516,6 +516,15 @@
+         "created_at": created.isoformat() if hasattr(created, "isoformat") else str(created),
+         "updated_at": updated.isoformat() if hasattr(updated, "isoformat") else str(updated),
+     }
++    # V45.5: let the UI see the worker's own heartbeat so it never auto-resumes a live job.
++    try:
++        from app.services.job_control import extract_worker_liveness
++
++        liveness = extract_worker_liveness(row)
++        if liveness is not None:
++            out["worker_liveness"] = liveness
++    except Exception:
++        pass
+     if enrichment:
+         out["enrichment"] = enrichment
+         if not out.get("extract_coverage") and (
+@@ -2800,10 +2809,21 @@
+     row = _ensure_job(db, job_id)
+     stale = extraction_is_stale(row)
+     if row["status"] in ("building_disk", "processing") and not stale:
++        from app.services.job_control import extract_worker_liveness
++
++        live = extract_worker_liveness(row) or {}
++        detail = (
++            f" (worker alive, heartbeat {live.get('heartbeat_age_sec', 0):.0f}s ago)"
++            if live.get("alive")
++            else ""
++        )
++        # Keep updated_at fresh so the client-side 240 s detector stops looping.
++        execute(db, "UPDATE jobs SET updated_at=NOW() WHERE id=:id", {"id": job_id})
++        db.commit()
+         return {
+             "job_id": job_id,
+             "status": row["status"],
+-            "message": "Disk build already in progress",
++            "message": "Disk build already in progress" + detail,
+         }
+     if row["status"] in ("building_disk", "processing") and stale:
+         from app.services.disk_build_log import write_disk_log
+--- a/frontend/src/lib/types/forensic.ts	2026-10-03 18:34:44.000000000 +0000
++++ b/frontend/src/lib/types/forensic.ts	2026-10-04 16:43:06.458230555 +0000
+@@ -129,6 +129,8 @@
+   evidence_count?: number;
+   created_at: string;
+   updated_at: string;
++  /** V45.5: extract worker heartbeat (from its Redis lease); absent when no worker holds the job. */
++  worker_liveness?: { alive: boolean; heartbeat_age_sec?: number; pid?: number; reason?: string };
+ }
+ 
+ export interface JobList {
+--- a/frontend/src/pages/forensic/JobDetailPage.tsx	2026-10-03 18:34:44.000000000 +0000
++++ b/frontend/src/pages/forensic/JobDetailPage.tsx	2026-10-04 16:43:06.459584748 +0000
+@@ -679,7 +679,9 @@
+   useEffect(() => {
+     if (!jobId || !job || !canRun || processing) return;
+     const extracting = job.status === "building_disk" || job.status === "processing";
+-    const stale = extracting && isJobStale(job.updated_at, true, 240_000);
++    // V45.5: a worker that is heartbeating its lease is alive even if updated_at lags.
++    const workerAlive = job.worker_liveness?.alive === true;
++    const stale = extracting && !workerAlive && isJobStale(job.updated_at, true, 240_000);
+     const needsResume =
+       job.status === "failed" ||
+       job.status === "paused" ||
+--- a/frontend/src/components/forensic/AgentPipelineBanner.tsx	2026-10-03 18:34:44.000000000 +0000
++++ b/frontend/src/components/forensic/AgentPipelineBanner.tsx	2026-10-04 16:43:06.460977350 +0000
+@@ -107,7 +107,7 @@
+       (pp?.phase === "artifact_inventory" && !pipelineComplete) ||
+       (!pipelineComplete && job.status === "indexed")) &&
+     !pipelineComplete;
+-  const stale = isJobStale(job.updated_at, active && !pollStopped);
++  const stale = isJobStale(job.updated_at, active && !pollStopped) && job.worker_liveness?.alive !== true;
+   const huddle =
+     pp?.orchestration && typeof pp.orchestration === "object"
+       ? (
+--- /dev/null	2026-10-02 23:05:00.462480677 +0000
++++ b/backend/app/services/job_liveness.py	2026-10-04 16:41:59.772561733 +0000
+@@ -0,0 +1,211 @@
++"""Job liveness for long pipeline tasks (V45.5).
++
++Every stall detector in the product (frontend auto-resume at 240 s, API
++``/resume`` at 240 s, pipeline supervisor at ``PIPELINE_STALE_SEC`` = 55 s) was
++keyed on ``jobs.updated_at``. A task is only "alive" while some code path
++happens to write that column. Extraction writes it from inside a few wrapped
++steps, but not while waiting for the CPU lane, opening the image, planning, or
++between shard flushes — so a healthy worker reading a slow source was declared
++dead and re-queued ("Extraction stalled (no progress) - re-queuing from last
++checkpoint"), spawning a duplicate task that then fought for the slot.
++
++``JobLiveness`` is one daemon thread per task that, for the task's lifetime:
++
++* bumps ``jobs.updated_at`` every ``touch_sec`` (default 20 s), so every
++  updated_at-based detector sees a heartbeat regardless of which step runs;
++* refreshes the Redis job lock (``lock_kind``) every ``refresh_sec``;
++* writes one ``disk_build_logs`` line every ``log_sec`` naming the current
++  sub-step and its age (``<Stage> liveness - enumerate (142s in step, 300s total)``);
++* keeps per-step timings for a final summary line.
++
++Nested code marks progress without plumbing the object through:
++
++    from app.services.job_liveness import mark_step
++    mark_step(job_id, "enumerate", files=12345)      # no-op if no liveness active
++"""
++
++from __future__ import annotations
++
++import logging
++import threading
++import time
++from typing import Any
++
++log = logging.getLogger("job_liveness")
++
++_REGISTRY: dict[str, "JobLiveness"] = {}
++_REGISTRY_LOCK = threading.Lock()
++
++
++def current(job_id: str) -> "JobLiveness | None":
++    with _REGISTRY_LOCK:
++        return _REGISTRY.get(str(job_id))
++
++
++def mark_step(job_id: str, name: str, **extra: Any) -> None:
++    live = current(job_id)
++    if live is not None:
++        live.step(name, **extra)
++
++
++class JobLiveness:
++    def __init__(
++        self,
++        schema_name: str | None,
++        job_id: str,
++        *,
++        stage: str,
++        label: str,
++        lock_kind: str | None = None,
++        touch_sec: float = 20.0,
++        refresh_sec: float = 45.0,
++        log_sec: float = 90.0,
++    ) -> None:
++        self.schema_name = schema_name
++        self.job_id = str(job_id)
++        self.stage = stage
++        self.label = label
++        self.lock_kind = lock_kind
++        self.touch_sec = max(float(touch_sec), 5.0)
++        self.refresh_sec = max(float(refresh_sec), 10.0)
++        self.log_sec = max(float(log_sec), 30.0)
++        self._stop = threading.Event()
++        self._lock = threading.Lock()
++        self._thread: threading.Thread | None = None
++        self._step = "starting"
++        self._step_started = time.monotonic()
++        self._run_started = time.monotonic()
++        self._last_log = 0.0
++        self._last_touch = 0.0
++        self._last_refresh = 0.0
++        self.timings: dict[str, float] = {}
++        self.extra: dict[str, Any] = {}
++
++    # ---------------------------------------------------------------- public
++    def step(self, name: str, **extra: Any) -> None:
++        now = time.monotonic()
++        with self._lock:
++            prev = self._step
++            self.timings[prev] = self.timings.get(prev, 0.0) + (now - self._step_started)
++            self._step = str(name or "step")
++            self._step_started = now
++            self.extra = dict(extra)
++        log.info("%s job=%s step=%s", self.stage, self.job_id, name)
++        # A step change is progress: make it visible immediately.
++        self._touch_job(force=True)
++
++    def current(self) -> tuple[str, float]:
++        with self._lock:
++            return self._step, time.monotonic() - self._step_started
++
++    def elapsed(self) -> float:
++        return time.monotonic() - self._run_started
++
++    def summary(self) -> dict[str, float]:
++        name, age = self.current()
++        out = dict(self.timings)
++        out[name] = out.get(name, 0.0) + age
++        return {k: round(v, 1) for k, v in sorted(out.items(), key=lambda kv: -kv[1])}
++
++    # -------------------------------------------------------------- lifecycle
++    def __enter__(self) -> "JobLiveness":
++        with _REGISTRY_LOCK:
++            _REGISTRY[self.job_id] = self
++        self._thread = threading.Thread(target=self._run, name=f"live-{self.stage}-{self.job_id[:8]}", daemon=True)
++        self._thread.start()
++        return self
++
++    def __exit__(self, *exc: Any) -> None:
++        self._stop.set()
++        if self._thread:
++            self._thread.join(timeout=3.0)
++        with _REGISTRY_LOCK:
++            if _REGISTRY.get(self.job_id) is self:
++                _REGISTRY.pop(self.job_id, None)
++        name, age = self.current()
++        self.timings[name] = self.timings.get(name, 0.0) + age
++
++    # --------------------------------------------------------------- internal
++    def _touch_job(self, *, force: bool = False) -> None:
++        now = time.monotonic()
++        if not force and now - self._last_touch < self.touch_sec:
++            return
++        self._last_touch = now
++        if not self.schema_name:
++            return
++        try:
++            from app.db.session import firm_session
++            from app.db.sql_helpers import execute
++
++            with firm_session(self.schema_name) as db:
++                execute(db, "UPDATE jobs SET updated_at=NOW() WHERE id=:id", {"id": self.job_id})
++                db.commit()
++        except Exception:
++            log.debug("liveness touch failed job=%s", self.job_id, exc_info=True)
++
++    def _refresh_lock(self) -> None:
++        if not self.lock_kind:
++            return
++        try:
++            from app.services.job_locks import refresh_job_lock
++
++            refresh_job_lock(self.lock_kind, self.job_id)
++        except Exception:
++            log.debug("liveness lock refresh failed job=%s", self.job_id, exc_info=True)
++
++    def _write_log(self) -> None:
++        if not self.schema_name:
++            return
++        name, age = self.current()
++        try:
++            from app.db.session import firm_session
++            from app.services.disk_build_log import write_disk_log
++
++            with firm_session(self.schema_name) as db:
++                write_disk_log(
++                    db,
++                    self.job_id,
++                    f"{self.label} liveness - {name} ({age:,.0f}s in step, {self.elapsed():,.0f}s total)",
++                    stage=self.stage,
++                    metadata={
++                        "liveness": True,
++                        "step": name,
++                        "step_sec": round(age, 1),
++                        "total_sec": round(self.elapsed(), 1),
++                        **{k: v for k, v in self.extra.items() if isinstance(v, (str, int, float, bool))},
++                    },
++                )
++                db.commit()
++        except Exception:
++            log.debug("liveness log failed job=%s", self.job_id, exc_info=True)
++
++    def _run(self) -> None:
++        while not self._stop.wait(5.0):
++            now = time.monotonic()
++            self._touch_job()
++            if now - self._last_refresh >= self.refresh_sec:
++                self._refresh_lock()
++                self._last_refresh = now
++            if now - self._last_log >= self.log_sec:
++                self._write_log()
++                self._last_log = now
++
++    def write_summary(self, db) -> None:
++        """Final 'where did the time go' line on the caller's session."""
++        try:
++            from app.services.disk_build_log import write_disk_log
++
++            summary = self.summary()
++            write_disk_log(
++                db,
++                self.job_id,
++                f"{self.label} step timings - " + ", ".join(f"{k} {v:,.0f}s" for k, v in list(summary.items())[:8]),
++                stage=self.stage,
++                metadata={"step_timings_sec": summary, "total_sec": round(self.elapsed(), 1)},
++            )
++            db.commit()
++        except Exception:
++            try:
++                db.rollback()
++            except Exception:
++                pass
+--- a/backend/app/services/inventory_liveness.py	2026-10-04 16:42:36.789480487 +0000
++++ b/backend/app/services/inventory_liveness.py	2026-10-04 16:43:06.455077491 +0000
+@@ -1,152 +1,25 @@
+-"""Artifact-inventory liveness (V45.2).
++"""Artifact-inventory liveness (V45.2) - now a thin wrapper over job_liveness (V45.5).
+ 
+-Problem
+--------
+-``run_axiom_artifact_inventory`` refreshed its Redis job lock only at task
+-start and inside the *counting* callback. Every pre-count step (catalog ensure,
+-scope rows, extension census, path-token index, carve warm, URL/encryption
+-warm) ran silently: no disk-log line, no lock refresh. A step that took longer
+-than the 300 s lock TTL looked exactly like a dead worker — the supervisor
+-re-dispatched a second inventory task that then queued behind (or raced) the
+-first — while the UI sat at "0 / N (1%)" with no way to tell which step was slow.
+-
+-Fix
+----
+-``InventoryLiveness`` is a daemon thread that, for the lifetime of the run:
+-
+-* refreshes the ``inventory`` job lock every ``refresh_sec`` (default 45 s);
+-* writes one ``disk_build_logs`` line every ``log_sec`` (default 90 s) naming
+-  the current sub-step and how long it has been running
+-  (``Artifact inventory liveness — extension census (142s) …``), which
+-  ``inventory_task_in_flight`` recognises as activity;
+-* records per-step durations so the final log says where the time went.
+-
+-Use::
+-
+-    with InventoryLiveness(schema_name, job_id) as live:
+-        live.step("catalog ensure")
+-        ...
+-        live.step("extension census")
+-        ...
+-    # live.timings -> {"catalog ensure": 1.2, "extension census": 141.9, ...}
++Kept for import compatibility with catalog_artifact_runner. In addition to the
++lock refresh and the step log it now also bumps ``jobs.updated_at`` every 20 s,
++so the API/UI stall detectors treat a running inventory as alive.
+ """
+ 
+ from __future__ import annotations
+ 
+-import logging
+-import threading
+-import time
+-from typing import Any
+-
+-log = logging.getLogger("inventory_liveness")
++from app.services.job_liveness import JobLiveness
+ 
+ LIVENESS_PREFIX = "Artifact inventory liveness"
+ 
+ 
+-class InventoryLiveness:
+-    def __init__(
+-        self,
+-        schema_name: str | None,
+-        job_id: str,
+-        *,
+-        refresh_sec: float = 45.0,
+-        log_sec: float = 90.0,
+-    ) -> None:
+-        self.schema_name = schema_name
+-        self.job_id = job_id
+-        self.refresh_sec = max(float(refresh_sec), 10.0)
+-        self.log_sec = max(float(log_sec), 30.0)
+-        self._stop = threading.Event()
+-        self._lock = threading.Lock()
+-        self._thread: threading.Thread | None = None
+-        self._step = "starting"
+-        self._step_started = time.monotonic()
+-        self._run_started = time.monotonic()
+-        self._last_log = 0.0
+-        self.timings: dict[str, float] = {}
+-        self.extra: dict[str, Any] = {}
+-
+-    # ------------------------------------------------------------------ public
+-    def step(self, name: str, **extra: Any) -> None:
+-        """Mark the start of a new sub-step; closes the previous one."""
+-        now = time.monotonic()
+-        with self._lock:
+-            prev = self._step
+-            self.timings[prev] = self.timings.get(prev, 0.0) + (now - self._step_started)
+-            self._step = str(name or "step")
+-            self._step_started = now
+-            self.extra = dict(extra)
+-        log.info("inventory job=%s step=%s", self.job_id, name)
+-
+-    def current(self) -> tuple[str, float]:
+-        with self._lock:
+-            return self._step, time.monotonic() - self._step_started
+-
+-    def elapsed(self) -> float:
+-        return time.monotonic() - self._run_started
+-
+-    def summary(self) -> dict[str, float]:
+-        name, age = self.current()
+-        out = dict(self.timings)
+-        out[name] = out.get(name, 0.0) + age
+-        return {k: round(v, 1) for k, v in sorted(out.items(), key=lambda kv: -kv[1])}
+-
+-    # --------------------------------------------------------------- lifecycle
+-    def __enter__(self) -> "InventoryLiveness":
+-        self._thread = threading.Thread(target=self._run, name=f"inv-live-{self.job_id[:8]}", daemon=True)
+-        self._thread.start()
+-        return self
+-
+-    def __exit__(self, *exc: Any) -> None:
+-        self._stop.set()
+-        if self._thread:
+-            self._thread.join(timeout=3.0)
+-        name, age = self.current()
+-        self.timings[name] = self.timings.get(name, 0.0) + age
+-
+-    # ---------------------------------------------------------------- internal
+-    def _refresh_lock(self) -> None:
+-        try:
+-            from app.services.job_locks import DEFAULT_INVENTORY_LOCK_TTL_SEC, refresh_job_lock
+-
+-            refresh_job_lock("inventory", self.job_id, ttl_sec=DEFAULT_INVENTORY_LOCK_TTL_SEC)
+-        except Exception:
+-            log.debug("inventory lock refresh failed job=%s", self.job_id, exc_info=True)
+-
+-    def _write_log(self) -> None:
+-        name, age = self.current()
+-        try:
+-            from app.db.session import firm_session
+-            from app.services.catalog_artifact_runner import INVENTORY_STAGE
+-            from app.services.disk_build_log import write_disk_log
+-
+-            if not self.schema_name:
+-                return
+-            with firm_session(self.schema_name) as db:
+-                write_disk_log(
+-                    db,
+-                    self.job_id,
+-                    f"{LIVENESS_PREFIX} — {name} ({age:,.0f}s in step, {self.elapsed():,.0f}s total)",
+-                    stage=INVENTORY_STAGE,
+-                    metadata={
+-                        "liveness": True,
+-                        "step": name,
+-                        "step_sec": round(age, 1),
+-                        "total_sec": round(self.elapsed(), 1),
+-                        **{k: v for k, v in self.extra.items() if isinstance(v, (str, int, float, bool))},
+-                    },
+-                )
+-                db.commit()
+-        except Exception:
+-            log.debug("inventory liveness log failed job=%s", self.job_id, exc_info=True)
+-
+-    def _run(self) -> None:
+-        last_refresh = 0.0
+-        while not self._stop.wait(5.0):
+-            now = time.monotonic()
+-            if now - last_refresh >= self.refresh_sec:
+-                self._refresh_lock()
+-                last_refresh = now
+-            if now - self._last_log >= self.log_sec:
+-                self._write_log()
+-                self._last_log = now
++class InventoryLiveness(JobLiveness):
++    def __init__(self, schema_name: str | None, job_id: str, *, refresh_sec: float = 45.0, log_sec: float = 90.0) -> None:
++        super().__init__(
++            schema_name,
++            job_id,
++            stage="artifact_inventory",
++            label="Artifact inventory",
++            lock_kind="inventory",
++            refresh_sec=refresh_sec,
++            log_sec=log_sec,
++        )
+--- a/backend/app/services/extracted_disk.py	2026-10-04 16:42:36.788601751 +0000
++++ b/backend/app/services/extracted_disk.py	2026-10-04 16:43:06.454878845 +0000
+@@ -50,6 +50,16 @@
+ )
+ from app.services.virtual_disk import vd_plan as _vd_plan
+ 
++
++def _mark_live_step(job_id: str, name: str, **extra) -> None:
++    """V45.5: step marker for the task-level liveness thread (no-op when absent)."""
++    try:
++        from app.services.job_liveness import mark_step
++
++        mark_step(job_id, name, **extra)
++    except Exception:
++        pass
++
+ log = logging.getLogger("extracted_disk")
+ 
+ _PROGRESS_LOG_INTERVAL_SEC = 12
+@@ -1342,6 +1352,7 @@
+                     level="warning",
+                 )
+                 db.commit()
++        _mark_live_step(job_id, "enumerate filesystem")
+         with disk_log_heartbeat(
+             schema_name,
+             job_id,
+@@ -1420,6 +1431,7 @@
+             stage="extract",
+         )
+         db.commit()
++        _mark_live_step(job_id, "filter + save plan")
+         with disk_log_heartbeat(
+             schema_name,
+             job_id,
+@@ -1457,6 +1469,7 @@
+             existing_cp["nodes_uri"] = nodes_uri
+             save_extraction_checkpoint(db, job_id, existing_cp)
+ 
++    _mark_live_step(job_id, "plan I/O")
+     # E01: one reader (random seeks kill throughput). Folder iOS backups: many
+     # parallel readers — this stage is I/O, not GPU/NPU.
+     configured_readers = max(int(settings.extract_disk_workers or 1), 1)
+@@ -1919,6 +1932,7 @@
+         return checkpoint, done_shards, all_index, total_files, total_bytes, total_skipped
+ 
+     try:
++        _mark_live_step(job_id, "extract shards")
+         with disk_log_heartbeat(
+             schema_name,
+             job_id,
+@@ -2029,6 +2043,7 @@
+         )
+         db.commit()
+ 
++    _mark_live_step(job_id, "finalize manifest")
+     all_index, part_uris = checkpoint_index_and_parts(checkpoint)
+     _mark_finalizing()
+     return _finalize_manifest(

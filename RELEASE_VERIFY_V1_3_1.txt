@@ -1,0 +1,15 @@
+Polaron Complete v1.3.1 - Vulnerability Scanner Integration
+
+Verified high-priority fixes:
+1. Packaging uses laptop-scanner/scanner-agent as canonical source; legacy root scanner-agent is not copied over it.
+2. Fast defaults aligned: PORT_PROFILE=fast, GVM_OPTIMIZE_TEST=yes.
+3. Laptop scanner performs parallel open-port discovery and passes discovered port union to Greenbone, with safe fallback.
+4. Edge per-IP progress is persisted by central backend to orchestration_json.target_progress and consumed by existing React target table.
+
+Verification executed before packaging:
+- laptop-scanner/scanner-agent: 47 tests passed.
+- backend focused target-progress/orchestrator test: passed.
+
+Security packaging:
+- local .env files, agent/recovery tokens, logs, caches, diagnostics and recovery credentials are excluded.
+- .env.example files are included.

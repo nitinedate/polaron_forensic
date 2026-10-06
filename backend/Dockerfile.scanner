@@ -1,0 +1,64 @@
+# syntax=docker/dockerfile:1
+# Dedicated vulnerability-scanner Celery worker.
+#
+# Trivy's older GitHub release binary assets are not guaranteed to remain
+# downloadable forever. Use the official pinned Trivy container as a build
+# stage and copy its binary into the Python worker instead of curl-ing a
+# release tarball during the build.
+ARG TRIVY_VERSION=0.58.1
+FROM aquasec/trivy:${TRIVY_VERSION} AS trivy-bin
+
+FROM python:3.12-slim AS dependencies
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# NOTE: do NOT apt-install nmap here. Many corporate IPS/proxies return HTTP 403
+# for nmap-common ("Executable Files"). Orchestrator already skips nmap when
+# the binary is missing (OpenVAS / Nuclei / ZAP still run).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       build-essential libpq-dev gcc curl ca-certificates pkg-config \
+       libewf-dev libtsk-dev fonts-liberation fontconfig unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# The Trivy server is only a cache/database server; scans are initiated by the
+# Trivy CLI in client/server mode. Keep client and server versions aligned.
+# The official Trivy image installs the CLI at /usr/local/bin/trivy.
+COPY --from=trivy-bin /usr/local/bin/trivy /usr/local/bin/trivy
+RUN trivy --version
+
+# Install Nuclei so the orchestrator performs a real template scan instead of
+# falling back to demo/stub findings. Pin and verify the release for repeatable builds.
+ARG NUCLEI_VERSION=3.11.1
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+      amd64) nuclei_arch="amd64"; nuclei_sha="ea63d4ae232808cd7c6bc00d0142428e231fab59dae01042246097d195835ab6" ;; \
+      arm64) nuclei_arch="arm64"; nuclei_sha="8044e3d9768ba0a744b2872c1a87e813006f013da97ca9f50f7661a4203bec07" ;; \
+      *) echo "Unsupported architecture for Nuclei: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/nuclei.zip "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_linux_${nuclei_arch}.zip"; \
+    echo "${nuclei_sha}  /tmp/nuclei.zip" | sha256sum -c -; \
+    unzip -q /tmp/nuclei.zip -d /tmp/nuclei; \
+    install -m 0755 /tmp/nuclei/nuclei /usr/local/bin/nuclei; \
+    rm -rf /tmp/nuclei /tmp/nuclei.zip; \
+    nuclei -version
+
+COPY requirements.txt docker-pip-install.sh ./
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+ENV TORCH_INDEX_URL=${TORCH_INDEX_URL}
+RUN --mount=type=cache,target=/root/.cache/pip \
+    sed -i 's/\r$//' docker-pip-install.sh && sh docker-pip-install.sh
+
+FROM dependencies AS application
+ARG AETHERIS_APP_BUILD_ID=source
+COPY . .
+RUN test -n "$AETHERIS_APP_BUILD_ID" && python -m compileall -q app
+LABEL org.aetheris.application-build="$AETHERIS_APP_BUILD_ID"
+
+CMD ["celery", "-A", "app.celery_app.celery", "worker", "--loglevel=info", "--concurrency=2", "--prefetch-multiplier=1", "-Q", "nessus-sync"]

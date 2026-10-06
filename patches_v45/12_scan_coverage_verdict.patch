@@ -1,0 +1,211 @@
+--- a/laptop-scanner/scanner-agent/agent/gmp_local.py	2026-10-04 16:25:41.300984589 +0000
++++ b/laptop-scanner/scanner-agent/agent/gmp_local.py	2026-10-04 16:25:41.427665389 +0000
+@@ -699,6 +699,16 @@
+         result_count = 0
+     plugin_error_details = _plugin_error_details(report)
+     plugin_errors = max(_as_int(report.findtext("errors/count"), 0), len(plugin_error_details))
++    # V45.4: explicit per-host coverage verdict (port scanner killed => degraded).
++    host_coverage: dict[str, dict[str, Any]] = {}
++    try:
++        from agent.scan_coverage import coverage_from_report
++
++        cov_hosts = [str(t).strip() for t in expected_targets if str(t).strip()] or sorted(host_ips)
++        for cov_host in cov_hosts:
++            host_coverage[cov_host] = coverage_from_report(report, host=cov_host, errors=plugin_error_details)
++    except Exception:
++        log.debug("coverage verdict failed for report %s", report_id, exc_info=True)
+     scan_start = (report.findtext("scan_start") or "").strip() or None
+     scan_end = (report.findtext("scan_end") or "").strip() or None
+     run_status = (report.findtext("scan_run_status") or task_status or "").strip()
+@@ -796,6 +806,7 @@
+         "report_materialized_result_count": materialized_result_count,
+         "plugin_error_count": plugin_errors,
+         "plugin_error_details": plugin_error_details,
++        "host_coverage": host_coverage,
+         "scan_start": scan_start,
+         "scan_end": scan_end,
+         "assessment_complete": assessment_complete,
+--- a/laptop-scanner/scanner-agent/agent/main.py	2026-10-04 16:25:41.301362415 +0000
++++ b/laptop-scanner/scanner-agent/agent/main.py	2026-10-04 16:26:21.585588687 +0000
+@@ -252,6 +252,8 @@
+         "report_result_count": int(evidence.get("report_result_count") or 0),
+         "plugin_error_count": int(evidence.get("plugin_error_count") or 0),
+         "plugin_error_details": evidence.get("plugin_error_details") or [],
++        "host_coverage": evidence.get("host_coverage") or {},
++        "degraded_hosts": evidence.get("degraded_hosts") or [],
+         "scan_start": evidence.get("scan_start"),
+         "scan_end": evidence.get("scan_end"),
+         "assessment_complete": bool(evidence.get("assessment_complete")),
+@@ -305,6 +307,7 @@
+     seen_report_ids: set[str] = set()
+     assessed: set[str] = set()
+     plugin_errors: list[Any] = []
++    host_coverage: dict[str, dict[str, Any]] = {}
+     report_ids: list[str] = []
+     gmp_statuses: list[str] = []
+     statuses: list[str] = []
+@@ -356,6 +359,9 @@
+             assessed.add(str(h).strip())
+         result_count += int(ev.get("report_result_count") or 0)
+         plugin_errors.extend(ev.get("plugin_error_details") or [])
++        for cov_host, cov in (ev.get("host_coverage") or {}).items():
++            if isinstance(cov, dict):
++                host_coverage[str(cov_host)] = cov
+         if ev.get("report_id"):
+             report_ids.append(str(ev["report_id"]))
+         raw_task = str(ev.get("task_status") or details.get("gmp_status") or "").strip().lower()
+@@ -464,6 +470,10 @@
+             "report_result_count": result_count,
+             "plugin_error_count": len(plugin_errors),
+             "plugin_error_details": plugin_errors[:50],
++            "host_coverage": host_coverage,
++            "degraded_hosts": sorted(
++                h for h, c in host_coverage.items() if str((c or {}).get("verdict") or "").startswith("degraded")
++            ),
+             "scan_start": min(scan_starts) if scan_starts else (now_iso if assessment_complete and skipped else None),
+             "scan_end": max(scan_ends) if scan_ends else (now_iso if assessment_complete and skipped else None),
+             "assessment_complete": assessment_complete,
+@@ -714,6 +724,10 @@
+     task_ids: list[str | None] = [None] * len(chunks)
+     done_details: dict[int, dict[str, Any]] = {}
+     pending: list[int] = list(range(len(chunks)))
++    # V45.4: one automatic re-run per chunk when the report proves the port
++    # scanner never finished (truncated scan reported as Done).
++    degraded_retries: dict[int, int] = {}
++    degraded_retry_budget = max(0, int(os.environ.get("SCAN_DEGRADED_RETRY") or 1))
+     in_flight: dict[int, str] = {}
+     ip_started_mono: dict[int, float] = {}
+     ip_last_state: dict[int, tuple[str, int]] = {}
+@@ -1040,10 +1054,38 @@
+                     else:
+                         poll_results[idx] = details
+                         if st == "completed":
++                            cov = ((details.get("evidence") or {}).get("host_coverage") or {}).get(host) or {}
++                            cov_verdict = str(cov.get("verdict") or "full")
++                            if cov_verdict.startswith("degraded") and degraded_retries.get(idx, 0) < degraded_retry_budget:
++                                degraded_retries[idx] = degraded_retries.get(idx, 0) + 1
++                                log.warning(
++                                    "Job %s IP %s: scan DEGRADED (%s) — %s; re-running once",
++                                    job_id, host, cov_verdict, cov.get("reason"),
++                                )
++                                emit_ip_event(
++                                    job_id, host, "coverage_retry", task_id=tid, verdict=cov_verdict,
++                                    reason=cov.get("reason"), attempt=degraded_retries[idx], chunk_index=idx,
++                                )
++                                task_ids[idx] = None
++                                poll_results.pop(idx, None)
++                                in_flight.pop(idx, None)
++                                slot_sem.release()
++                                pending.append(idx)
++                                continue
++                            if cov_verdict.startswith("degraded"):
++                                log.error(
++                                    "Job %s IP %s: scan INCOMPLETE after retry (%s) — %s",
++                                    job_id, host, cov_verdict, cov.get("reason"),
++                                )
++                                emit_ip_event(
++                                    job_id, host, "coverage_incomplete", task_id=tid, verdict=cov_verdict,
++                                    reason=cov.get("reason"), chunk_index=idx,
++                                )
+                             done_details[idx] = details
+                             finished_idxs.append(idx)
+                             emit_ip_event(
+                                 job_id, host, "completed", task_id=tid, progress=100,
++                                coverage=cov_verdict,
+                                 vulnerabilities=len(details.get("vulnerabilities") or []),
+                                 report_id=(details.get("evidence") or {}).get("report_id"),
+                                 report_results=(details.get("evidence") or {}).get("report_result_count"),
+--- a/backend/app/services/scanner_agent_jobs.py	2026-10-04 16:25:41.301640124 +0000
++++ b/backend/app/services/scanner_agent_jobs.py	2026-10-04 16:26:21.588461356 +0000
+@@ -1185,6 +1185,7 @@
+     alive_test: str | None = None,
+     report_read_error: str | None = None,
+     agent_instance_id: str | None = None,
++    host_coverage: dict[str, Any] | None = None,
+ ) -> dict[str, Any]:
+     """Ingest an edge-agent result and persist host-assessment evidence.
+ 
+@@ -1390,6 +1391,41 @@
+     orch["report_id"] = effective_report_id
+     orch["skipped_hosts"] = skipped_details
+     orch["assessed_hosts"] = assessed_list
++    # V45.4: per-IP coverage from the agent. A host whose port scanner was killed
++    # is shown as "incomplete" with the reason, never as a green "completed".
++    host_cov = host_coverage if isinstance(host_coverage, dict) else None
++    if isinstance(host_cov, dict) and host_cov:
++        tp = dict(orch.get("target_progress") or {}) if isinstance(orch.get("target_progress"), dict) else {}
++        degraded_now: list[str] = []
++        for cov_host, cov in host_cov.items():
++            if not isinstance(cov, dict):
++                continue
++            verdict = str(cov.get("verdict") or "full")
++            entry = dict(tp.get(cov_host) or {})
++            if verdict.startswith("degraded"):
++                degraded_now.append(str(cov_host))
++                entry["status"] = "incomplete"
++                entry["activity"] = f"Incomplete — {str(cov.get('reason') or verdict)[:160]}"
++            else:
++                entry["status"] = "completed"
++                entry["activity"] = "Completed"
++            entry["coverage"] = {
++                "verdict": verdict,
++                "open_tcp_ports": len(cov.get("open_tcp_ports") or []),
++                "nvts_launched": int(cov.get("nvts_launched") or 0),
++            }
++            tp[str(cov_host)] = entry
++        orch["target_progress"] = tp
++        orch["host_coverage"] = host_cov
++        orch["degraded_hosts"] = degraded_now
++        if degraded_now:
++            orch["completed_with_warnings"] = True
++            orch["clean_eligible"] = False
++            orch["partial"] = True
++            orch["partial_reason"] = (
++                f"{len(degraded_now)} host(s) incomplete — port scan did not finish: {', '.join(degraded_now[:5])}"
++            )[:500]
++            orch["edge_progress"] = {"pct": 100.0, "message": orch["partial_reason"]}
+     orch["reachable_target_count"] = required_count
+     orch["plugin_error_count"] = plugin_errors
+     orch["result_payload_ok"] = result_payload_ok
+--- a/backend/app/services/scan_orchestrator.py	2026-10-04 16:25:41.301888692 +0000
++++ b/backend/app/services/scan_orchestrator.py	2026-10-04 16:25:41.430485903 +0000
+@@ -1561,6 +1561,8 @@
+         activity = str(state.get("activity") or "")
+         if status == "completed":
+             activity = "Completed"
++        elif status == "incomplete" and not activity:
++            activity = "Incomplete — scan coverage degraded"
+         elif not activity:
+             activity = "Waiting"
+         c = counts.get(ip) or {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+--- a/backend/app/routers/scanner_agent.py	2026-10-04 16:26:21.550291620 +0000
++++ b/backend/app/routers/scanner_agent.py	2026-10-04 16:26:21.586056485 +0000
+@@ -79,6 +79,9 @@
+     assessment_verdict: str | None = None
+     alive_test: str | None = None
+     report_read_error: str | None = None
++    # V45.4: per-host coverage verdict from the agent (port scanner killed => degraded).
++    host_coverage: dict[str, Any] = Field(default_factory=dict)
++    degraded_hosts: list[str] = Field(default_factory=list)
+ 
+ 
+ class AgentLogEntryIn(BaseModel):
+@@ -248,6 +251,7 @@
+             alive_test=body.alive_test,
+             report_read_error=body.report_read_error,
+             agent_instance_id=(x_aetheris_agent_instance or agent_instance_id),
++            host_coverage=body.host_coverage,
+         )
+         if result.get("status") == "missing":
+             raise HTTPException(
+--- a/laptop-scanner/.env	2026-10-04 16:25:41.302418407 +0000
++++ b/laptop-scanner/.env	2026-10-04 16:25:41.431038418 +0000
+@@ -88,6 +88,8 @@
+ # V45 Nessus-parity: Greenbone default NVT budgets (the agent forced 60/90 s before)
+ PLUGINS_TIMEOUT_SEC=320
+ SCANNER_PLUGINS_TIMEOUT_SEC=36000
++# V45.4: re-run a host once when the report proves the port scanner never finished
++SCAN_DEGRADED_RETRY=1
+ # Nessus "Advanced Scan" parity: safe checks on (DoS off), all TCP + priority UDP,
+ # web-app NVTs via "Full and fast"; credentialed SMB/SSH via central scanner_credentials.
+ GVM_SCAN_CONFIG=Full and fast

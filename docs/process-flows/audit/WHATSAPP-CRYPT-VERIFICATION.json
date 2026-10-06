@@ -1,0 +1,157 @@
+{
+  "release": 9,
+  "date": "2026-10-06",
+  "verification": {
+    "focused_regression_tests_passed": 319,
+    "postgresql_compatible_case_object_integration_checks_passed": 20,
+    "portable_synthetic_acceptance_checks_passed": 12,
+    "cryptography_only_fallback_acceptance_checks_passed": 12,
+    "portable_cli_cases_passed": 3,
+    "synthetic_encrypted_files": 14,
+    "synthetic_supported_layouts": 10,
+    "preserved_powershell_case_command_on_linux": {
+      "status": "pass",
+      "backups": 11,
+      "authenticated": 7,
+      "legacy_unverified": 4
+    },
+    "frontend_unified": "pass",
+    "frontend_android": "pass",
+    "frontend_ios": "pass",
+    "changed_python_311_grammar": "pass",
+    "python_compileall": "pass",
+    "ruff_F_E9": "pass",
+    "mobile_pdf_pages": 32,
+    "whatsapp_pdf_pages": 11,
+    "pdf_vector_geometry_and_representative_pages": "pass",
+    "live_phone_gpu": "pending",
+    "native_windows_phone_acquisition": "pending",
+    "actual_user_backups_and_matching_keys": "not supplied",
+    "deployment": "not executed"
+  },
+  "postgresql_compatible_checks": [
+    "examiner-selected key preserved while every collected key is retained",
+    "public job metadata contains no decryption secrets",
+    "eight encrypted sources, six recovered and two explicitly blocked",
+    "each source emits progress",
+    "Intake reports authenticated matches and blocked files after materialization",
+    "identical databases reuse the native extraction, preventing duplicate chats",
+    "encrypted source links include historical and legacy snapshots",
+    "unsupported and damaged formats remain explicit",
+    "repeat run uses cache and does not duplicate derived objects",
+    "SQL-backed parsing yields four actual messages without snapshot duplication",
+    "decrypted mail and pictures enter normalized artifact storage",
+    "deleted flags and original encrypted hashes survive",
+    "RAG contains recovered text with text-only indexing",
+    "WhatsApp message browser and deleted view return recovered conversations",
+    "finalized source boundary admits only verified registered derivations",
+    "artifact preview reads verified derived payload",
+    "cross-namespace storage URI is rejected",
+    "tampered derived content is rejected",
+    "encrypted originals are unchanged",
+    "decryption respects the existing pause controller"
+  ],
+  "fixture_generator": "scripts/whatsapp_qa_fixtures.py",
+  "fixture_encoding": "Independent cryptography AES/HKDF primitives; public synthetic matching keys",
+  "integration_environment": "PGlite 0.5.8 PostgreSQL-compatible SQL plus controlled local case-object storage; not a live phone/production DB/MinIO test",
+  "scope": "Test counts overlap and are not added together. Historical forensic/scanner/deployment results are preserved in prior manifests.",
+  "merged_source_revision": {
+    "name": "polaron-mobile-crypt-family-tested.zip",
+    "library_version": 10,
+    "sha256": "65ffe5fc432ab783c5ffc34f14d25d476ddf720b9257a2f48565318dce05d813"
+  },
+  "merge": "Preserves all source-revision-10 file paths; combines the ten-format decoder, private case-export utility and Intake outcomes with verified serial derivation and typed payload parsing.",
+  "python_validation": {
+    "changed_python_files": 41,
+    "python311_grammar": "passed",
+    "ruff_exit_code": 0,
+    "paths": [
+      "scripts/test-whatsapp-decryption.py",
+      "scripts/whatsapp_qa_fixtures.py",
+      "scripts/recover-whatsapp.py",
+      "docs/process-flows/build_flows.py",
+      "backend/scripts/test_crypt14_case.py",
+      "backend/scripts/test_crypt_case.py",
+      "backend/tests/test_whatsapp_payloads.py",
+      "backend/tests/test_whatsapp_derivation.py",
+      "backend/tests/test_crypt_family.py",
+      "backend/tests/test_crypt14_pipeline_delivery.py",
+      "backend/app/services/forensic_serial_stages.py",
+      "backend/app/services/forensic_handbook_scope.py",
+      "backend/app/services/artifact_preview.py",
+      "backend/app/services/artifact_evidence_browse.py",
+      "backend/app/services/artifact_parse.py",
+      "backend/app/services/phase1_artifact_scope.py",
+      "backend/app/services/forensic_priority_evidence.py",
+      "backend/app/services/forensic_serial_mobile.py",
+      "backend/app/services/whatsapp_evidence_browse.py",
+      "backend/app/routers/report.py",
+      "backend/app/db/sql_helpers.py",
+      "backend/app/services/mobile_acquire/content_inventory.py",
+      "backend/app/services/mobile_acquire/android_readable.py",
+      "backend/app/services/mobile_forensic/package_inventory.py",
+      "backend/app/services/mobile_forensic/pipeline.py",
+      "backend/app/services/mobile_forensic/whatsapp_derivation.py",
+      "backend/app/services/mobile_forensic/crypt_formats.py",
+      "backend/app/services/mobile_forensic/sqlite_counts.py",
+      "backend/app/services/mobile_forensic/plugins.py",
+      "backend/app/services/mobile_forensic/whatsapp_case_decrypt.py",
+      "backend/app/services/mobile_forensic/inventory.py",
+      "backend/app/services/mobile_forensic/integrity.py",
+      "backend/app/services/mobile_forensic/key_intake.py",
+      "backend/app/services/mobile_forensic/mobile_rag.py",
+      "backend/app/services/mobile_forensic/whatsapp_crypt.py",
+      "backend/app/services/mobile_forensic/models.py",
+      "backend/app/services/mobile_forensic/whatsapp_legacy.py",
+      "backend/app/services/os_artifact_scope/android.py",
+      "backend/app/services/mobile_forensic/parsers/messaging.py",
+      "backend/app/services/mobile_forensic/parsers/files_media.py",
+      "backend/app/services/mobile_forensic/parsers/communications.py"
+    ]
+  },
+  "portable_cli_checks": {
+    "status": "passed",
+    "cases": [
+      {
+        "case": "crypt14_matching_key",
+        "exit_code": 0,
+        "output": {
+          "manifest": "/workspace/scratch/3803a67ebb23/flow-qa/whatsapp-merged-cli-crypt14_matching_key-final/whatsapp_recovery_manifest.json",
+          "state": "decrypted",
+          "decrypted_databases": 1,
+          "decrypted_files": 1,
+          "derived_files": 1,
+          "failed_backups": 0
+        },
+        "passed": true
+      },
+      {
+        "case": "crypt14_no_key",
+        "exit_code": 2,
+        "output": {
+          "manifest": "/workspace/scratch/3803a67ebb23/flow-qa/whatsapp-merged-cli-crypt14_no_key-final/whatsapp_recovery_manifest.json",
+          "state": "key_unavailable",
+          "decrypted_databases": 0,
+          "decrypted_files": 0,
+          "derived_files": 0,
+          "failed_backups": 1
+        },
+        "passed": true
+      },
+      {
+        "case": "all_formats",
+        "exit_code": 0,
+        "output": {
+          "manifest": "/workspace/scratch/3803a67ebb23/flow-qa/whatsapp-merged-cli-all_formats-final/whatsapp_recovery_manifest.json",
+          "state": "decrypted",
+          "decrypted_databases": 1,
+          "decrypted_files": 14,
+          "derived_files": 8,
+          "failed_backups": 0
+        },
+        "passed": true
+      }
+    ],
+    "fixture_inputs_unchanged": true
+  }
+}

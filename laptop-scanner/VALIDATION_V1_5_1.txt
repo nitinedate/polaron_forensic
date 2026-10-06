@@ -1,0 +1,8 @@
+Aetheris Laptop Scanner v1.5.1 validation
+========================================
+Python compile: PASS
+Docker Compose YAML parse: PASS
+Laptop scanner full pytest suite: PASS - 76 passed
+Laptop -> central v1.5.1 CVSS basis integration: PASS
+Sample: raw Greenbone score 10.0, CVSSv2 10.0, CVSSv3 8.8, CVSSv4 8.6 -> central cvss_v3 basis selects 8.8 / HIGH.
+Docker image build: NOT EXECUTED in the packaging environment because Docker CLI is unavailable there.

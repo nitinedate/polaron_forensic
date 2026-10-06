@@ -1,0 +1,109 @@
+--- /mnt/data/gap_assessment_report.py.orig	2026-08-18 12:27:59.009467492 +0000
++++ /mnt/data/rag_new2_18082026_extracted/backend/app/services/gap_assessment_report.py	2026-08-18 12:30:18.315844999 +0000
+@@ -129,6 +129,68 @@
+     return dict(row) if row else None
+ 
+ 
++_MISSING_SITE_VALUES = {"", "-", "—", "n/a", "na", "not specified", "unknown"}
++
++
++def _site_value_missing(value: Any) -> bool:
++    """Return True when an intake value is only a blank/placeholder value."""
++    return str(value or "").strip().lower() in _MISSING_SITE_VALUES
++
++
++def _derive_case_endpoint_count(db, case_id: str) -> int | None:
++    """Derive the number of in-scope endpoints from real vulnerability data.
++
++    Prefer active assets because they represent hosts actually materialized by scan
++    ingestion, including completed scans with zero findings.  If scan ingestion has
++    not created assets yet, fall back to distinct host-like scan targets.  CIDR and
++    network ranges are deliberately not counted as one endpoint.
++    """
++    asset_row = fetchone(
++        db,
++        """SELECT COUNT(DISTINCT LOWER(BTRIM(
++                     COALESCE(NULLIF(BTRIM(primary_ip), ''), NULLIF(BTRIM(hostname), ''))
++                   ))) AS endpoint_count
++           FROM vuln_assets
++           WHERE case_id = CAST(:cid AS uuid)
++             AND COALESCE(lifecycle_state, 'active') <> 'retired'
++             AND COALESCE(NULLIF(BTRIM(primary_ip), ''), NULLIF(BTRIM(hostname), '')) IS NOT NULL""",
++        {"cid": case_id},
++    )
++    try:
++        asset_count = int((asset_row or {}).get("endpoint_count") or 0)
++    except (TypeError, ValueError):
++        asset_count = 0
++    if asset_count > 0:
++        return asset_count
++
++    target_row = fetchone(
++        db,
++        """SELECT COUNT(DISTINCT LOWER(BTRIM(t.target))) AS endpoint_count
++           FROM vuln_scan_targets t
++           JOIN vuln_scan_jobs j ON j.id = t.scan_job_id
++           WHERE j.case_id = CAST(:cid AS uuid)
++             AND COALESCE(t.excluded, FALSE) = FALSE
++             AND BTRIM(COALESCE(t.target, '')) <> ''
++             AND LOWER(BTRIM(COALESCE(t.target_type, 'host')))
++                 IN ('host', 'hostname', 'ip', 'ipv4', 'ipv6', 'endpoint')""",
++        {"cid": case_id},
++    )
++    try:
++        target_count = int((target_row or {}).get("endpoint_count") or 0)
++    except (TypeError, ValueError):
++        target_count = 0
++    return target_count if target_count > 0 else None
++
++
++def _apply_derived_site_facts(db, case_id: str, site: dict[str, Any]) -> dict[str, Any]:
++    """Fill report facts from scan data without overwriting examiner-entered intake."""
++    if _site_value_missing(site.get("num_endpoints")):
++        endpoint_count = _derive_case_endpoint_count(db, case_id)
++        if endpoint_count is not None:
++            site["num_endpoints"] = str(endpoint_count)
++    return site
++
++
+ def load_gap_site(db, case_id: str) -> dict[str, Any]:
+     ensure_gap_site_column(db)
+     row = load_case_row(db, case_id)
+@@ -319,8 +381,10 @@
+     if not case_row:
+         raise ValueError("Case not found")
+     site = load_gap_site(db, case_id)
++    stored_site = dict(site)
+     if site_override:
+         site = {**site, **{k: v for k, v in site_override.items() if v is not None and k != "has_saved_intake"}}
++    _apply_derived_site_facts(db, case_id, site)
+     findings = load_grouped_findings(db, case_id)
+     client = site.get("client_name") or case_row.get("title") or "Client"
+     if findings:
+@@ -334,9 +398,13 @@
+             llm_on = use_llm if use_llm is not None else bool(get_settings().gap_report_llm_enabled)
+             findings = enrich_gap_findings(findings, client=client, enabled=llm_on)
+             if llm_on:
+-                site["_enriched_findings_cache"] = {"key": cache_key, "items": findings}
++                cache_value = {"key": cache_key, "items": findings}
++                site["_enriched_findings_cache"] = cache_value
++                stored_site["_enriched_findings_cache"] = cache_value
+                 try:
+-                    save_gap_site(db, case_id, site)
++                    # Persist only saved intake + enrichment cache.  Auto-derived
++                    # report facts (for example num_endpoints) must remain dynamic.
++                    save_gap_site(db, case_id, stored_site)
+                 except Exception:
+                     pass
+     return {
+@@ -657,7 +725,9 @@
+             raise ValueError(f"Case not found: {cid}")
+         if primary_case is None:
+             primary_case = case_row
+-        sites.append(load_gap_site(db, cid))
++        case_site = load_gap_site(db, cid)
++        _apply_derived_site_facts(db, cid, case_site)
++        sites.append(case_site)
+         # Merge on raw scanner text before LLM rewrite so identical findings share IPs.
+         findings_lists.append(load_grouped_findings(db, cid))
+ 

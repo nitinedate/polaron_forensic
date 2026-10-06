@@ -1,0 +1,213 @@
+--- a/backend/app/services/extracted_disk.py	2026-10-04 13:37:46.105920373 +0000
++++ b/backend/app/services/extracted_disk.py	2026-10-04 13:37:46.119742871 +0000
+@@ -42,6 +42,13 @@
+ from app.services.os_detect import detect_os_from_paths
+ from app.services.storage import put_bytes, put_file
+ from app.services.virtual_disk import VirtualDisk, enumerate_all_files, open_virtual_disk, read_full_file_from_disk
++from app.services.extract_shard_v45 import (
++    ShardEventBus,
++    configure_read_gate,
++    plan_readers as plan_readers_v45,
++    shard_worker_v45,
++)
++from app.services.virtual_disk import vd_plan as _vd_plan
+ 
+ log = logging.getLogger("extracted_disk")
+ 
+@@ -118,6 +125,8 @@
+         self._stop = threading.Event()
+         self._thread: threading.Thread | None = None
+         self._last_log_monotonic = 0.0
++        # V45: shard threads emit here; this thread is the only DB writer.
++        self.event_bus = ShardEventBus()
+ 
+     def start(self) -> None:
+         if self._thread and self._thread.is_alive():
+@@ -128,6 +137,19 @@
+     def mark_dirty(self) -> None:
+         self._dirty.set()
+ 
++    def _drain_events(self, db) -> int:
++        events = self.event_bus.drain()
++        for level, message, metadata in events:
++            write_disk_log(db, self.job_id, message, stage="extract", level=level, metadata=metadata)
++        if self.event_bus.dropped:
++            write_disk_log(
++                db, self.job_id,
++                f"{self.event_bus.dropped} shard log events dropped (bus full)",
++                stage="extract", level="warning",
++            )
++            self.event_bus.dropped = 0
++        return len(events)
++
+     def stop(self, *, flush: bool = True) -> None:
+         self._stop.set()
+         self._dirty.set()
+@@ -153,6 +175,12 @@
+         total = snap["total_files"]
+         extracted = snap["files_extracted"]
+         if total <= 0 and extracted <= 0:
++            try:
++                with firm_session(self.schema_name) as db:
++                    self._drain_events(db)
++                    db.commit()
++            except Exception:
++                log.debug("event drain failed for job %s", self.job_id, exc_info=True)
+             return
+         pct = _progress_pct(extracted, total, snap["shards_done"], self.shard_count)
+         pre_filtered = snap["pre_filtered"]
+@@ -169,6 +197,7 @@
+         )
+         try:
+             with firm_session(self.schema_name) as db:
++                self._drain_events(db)
+                 if write_log:
+                     write_disk_log(
+                         db,
+@@ -265,9 +294,22 @@
+         "policy_reason": policy_reason,
+         "noise": noise_ledger.as_dict(),
+     }
++    # V45: tree-level OS/vendor exclusion (AXIOM-aligned). Runs before the
++    # per-file rules; a scope-pack *specific* claim always wins inside it.
++    try:
++        from app.services.extract_os_vendor_noise import os_vendor_mode, should_skip_os_vendor
++    except Exception:  # pragma: no cover
++        os_vendor_mode = lambda: "keep"  # noqa: E731
++        should_skip_os_vendor = lambda *a, **k: (False, None)  # noqa: E731
++    stats["os_vendor_mode"] = os_vendor_mode()
+     for node in nodes:
+         rel = node["path"]
+         size = int(node.get("size_bytes") or 0)
++        skip_vendor, vendor_rule = should_skip_os_vendor(rel, size_bytes=size, os_family=family)
++        if skip_vendor:
++            stats["filtered_out"] += 1
++            stats[vendor_rule or "os_vendor_tree"] = stats.get(vendor_rule or "os_vendor_tree", 0) + 1
++            continue
+         ok, reason = should_extract_node_v2(
+             rel,
+             size,
+@@ -1512,6 +1554,14 @@
+     except Exception:
+         pass
+ 
++    # V45: physical-source cap (HDD/USB => 1-2 readers) + bounded read semaphore.
++    try:
++        parallel_readers, read_gate_n, media_reason = plan_readers_v45(vd, parallel_readers)
++        configure_read_gate(read_gate_n)
++        io_reason += f"+v45[{media_reason};gate={read_gate_n}]"
++    except Exception:
++        log.debug("v45 reader planning failed", exc_info=True)
++
+     write_disk_log(
+         db,
+         job_id,
+@@ -1724,6 +1774,8 @@
+             "hash_files": settings.extract_hash_files,
+             "stop_check_interval": settings.extract_stop_check_interval,
+             "tar_bufsize": getattr(settings, "extract_tar_bufsize", 262_144),
++            "vd_plan": _vd_plan(vd),
++            "part_prefix": _disk_prefix(job_id),
+         }
+         for shard_id, shard_nodes in shards.items()
+         if shard_nodes and shard_id not in done_ids
+@@ -1890,8 +1942,9 @@
+                             worker_count=worker_count,
+                         )
+                     try:
+-                        result = _shard_worker(
+-                            p, progress, progress_flusher, stop_poller, shared_vd=vd
++                        result = shard_worker_v45(
++                            p, progress, progress_flusher, stop_poller,
++                            shared_vd=vd, event_bus=progress_flusher.event_bus,
+                         )
+                     except JobStopRequested:
+                         return _handle_stop(
+@@ -1919,7 +1972,10 @@
+             else:
+                 with ThreadPoolExecutor(max_workers=min(parallel_readers, len(payloads))) as pool:
+                     futures = {
+-                        pool.submit(_shard_worker, p, progress, progress_flusher, stop_poller): p["shard_id"]
++                        pool.submit(
++                            shard_worker_v45, p, progress, progress_flusher, stop_poller,
++                            event_bus=progress_flusher.event_bus,
++                        ): p["shard_id"]
+                         for p in payloads
+                     }
+                     for future in as_completed(futures):
+--- a/backend/app/services/virtual_disk.py	2026-10-04 13:37:46.128247865 +0000
++++ b/backend/app/services/virtual_disk.py	2026-10-04 13:37:46.129448762 +0000
+@@ -542,6 +542,73 @@
+     return vd
+ 
+ 
++def open_virtual_disk_from_paths(
++    job_id: str,
++    paths: list[str],
++    *,
++    hashes: list[str] | None = None,
++    base_name: str = "",
++    fmt: str = "",
++    root_folder: str | None = None,
++) -> VirtualDisk:
++    """V45: open a VirtualDisk from an already-resolved plan — no DB session.
++
++    Shard threads use this so they never compete for the Celery worker's tiny
++    Postgres pool. Mirrors ``open_virtual_disk`` after path resolution.
++    """
++    if not paths:
++        raise ValueError("no segment paths")
++    path_objs = [_resolve_evidence_path(p) for p in paths]
++    missing = [str(p) for p in path_objs if not p.exists()]
++    if missing:
++        raise ValueError(f"Evidence path(s) not accessible in this worker: {missing[0]}")
++    first = path_objs[0]
++    resolved = [str(p) for p in path_objs]
++    hashes = list(hashes or [])
++    if root_folder or first.is_dir():
++        return VirtualDisk(
++            job_id=job_id,
++            mode="folder",
++            segment_paths=resolved,
++            segment_hashes=hashes,
++            base_name=base_name or first.name,
++            format=fmt or "backup",
++            root_folder=root_folder or str(first),
++        )
++    vd = VirtualDisk(
++        job_id=job_id,
++        mode="folder",
++        segment_paths=resolved,
++        segment_hashes=hashes,
++        base_name=base_name or first.stem,
++        format=fmt or (first.suffix.lstrip(".").lower() or "raw"),
++    )
++    if any(_is_ewf_segment(p) or p.suffix.lower() in (".dd", ".raw", ".vmdk", ".vhdx") for p in path_objs):
++        img, mode = _open_img_info(path_objs)
++        if img and _pytsk3 and mode != "folder":
++            vd.mode = mode
++            vd._img_info = img
++            fs = _open_filesystem(img)
++            if fs:
++                vd._fs_info = fs
++                return vd
++    vd.mode = "folder"
++    vd.root_folder = str(first.parent)
++    return vd
++
++
++def vd_plan(vd: VirtualDisk) -> dict:
++    """Serializable description a shard can reopen the disk from (V45)."""
++    return {
++        "segment_paths": list(vd.segment_paths),
++        "segment_hashes": list(vd.segment_hashes),
++        "base_name": vd.base_name,
++        "format": vd.format,
++        "root_folder": vd.root_folder,
++        "mode": vd.mode,
++    }
++
++
+ _VD_CACHE: dict[str, tuple[VirtualDisk, float]] = {}
+ _VD_CACHE_LOCK = threading.Lock()
+ _VD_CACHE_TTL_SEC = 600.0

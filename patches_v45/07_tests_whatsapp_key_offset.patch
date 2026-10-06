@@ -1,0 +1,19 @@
+diff --git a/backend/tests/test_whatsapp_crypt.py b/backend/tests/test_whatsapp_crypt.py
+index 4da1048..7a03278 100644
+--- a/backend/tests/test_whatsapp_crypt.py
++++ b/backend/tests/test_whatsapp_crypt.py
+@@ -14,8 +14,13 @@ from app.services.mobile_forensic.whatsapp_crypt import (
+ 
+ 
+ def test_cipher_key_from_whatsapp_keyfile() -> None:
+-    keyfile = b"\x00" * 30 + bytes(range(32)) + b"\xff" * 96
++    # V45: the 158-byte Android key file holds the AES-256 key in its LAST 32
++    # bytes (offset 126). Offset 30 is the crypt12 "t1" header checksum; the
++    # pre-V45 reader used it as the key and could never decrypt a real backup.
++    keyfile = b"\xff" * 30 + b"\x11" * 32 + b"\xff" * 64 + bytes(range(32))
++    assert len(keyfile) == 158
+     assert cipher_key_from_material(keyfile) == bytes(range(32))
++    assert cipher_key_from_material(b"\x00" * 30 + bytes(range(32)) + b"\xff" * 96) == b"\xff" * 32
+     assert cipher_key_from_material(bytes(range(32))) == bytes(range(32))
+     assert cipher_key_from_material(bytes(range(32)).hex()) == bytes(range(32))
+     assert cipher_key_from_material("not-hex") is None

@@ -1,0 +1,151 @@
+--- a/backend/app/services/catalog_artifact_runner.py	2026-10-04 15:21:56.275595080 +0000
++++ b/backend/app/services/catalog_artifact_runner.py	2026-10-04 15:22:15.536442152 +0000
+@@ -1078,10 +1078,47 @@
+ 
+ 
+ def run_axiom_artifact_inventory(db, job_id: str, *, schema_name: str | None = None) -> dict[str, Any]:
+-    """Persist AXIOM-aligned counts for all in-scope catalog artifacts (single pass)."""
++    """Persist AXIOM-aligned counts for all in-scope catalog artifacts (single pass).
++
++    V45.2: the whole run is wrapped in ``InventoryLiveness`` — the Redis job
++    lock is refreshed every 45 s and a liveness line naming the current
++    sub-step is written every 90 s, so a slow pre-count step can no longer be
++    mistaken for a dead worker (double dispatch) and the operator can see which
++    step is consuming the time.
++    """
++    from app.services.inventory_liveness import InventoryLiveness
++
++    with InventoryLiveness(schema_name, job_id) as live:
++        try:
++            result = _run_axiom_artifact_inventory_impl(db, job_id, schema_name=schema_name, live=live)
++        finally:
++            try:
++                summary = live.summary()
++                write_disk_log(
++                    db,
++                    job_id,
++                    "Artifact inventory step timings — "
++                    + ", ".join(f"{k} {v:,.0f}s" for k, v in list(summary.items())[:8]),
++                    stage=INVENTORY_STAGE,
++                    metadata={"step_timings_sec": summary, "total_sec": round(live.elapsed(), 1)},
++                )
++                db.commit()
++            except Exception:
++                try:
++                    db.rollback()
++                except Exception:
++                    pass
++    return result
++
++
++def _run_axiom_artifact_inventory_impl(
++    db, job_id: str, *, schema_name: str | None = None, live: Any = None
++) -> dict[str, Any]:
+     from app.services.job_control import pipeline_should_stop
+     from app.services.pipeline_orchestrator import log_agent, merge_orchestration_into_progress
+ 
++    _mark = (live.step if live is not None else (lambda *a, **k: None))
++    _mark("results schema ensure")
+     ensure_job_axiom_results_schema(db)
+     if pipeline_should_stop(db, job_id):
+         inv = axiom_inventory_progress(db, job_id)
+@@ -1131,6 +1168,7 @@
+             except Exception:
+                 pass
+ 
++    _mark("catalog ensure")
+     platform = resolve_job_axiom_platform(db, job_id)
+     try:
+         from app.services.catalog_ingest import ensure_platform_axiom_catalog
+@@ -1138,6 +1176,7 @@
+         ensure_platform_axiom_catalog(db, platform)
+     except Exception as exc:
+         log.warning("catalog ensure before inventory failed job=%s: %s", job_id, exc)
++    _mark("scope rows")
+     scoped_rows = inventory_scope_rows(db, job_id, platform=platform)
+     total = len(scoped_rows)
+     if total <= 0:
+@@ -1200,6 +1239,7 @@
+     merge_orchestration_into_progress(db, job_id)
+     db.commit()
+ 
++    _mark("collector cache reset")
+     from app.services.mobile_forensic.detection import is_mobile_job
+ 
+     mobile_job = is_mobile_job(db, job_id)
+@@ -1313,6 +1353,7 @@
+                     except Exception:
+                         pass
+ 
++            _mark("extension census")
+             ensure_disk_extension_censuses(db, job_id, on_progress=_census_progress)
+         except Exception as exc:
+             log.warning("disk extension census prewarm failed job=%s: %s", job_id, exc)
+@@ -1365,6 +1406,7 @@
+                 label = f"Artifact inventory — {message} ({ui_pct}%)"
+             else:
+                 resolved_stage = "counting"
++                _mark("counting catalog", idx=idx, total=total)
+                 ui_pct = inventory_ui_pct_for(
+                     stage="counting",
+                     count_idx=idx,
+@@ -1437,6 +1479,7 @@
+             )
+             seed_fallback_path_counts(job_id, scoped_rows)
+         else:
++            _mark("path-token index")
+             _count_progress("Building streaming path index", 0, total, stage="path_index")
+             ensure_fallback_path_counts(
+                 db,
+@@ -1995,6 +2038,7 @@
+              AND (
+                message ILIKE '%inventory batch%'
+                OR message ILIKE '%Counting catalog artifacts%'
++               OR message ILIKE '%Artifact inventory liveness%'
+                OR message ILIKE '%extension census%'
+                OR message ILIKE '%Document disk census%'
+                OR message ILIKE '%Media inventory%'
+--- a/backend/app/celery_factory.py	2026-10-04 15:21:56.275644883 +0000
++++ b/backend/app/celery_factory.py	2026-10-04 15:21:56.320491930 +0000
+@@ -30,7 +30,8 @@
+     "app.tasks.rag_append_task": {"queue": "rag-index"},
+     "app.tasks.ocr_drain_task": {"queue": "ocr"},
+     "app.tasks.ocr_bucket_task": {"queue": "ocr"},
+-    "app.tasks.axiom_artifact_inventory_task": {"queue": "disk-parse"},
++    # V45.2: own lane — inventory no longer waits behind parse/enrich on disk-parse.
++    "app.tasks.axiom_artifact_inventory_task": {"queue": "disk-inventory"},
+     "app.tasks.graph_sync_task": {"queue": "agent-orchestration"},
+     "app.tasks.rag_enrich_task": {"queue": "disk-parse"},
+     "app.tasks.report_gen_task": {"queue": "report-gen"},
+--- a/backend/app/forensic_common/pipeline_routing.py	2026-10-04 15:21:56.275658060 +0000
++++ b/backend/app/forensic_common/pipeline_routing.py	2026-10-04 15:21:56.320605078 +0000
+@@ -205,7 +205,7 @@
+             "name": "Artifact Inventory Agent (Disk)",
+             "stage": "artifact_inventory",
+             "description": "Disk/EWF catalog artifact counts (extension census + Windows collectors).",
+-            "queue": "disk-build",
++            "queue": "disk-inventory",
+             "task": "app.tasks.axiom_artifact_inventory_task",
+             "domain": "disk",
+         },
+--- a/docker-compose.yml	2026-10-04 15:21:56.275733614 +0000
++++ b/docker-compose.yml	2026-10-04 15:21:56.320812820 +0000
+@@ -485,7 +485,8 @@
+       - --concurrency=8
+       - --prefetch-multiplier=1
+       - -Q
+-      - disk-build
++      # V45.2: inventory has its own lane; the disk pool is idle after extraction.
++      - disk-build,disk-inventory
+ 
+   # Dedicated parse pool so parse bursts cannot occupy every disk-build process.
+   worker-parse:
+@@ -524,7 +525,7 @@
+       - --concurrency=${PARSE_CELERY_CONCURRENCY:-6}
+       - --prefetch-multiplier=1
+       - -Q
+-      - disk-parse
++      - disk-parse,disk-inventory
+ 
+   # GPU embeddings on rag-index. OCR runs on worker-ocr-gpu so both can overlap.
+   worker-rag-gpu:

@@ -1,0 +1,91 @@
+Dynamic Windows Forensic Drive Mount Fix - Validation Results
+Date: 2026-09-05
+Project: rag_new2_100
+
+1. Focused Python/backend regression suite
+Command:
+  PYTHONPATH=backend python3 -m pytest -q \
+    backend/tests/test_host_evidence_paths.py \
+    backend/tests/test_hostdrive_agent_refresh.py \
+    backend/tests/test_dynamic_drive_compose.py
+Result:
+  17 passed in 0.41s
+
+Coverage includes:
+  - filesystem-agnostic /proc/self/mountinfo detection (VirtioFS, gRPC-FUSE, 9p)
+  - exact /host/<letter> mountpoint matching
+  - forwarding exact required Windows evidence path to the HostDrive helper
+  - joining an already-running refresh instead of failing on HTTP 409
+  - dynamic drive Compose file is used as an override, not Compose include
+  - generated drive override only contains safe read-only /host/<letter> binds
+  - create_host_path=false is enforced
+  - generator scans A through Z and has no hardcoded F/G/H/I/J list
+  - helper quotes Root and RequiredPath when launching the background job
+
+2. Python syntax/bytecode validation
+Files:
+  backend/app/services/host_evidence.py
+  backend/app/services/hostdrive_agent.py
+  backend/app/routers/hostdrive.py
+Result:
+  PASS
+
+3. Docker Compose YAML/structure validation (parser-level)
+Files:
+  docker-compose.yml
+  docker-compose.https.yml
+  docker-compose.drives.generated.yml
+Result:
+  PASS
+
+Additional structural assertions:
+  - docker-compose.drives.generated.yml is NOT loaded through top-level include
+  - generated service mounts target only /host/<letter>
+  - every generated drive bind is read_only=true
+  - every generated drive bind uses bind.create_host_path=false
+Result:
+  PASS
+
+4. Frontend TypeScript syntax transpilation
+Files:
+  frontend/src/lib/hostDriveHelper.ts
+  frontend/src/components/forensic/HostEvidencePanel.tsx
+Compiler used:
+  TypeScript 5.8.3 transpileModule (syntax diagnostics)
+Result:
+  PASS
+
+Note: a full npm build was not used as the final validation in this sandbox because the
+uploaded archive's frontend/node_modules did not contain a complete install. The patched
+TypeScript/TSX files pass compiler syntax transpilation. Reinstall dependencies on the normal
+build host with npm ci before the production frontend build.
+
+5. PowerShell source static checks
+Files:
+  scripts/generate-drive-mounts.ps1
+  scripts/refresh-drive-mounts-job.ps1
+  scripts/host-drive-helper.ps1
+  scripts/hostdrive-agent.ps1
+  scripts/test-dynamic-drive-mounts.ps1
+Result:
+  PASS for static here-string/source integrity checks.
+
+Environment limitation:
+  This Linux sandbox does not provide Docker, Windows PowerShell, or pwsh, so it cannot attach
+  a real Windows G:/H:/I:/... drive to Docker Desktop. For that reason, a Windows/Docker E2E
+  test script was added to the project:
+
+  powershell -ExecutionPolicy Bypass -File .\scripts\test-dynamic-drive-mounts.ps1 `
+    -RequiredPath "G:\Ex.1 Darshan SSD 256"
+
+The E2E script verifies the real selected path in Windows, refreshes/recreates the four forensic
+containers as necessary, validates the merged Compose model, and verifies the exact path is
+readable inside api, worker-disk, worker-mobile, and worker-report. It is drive-letter agnostic.
+
+6. Existing unrelated test baseline
+backend/tests/test_disk_phase2.py currently has two pre-existing failures around treating
+"28_01_2025Vivo.pas" as a disk image:
+  patched tree:  2 failed, 8 passed
+  pristine tree: 2 failed, 8 passed
+These failures are identical before and after this drive-mount fix and are unrelated to the
+changes in this package.

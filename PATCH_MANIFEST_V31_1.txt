@@ -1,0 +1,23 @@
+Polaron Artifact + Dashboard Fix V31.1
+Base: server-local zero-copy V30
+
+Changed/added files:
+- ARTIFACT_PAGE_RENDER_FIX_V31_20260926.md
+- backend/app/routers/artifacts.py
+- backend/app/routers/jobs.py
+- backend/tests/test_artifact_page_render_v31.py
+- frontend/nginx-gateway.conf
+- frontend/src/components/AppErrorBoundary.tsx
+- frontend/src/components/charts/ApiCharts.tsx
+- frontend/src/components/forensic/ArtifactCategoryTree.tsx
+- frontend/src/components/forensic/ArtifactPreviewPanel.tsx
+- frontend/src/components/forensic/MobileArtifactBoard.tsx
+- frontend/src/components/forensic/useInfiniteArtifactPage.ts
+- frontend/src/lib/forensicApi.ts
+- frontend/src/lib/safeNumber.ts
+- frontend/src/lib/types/forensic.ts
+- frontend/src/main.tsx
+- frontend/src/pages/Dashboard.tsx
+- frontend/src/pages/forensic/ArtifactExplorerPage.tsx
+- frontend/src/pages/forensic/ArtifactSelectionPage.tsx
+- frontend/src/pages/forensic/JobDetailPage.tsx

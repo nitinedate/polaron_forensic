@@ -1,0 +1,16 @@
+services:
+  # Extra public edge next to the existing localhost:3001 frontend.
+  # Does not recreate or remove rag_new2-frontend-1.
+  frontend-public:
+    image: rag_new2-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deployment/windows-ip-https/nginx.https.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deployment/windows-ip-https/certs:/etc/letsencrypt/live/122.170.114.36:ro
+      - ./deployment/windows-ip-https/acme-www:/var/www/certbot:ro
+    depends_on:
+      api:
+        condition: service_healthy

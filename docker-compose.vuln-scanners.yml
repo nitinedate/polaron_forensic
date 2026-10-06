@@ -1,0 +1,124 @@
+# Auxiliary vulnerability scanners. ZAP/Trivy use profile: vuln-scanners.
+# Wazuh uses a separate profile: wazuh because it requires enrolled agents.
+# Start host/web sidecars: docker compose --profile vuln-scanners up -d
+# Start Wazuh when needed: docker compose --profile wazuh up -d
+# Wazuh requires TLS certs under docker/wazuh/config/wazuh_indexer_ssl_certs/.
+
+services:
+  zap:
+    image: zaproxy/zap-stable
+    restart: on-failure
+    profiles:
+      - vuln-scanners
+    command:
+      - zap.sh
+      - -daemon
+      - -host
+      - "0.0.0.0"
+      - -port
+      - "8080"
+      - -config
+      - api.addrs.addr.name=.*
+      - -config
+      - api.addrs.addr.regex=true
+      - -config
+      - api.key=${ZAP_API_KEY:-changeme}
+    ports:
+      - "${ZAP_PORT:-8090}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf 'http://127.0.0.1:8080/JSON/core/view/version/?apikey=${ZAP_API_KEY:-changeme}' || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 8
+      start_period: 120s
+
+  trivy:
+    image: aquasec/trivy:0.58.1
+    restart: on-failure
+    profiles:
+      - vuln-scanners
+    command: ["server", "--listen", "0.0.0.0:4954"]
+    ports:
+      - "${TRIVY_PORT:-4954}:4954"
+    volumes:
+      - trivy_cache:/root/.cache/
+    healthcheck:
+      test: ["CMD", "trivy", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  wazuh-indexer:
+    image: wazuh/wazuh-indexer:4.9.2
+    hostname: wazuh.indexer
+    restart: on-failure
+    profiles:
+      - wazuh
+    environment:
+      # Security plugin needs >=1g heap; 256m causes OOM on startup (sha256 jar scan).
+      OPENSEARCH_JAVA_OPTS: ${WAZUH_INDEXER_JAVA_OPTS:--Xms1g -Xmx1g -XX:MaxDirectMemorySize=512m}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+    volumes:
+      - wazuh_indexer_data:/var/lib/wazuh-indexer
+      - ./docker/wazuh/config/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-indexer/certs/root-ca.pem:ro
+      - ./docker/wazuh/config/wazuh_indexer_ssl_certs/wazuh.indexer-key.pem:/usr/share/wazuh-indexer/certs/wazuh.indexer.key:ro
+      - ./docker/wazuh/config/wazuh_indexer_ssl_certs/wazuh.indexer.pem:/usr/share/wazuh-indexer/certs/wazuh.indexer.pem:ro
+      - ./docker/wazuh/config/wazuh_indexer_ssl_certs/admin.pem:/usr/share/wazuh-indexer/certs/admin.pem:ro
+      - ./docker/wazuh/config/wazuh_indexer_ssl_certs/admin-key.pem:/usr/share/wazuh-indexer/certs/admin-key.pem:ro
+      - ./docker/wazuh/config/wazuh_indexer/wazuh.indexer.yml:/usr/share/wazuh-indexer/opensearch.yml:ro
+      - ./docker/wazuh/config/wazuh_indexer/internal_users.yml:/usr/share/wazuh-indexer/opensearch-security/internal_users.yml:ro
+    expose:
+      - "9200"
+
+  wazuh-manager:
+    image: wazuh/wazuh-manager:4.9.2
+    hostname: wazuh.manager
+    restart: on-failure
+    profiles:
+      - wazuh
+    depends_on:
+      - wazuh-indexer
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 655360
+        hard: 655360
+    ports:
+      - "${WAZUH_API_PORT:-55000}:55000"
+    environment:
+      INDEXER_URL: https://wazuh.indexer:9200
+      INDEXER_USERNAME: admin
+      INDEXER_PASSWORD: ${WAZUH_INDEXER_PASSWORD:-SecretPassword}
+      FILEBEAT_SSL_VERIFICATION_MODE: full
+      SSL_CERTIFICATE_AUTHORITIES: /etc/ssl/root-ca.pem
+      SSL_CERTIFICATE: /etc/ssl/filebeat.pem
+      SSL_KEY: /etc/ssl/filebeat.key
+      API_USERNAME: ${WAZUH_API_USER:-wazuh-wui}
+      API_PASSWORD: ${WAZUH_API_PASSWORD:-MyS3cr37P450r.*-}
+    volumes:
+      - wazuh_manager_api:/var/ossec/api/configuration
+      - wazuh_manager_etc:/var/ossec/etc
+      - wazuh_manager_logs:/var/ossec/logs
+      - ./docker/wazuh/config/wazuh_indexer_ssl_certs/root-ca-manager.pem:/etc/ssl/root-ca.pem:ro
+      - ./docker/wazuh/config/wazuh_indexer_ssl_certs/wazuh.manager.pem:/etc/ssl/filebeat.pem:ro
+      - ./docker/wazuh/config/wazuh_indexer_ssl_certs/wazuh.manager-key.pem:/etc/ssl/filebeat.key:ro
+      - ./docker/wazuh/config/wazuh_cluster/wazuh_manager.conf:/wazuh-config-mount/etc/ossec.conf:ro
+
+volumes:
+  trivy_cache:
+  wazuh_indexer_data:
+  wazuh_manager_api:
+  wazuh_manager_etc:
+  wazuh_manager_logs:

@@ -1,0 +1,2 @@
+﻿HTTP_STATUS=200
+{"ok":true,"scanner_id":"5ab9f684-813d-4b09-aa62-2b90afaa498d","scanner_name":"external","tenant":"aetheris"}

@@ -1,0 +1,18 @@
+V41 - Mobile Full Artifact + Deleted Recovery + Vendor-Neutral UI
+
+Changed:
+- backend/app/routers/jobs.py
+- backend/app/services/mobile_forensic/inventory.py
+- backend/app/services/mobile_forensic/storage.py
+- backend/app/services/mobile_forensic/parsers/messaging.py
+- backend/app/services/mobile_forensic/plugins.py
+- frontend/src/components/forensic/MobileArtifactBoard.tsx
+- frontend/src/pages/forensic/DiskArtifactsHubPage.tsx
+- backend/tests/test_mobile_artifacts_v41.py
+- MOBILE_FULL_ARTIFACT_DELETED_RECOVERY_V41_20260929.md
+
+Validation:
+- Python compile: PASS
+- Targeted V41/mobile inventory/family/isolation tests: 31 PASS
+- Broader mobile suite: 145 PASS, 10 pre-existing/unrelated failures (legacy V40 expectations/environment psycopg2 missing)
+- Frontend full build could not run because the supplied tree's node_modules is incomplete (vite/react typings missing).

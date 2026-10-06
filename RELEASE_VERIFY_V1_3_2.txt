@@ -1,0 +1,56 @@
+Polaron Complete v1.3.2 - Disk/RAG High Throughput Release
+==========================================================
+
+Release objective
+-----------------
+- 50 GB forensic/artifact-ready baseline: <30 min when source/storage can sustain the required throughput.
+- 500 GB forensic/artifact-ready baseline: <3 h when source/storage can sustain the required throughput.
+- HDD-specific sequential source reading.
+- No silent evidence loss: immutable source, required complete inventory, hashes on materialized files, explicit unreadable/filtered counts.
+
+Implemented
+-----------
+[OK] HDD/SSD/NVMe source-media profile and DISK_SOURCE_MEDIA override.
+[OK] HDD planner uses one sequential image reader and contiguous shards.
+[OK] Large evidence files stream directly to tar/zstd in bounded chunks.
+[OK] SHA-256 can be calculated in the same evidence read pass; enabled in SLO defaults.
+[OK] Full filesystem inventory is streamed to compressed JSONL and required by default.
+[OK] Extract plans/shard indexes/final index use bounded-memory streamed JSONL+zstd.
+[OK] Parse reads each tar.zst shard once even when artifacts require different byte budgets.
+[OK] RAG raw-text fallback groups files by shard and uses one stream pass per shard/batch.
+[OK] Legacy RAG shard reader no longer loads/decompresses an entire multi-GB shard into RAM.
+[OK] Local object-store put_file no longer reads an entire shard into RAM before copying.
+[OK] GPU OCR/RAG remain off the source-critical extraction path by default.
+[OK] MAX_CONCURRENT_DISK_BUILDS defaults to 1 for deterministic single-case HDD latency.
+[OK] Parse baseline increased to 8 workers / 4 buckets with 250-row DB commit batches.
+[OK] New read-only source throughput preflight: scripts/benchmark-disk-read.py.
+[OK] New focused tests: backend/tests/test_disk_high_throughput_v132.py.
+
+Workspace verification
+----------------------
+[PASS] python3 -m compileall backend/app
+[PASS] AST parse of all v1.3.2 changed Python/test scripts
+[PASS] docker-compose.yml YAML parse (20 services)
+[PASS] v1.3.2 config assertions
+[PASS] DISK_SOURCE_MEDIA=hdd deterministic media-profile logic check
+
+Runtime-test limitation in build workspace
+------------------------------------------
+Full pytest collection is not possible in the artifact-build environment because the project's
+runtime wheels zstandard and psycopg2-binary are not installed and network package installation
+is disabled. Run the following against the built backend image, which installs requirements.txt:
+
+  docker compose build --no-cache api worker-disk worker-parse rag-gpu
+  docker compose run --rm api pytest -q \
+    tests/test_disk_high_throughput_v132.py \
+    tests/test_extract_parallel_plan.py \
+    tests/test_dual_rag_chunk.py
+
+Production SLO caveat
+---------------------
+The SLO cannot override physical I/O limits. 50 GB/30 min needs ~28 MB/s before overhead;
+500 GB/3 h needs ~46 MB/s before overhead. Slow/failing/fragmented HDDs, USB 2.0, NAS latency,
+highly compressed E01, encrypted containers, extreme small-file counts, or competing workloads
+can exceed the target. Use the included benchmark script and benchmark the same image/policy before/after.
+
+See DISK_RAG_HIGH_THROUGHPUT_V1_3_2.md for architecture, evidence model, configuration and acceptance gates.

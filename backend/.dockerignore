@@ -1,0 +1,15 @@
+__pycache__
+**/__pycache__
+*.py[cod]
+*$py.class
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+*.egg-info
+.git
+.venv
+venv
+*.md
+scripts/_tmp*

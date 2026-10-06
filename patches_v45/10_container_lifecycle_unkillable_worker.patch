@@ -1,0 +1,799 @@
+--- a/scripts/start-stack.ps1	2026-10-04 08:42:17.000000000 +0000
++++ b/scripts/start-stack.ps1	2026-10-04 16:55:32.679235314 +0000
+@@ -6,12 +6,16 @@
+     [switch]$IncludeGvm,
+     [switch]$IncludeWazuh,
+     [switch]$NoBuild,
+-    [switch]$SkipGateway
++    [switch]$SkipGateway,
++    # V45.3: on "cannot stop container ... did not receive an exit event" restart the
++    # Docker Desktop engine automatically and retry the wave once.
++    [switch]$AutoRecoverEngine
+ )
+ 
+ $ErrorActionPreference = "Stop"
+ $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+ . (Join-Path $root "scripts\free-published-ports.ps1")
++. (Join-Path $root "scripts\docker-engine-recovery.ps1")
+ 
+ function Get-Docker {
+     $docker = Get-Command docker -ErrorAction SilentlyContinue
+@@ -176,7 +180,7 @@
+                     throw "docker wait failed for one-shot container $id"
+                 }
+                 if ([int]$code -ne 0) {
+-                    & $Docker logs --tail 40 $id 2>&1 | Write-Host
++                    (Invoke-NativeCapture -Exe $Docker -Arguments @("logs", "--tail", "40", $id)).Lines | ForEach-Object { Write-Host $_ }
+                     throw "one-shot container $id exited with code $code"
+                 }
+             }
+@@ -199,11 +203,21 @@
+             $buildOnce = $false
+         }
+         $upArgs += $durable
+-        & $Docker @composeArgs @upArgs
+-        if ($LASTEXITCODE -ne 0) {
++        # V45.3: workers are stopped with their grace period BEFORE recreate so Celery
++        # cold-shutdown can release CUDA/locks; `up -d` alone uses a 10 s default and
++        # SIGKILLs mid-task, which is what produced the unkillable container.
++        $workerNames = @($durable | Where-Object { $_ -like "worker-*" })
++        if ($workerNames.Count) {
++            $stopped = Stop-AetherisWorkers -Docker $Docker -ComposeArgs $composeArgs -Services $workerNames -GraceSec 120
++            if (-not $stopped) {
++                Write-Host "A worker container could not be stopped; invoking recovery." -ForegroundColor Yellow
++            }
++        }
++        $waveOk = Invoke-ComposeWithRecovery -Docker $Docker -ComposeArgs $composeArgs -ComposeCommand $upArgs -AutoRecoverEngine:$AutoRecoverEngine
++        if (-not $waveOk) {
+             if ($durable -contains "gvmd") {
+                 Write-Host "Greenbone did not become healthy. Recent gvmd and pg-gvm logs:" -ForegroundColor Yellow
+-                & $Docker @composeArgs logs --tail 40 gvmd pg-gvm 2>&1 | Write-Host
++                (Invoke-NativeCapture -Exe $Docker -Arguments ($composeArgs + @("logs", "--tail", "40", "gvmd", "pg-gvm"))).Lines | ForEach-Object { Write-Host $_ }
+             }
+             throw "docker compose failed for $Name wave [$($durable -join ', ')] (exit $LASTEXITCODE)"
+         }
+--- a/script_docker/start_docker.ps1	2026-10-04 08:42:17.000000000 +0000
++++ b/script_docker/start_docker.ps1	2026-10-04 16:13:14.238578527 +0000
+@@ -372,7 +372,9 @@
+ $stackArgs = @(
+     "-NoProfile", "-ExecutionPolicy", "Bypass",
+     "-File", (Join-Path $root "scripts\start-stack.ps1"),
+-    "-Service", "all", "-NoBuild"
++    "-Service", "all", "-NoBuild",
++    # V45.3: production must never be left half-recreated by an unkillable worker.
++    "-AutoRecoverEngine"
+ )
+ # Production and the public host publish 80/443. Do not also bind 0.0.0.0:3000
+ # here — that port is already taken on the production machine, and the HTTPS
+--- a/backend/app/celery_factory.py	2026-10-03 18:34:39.000000000 +0000
++++ b/backend/app/celery_factory.py	2026-10-04 16:13:14.233939594 +0000
+@@ -30,7 +30,8 @@
+     "app.tasks.rag_append_task": {"queue": "rag-index"},
+     "app.tasks.ocr_drain_task": {"queue": "ocr"},
+     "app.tasks.ocr_bucket_task": {"queue": "ocr"},
+-    "app.tasks.axiom_artifact_inventory_task": {"queue": "disk-parse"},
++    # V45.2: own lane — inventory no longer waits behind parse/enrich on disk-parse.
++    "app.tasks.axiom_artifact_inventory_task": {"queue": "disk-inventory"},
+     "app.tasks.graph_sync_task": {"queue": "agent-orchestration"},
+     "app.tasks.rag_enrich_task": {"queue": "disk-parse"},
+     "app.tasks.report_gen_task": {"queue": "report-gen"},
+@@ -103,6 +104,8 @@
+     "accept_content": ["json"],
+     "task_track_started": True,
+     "task_acks_late": True,
++    # V45.3: never leave a long task un-acked forever on broker loss; it is redelivered.
++    "worker_cancel_long_running_tasks_on_connection_loss": True,
+     "worker_prefetch_multiplier": 1,
+     "broker_connection_retry_on_startup": True,
+     "broker_connection_retry": True,
+@@ -150,4 +153,53 @@
+                 "kwargs": {},
+             },
+         }
++    register_shutdown_hooks(celery)
+     return celery
++
++
++# ---------------------------------------------------------------------------
++# V45.3 — deterministic shutdown. On SIGTERM/SIGQUIT (compose stop/recreate) the
++# worker releases what makes a container unkillable or leaves peers waiting:
++#   * CUDA residents (GLM-OCR, embedder) so the nvidia context is torn down before
++#     the process exits (Docker Desktop/WSL2 cannot kill a container that still
++#     holds a GPU context);
++#   * Redis heavy leases / job locks held by this process so other products do not
++#     wait on a stale GPU lane for the lock TTL.
++# ---------------------------------------------------------------------------
++
++def _release_on_shutdown(**_kwargs) -> None:
++    import logging
++    import os
++
++    log = logging.getLogger("celery.shutdown")
++    if (os.environ.get("CELERY_SHUTDOWN_RELEASE_GPU") or "true").strip().lower() not in {"1", "true", "yes", "on"}:
++        return
++    for label, fn in (
++        ("glm-ocr", lambda: __import__("app.services.ocr_gpu", fromlist=["unload_glm_ocr"]).unload_glm_ocr()),
++        ("embedder", lambda: __import__("app.services.embedding_gpu", fromlist=["unload_embedder"]).unload_embedder()),
++        ("gpu-lease", lambda: __import__("app.services.job_locks", fromlist=["release_gpu_heavy_slot"]).release_gpu_heavy_slot()),
++        ("cpu-lease", lambda: __import__("app.services.job_locks", fromlist=["release_cpu_heavy_slot"]).release_cpu_heavy_slot()),
++    ):
++        try:
++            fn()
++            log.info("shutdown: released %s", label)
++        except Exception as exc:  # never block shutdown
++            log.debug("shutdown: %s release skipped: %s", label, exc)
++    try:
++        import torch
++
++        if torch.cuda.is_available():
++            torch.cuda.synchronize()
++            torch.cuda.empty_cache()
++    except Exception:
++        pass
++
++
++def register_shutdown_hooks(app) -> None:
++    try:
++        from celery.signals import worker_process_shutdown, worker_shutting_down
++
++        worker_shutting_down.connect(_release_on_shutdown, weak=False)
++        worker_process_shutdown.connect(_release_on_shutdown, weak=False)
++    except Exception:
++        pass
+--- a/docker-compose.yml	2026-10-04 05:27:18.000000000 +0000
++++ b/docker-compose.yml	2026-10-04 16:14:30.550438163 +0000
+@@ -27,6 +27,19 @@
+     - default
+     - aetheris-common
+ 
++# V45.3 container lifecycle. Celery runs as PID 1 (entrypoint execvp); without an init
++# process signals are not forwarded/reaped, and compose's default 10 s grace then
++# SIGKILLs the worker mid-task. A child blocked in uninterruptible I/O (9p/gRPC-FUSE
++# bind mount of G:\ evidence) or inside a CUDA call cannot be killed, the PID
++# namespace never tears down and Docker reports
++#   "cannot stop container: tried to kill container, but did not receive an exit event".
++# tini + a real grace period + Celery cold shutdown (REMAP_SIGTERM) make stops
++# deterministic; acks_late tasks are redelivered after restart.
++x-worker-lifecycle: &worker-lifecycle
++  init: true
++  stop_signal: SIGTERM
++  stop_grace_period: 120s
++
+ # Probe host room (CPU/RAM/GPU/thermal) then exec celery — see scripts/dynamic_perf_entrypoint.py
+ x-dynamic-entrypoint: &dynamic-entrypoint
+   - python
+@@ -35,6 +48,10 @@
+ x-worker-env: &worker-env
+   DATABASE_URL: postgresql+psycopg2://forensic:forensic@postgres:5432/forensic
+   REDIS_URL: redis://redis:6379/0
++  # V45.3: SIGTERM => cold shutdown (stop consuming, terminate children, exit) instead of
++  # warm shutdown that waits for an hours-long extraction and then gets SIGKILLed.
++  REMAP_SIGTERM: ${CELERY_REMAP_SIGTERM:-SIGQUIT}
++  CELERY_SHUTDOWN_RELEASE_GPU: ${CELERY_SHUTDOWN_RELEASE_GPU:-true}
+   RESOURCE_GOVERNOR_ENABLED: ${RESOURCE_GOVERNOR_ENABLED:-true}
+   RESOURCE_GOVERNOR_REDIS_URL: ${RESOURCE_GOVERNOR_REDIS_URL:-redis://redis:6379/15}
+   RESOURCE_GOVERNOR_GROUP: ${RESOURCE_GOVERNOR_GROUP:-aetheris-host}
+@@ -42,10 +59,14 @@
+   RESOURCE_GOVERNOR_CPU_MAX_SLOTS: ${RESOURCE_GOVERNOR_CPU_MAX_SLOTS:-10}
+   RESOURCE_GOVERNOR_GPU_MAX_SLOTS: ${RESOURCE_GOVERNOR_GPU_MAX_SLOTS:-4}
+   GPU_RELEASE_MODEL_AFTER_TASK: ${GPU_RELEASE_MODEL_AFTER_TASK:-true}
+-  # Small per-process pools prevent Celery prefork children from exhausting Postgres.
+-  DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-2}
+-  DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-2}
+-  DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30}
++  # V45: one extraction task runs main + flusher + stop-poller + heartbeat sessions.
++  # The old 2+2 pool was fully consumed by those four, so the first shard thread that
++  # needed a connection died with "QueuePool limit of size 2 overflow 2 reached".
++  # Shard threads are now DB-free (extract_shard_v45); 4+8 leaves headroom for
++  # phase-3 hand-offs. Budget: worker-disk 8 x 12 + worker-parse 6 x 12 < max_connections=200.
++  DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-4}
++  DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-8}
++  DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-90}
+   MINIO_ENDPOINT: minio:9000
+   MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+   MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+@@ -371,6 +392,8 @@
+ 
+   api:
+     <<: *common-net
++    init: true
++    stop_grace_period: 30s
+     image: rag_new2-api
+     build:
+       context: ./backend
+@@ -405,6 +428,7 @@
+       - ./scripts:/scripts
+       - ./migrations:/migrations
+       - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
++      - evidence_staging:/host/${EVIDENCE_STAGING_LETTER:-z}
+       - type: bind
+         source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data
+         target: /app/data
+@@ -437,7 +461,7 @@
+ 
+   # Disk extract/parse — forensic product only (vuln scans live in services/vuln).
+   worker-disk:
+-    <<: *common-net
++    <<: [*common-net, *worker-lifecycle]
+     image: rag_new2-api
+     build:
+       context: ./backend
+@@ -452,12 +476,18 @@
+       - ./backend:/app
+       - ./scripts:/scripts:ro
+       - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
++      - evidence_staging:/host/${EVIDENCE_STAGING_LETTER:-z}
+       - type: bind
+         source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/job-data
+         target: /app/data
+       - type: bind
+         source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/uploads
+         target: /app/data/uploads
++      # V45: scratch for shard spool/parts. Point EXTRACT_SCRATCH_HOST_DIR at an NVMe/SSD
++      # folder when the evidence drive is a USB HDD so reads and temp writes never share spindles.
++      - type: bind
++        source: ${EXTRACT_SCRATCH_HOST_DIR:-${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/scratch}
++        target: /scratch
+     depends_on:
+       api:
+         condition: service_healthy
+@@ -476,11 +506,12 @@
+       - --concurrency=8
+       - --prefetch-multiplier=1
+       - -Q
+-      - disk-build
++      # V45.2: inventory has its own lane; the disk pool is idle after extraction.
++      - disk-build,disk-inventory
+ 
+   # Dedicated parse pool so parse bursts cannot occupy every disk-build process.
+   worker-parse:
+-    <<: *common-net
++    <<: [*common-net, *worker-lifecycle]
+     image: rag_new2-api
+     build:
+       context: ./backend
+@@ -494,6 +525,7 @@
+       - ./backend:/app
+       - ./scripts:/scripts:ro
+       - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
++      - evidence_staging:/host/${EVIDENCE_STAGING_LETTER:-z}
+       - type: bind
+         source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/job-data
+         target: /app/data
+@@ -515,11 +547,11 @@
+       - --concurrency=${PARSE_CELERY_CONCURRENCY:-6}
+       - --prefetch-multiplier=1
+       - -Q
+-      - disk-parse
++      - disk-parse,disk-inventory
+ 
+   # GPU embeddings on rag-index. OCR runs on worker-ocr-gpu so both can overlap.
+   worker-rag-gpu:
+-    <<: *common-net
++    <<: [*common-net, *worker-lifecycle]
+     image: rag_new2-api
+     build:
+       context: ./backend
+@@ -587,7 +619,7 @@
+ 
+   # Dedicated OCR GPU worker — independent of RAG embeddings (two GPU slots).
+   worker-ocr-gpu:
+-    <<: *common-net
++    <<: [*common-net, *worker-lifecycle]
+     image: rag_new2-api
+     build:
+       context: ./backend
+@@ -646,7 +678,7 @@
+       - ocr
+ 
+   worker-report:
+-    <<: *common-net
++    <<: [*common-net, *worker-lifecycle]
+     image: rag_new2-api
+     build:
+       context: ./backend
+@@ -687,7 +719,7 @@
+ 
+   # Forensic Agentic AI — isolated from disk-build / rag-index
+   worker-agent:
+-    <<: *common-net
++    <<: [*common-net, *worker-lifecycle]
+     image: rag_new2-api
+     build:
+       context: ./backend
+@@ -732,7 +764,7 @@
+       - agent-orchestration
+ 
+   worker-beat:
+-    <<: *common-net
++    <<: [*common-net, *worker-lifecycle]
+     image: rag_new2-api
+     build:
+       context: ./backend
+@@ -776,6 +808,11 @@
+         condition: service_healthy
+ 
+ volumes:
++  # V45.3: evidence staged into the docker-desktop VM (ext4). Reads are native —
++  # no Windows file-sharing layer, so no 2-3 MB/s ceiling and no unkillable
++  # D-state worker. Appears in the UI as drive ${EVIDENCE_STAGING_LETTER:-Z}:.
++  # Fill it with Stage-Evidence.cmd <source folder> <case name>.
++  evidence_staging:
+   neo4j_data:
+   opensearch_data:
+ 
+--- a/services/mobile-android/docker-compose.yml	2026-10-04 10:30:54.000000000 +0000
++++ b/services/mobile-android/docker-compose.yml	2026-10-04 16:13:46.115970814 +0000
+@@ -13,6 +13,9 @@
+   VULN_MODULE_ENABLED: "false"
+   DATABASE_URL: postgresql+psycopg2://forensic:forensic@postgres:5432/forensic
+   REDIS_URL: redis://redis:6379/1
++  # V45.3: SIGTERM => Celery cold shutdown; see root docker-compose.yml x-worker-lifecycle.
++  REMAP_SIGTERM: ${CELERY_REMAP_SIGTERM:-SIGQUIT}
++  CELERY_SHUTDOWN_RELEASE_GPU: ${CELERY_SHUTDOWN_RELEASE_GPU:-true}
+   # Shared leases only. Job state/evidence NEVER enters this Redis.
+   RESOURCE_GOVERNOR_ENABLED: ${RESOURCE_GOVERNOR_ENABLED:-true}
+   RESOURCE_GOVERNOR_REDIS_URL: ${RESOURCE_GOVERNOR_REDIS_URL:-redis://redis:6379/15}
+@@ -119,6 +122,8 @@
+ 
+   api:
+     <<: *app-common
++    init: true
++    stop_grace_period: 30s
+     environment:
+       <<: *mobile-env
+       DB_POOL_SIZE: ${MOBILE_API_DB_POOL_SIZE:-10}
+@@ -153,6 +158,9 @@
+ 
+   worker-build:
+     <<: *app-common
++    init: true
++    stop_signal: SIGTERM
++    stop_grace_period: 120s
+     depends_on:
+       api: {condition: service_healthy}
+       nvidia-cuda: {condition: service_healthy}
+@@ -163,6 +171,9 @@
+   # starve new android acquisitions/builds.
+   worker-parse:
+     <<: *app-common
++    init: true
++    stop_signal: SIGTERM
++    stop_grace_period: 120s
+     depends_on:
+       api: {condition: service_healthy}
+       nvidia-cuda: {condition: service_healthy}
+@@ -171,6 +182,9 @@
+ 
+   worker-rag:
+     <<: *app-common
++    init: true
++    stop_signal: SIGTERM
++    stop_grace_period: 120s
+     environment:
+       <<: *mobile-env
+       OCR_ENABLED: "false"
+@@ -183,6 +197,9 @@
+ 
+   worker-ocr:
+     <<: *app-common
++    init: true
++    stop_signal: SIGTERM
++    stop_grace_period: 120s
+     environment:
+       <<: *mobile-env
+       OCR_CELERY_CONCURRENCY: "1"
+@@ -196,6 +213,9 @@
+ 
+   worker-report:
+     <<: *app-common
++    init: true
++    stop_signal: SIGTERM
++    stop_grace_period: 120s
+     depends_on:
+       api: {condition: service_healthy}
+       nvidia-cuda: {condition: service_healthy}
+@@ -204,6 +224,9 @@
+ 
+   worker-beat:
+     <<: *app-common
++    init: true
++    stop_signal: SIGTERM
++    stop_grace_period: 120s
+     depends_on:
+       api: {condition: service_healthy}
+       nvidia-cuda: {condition: service_healthy}
+--- a/services/mobile-ios/docker-compose.yml	2026-10-04 10:30:54.000000000 +0000
++++ b/services/mobile-ios/docker-compose.yml	2026-10-04 16:13:46.117600933 +0000
+@@ -13,6 +13,9 @@
+   VULN_MODULE_ENABLED: "false"
+   DATABASE_URL: postgresql+psycopg2://forensic:forensic@postgres:5432/forensic
+   REDIS_URL: redis://redis:6379/2
++  # V45.3: SIGTERM => Celery cold shutdown; see root docker-compose.yml x-worker-lifecycle.
++  REMAP_SIGTERM: ${CELERY_REMAP_SIGTERM:-SIGQUIT}
++  CELERY_SHUTDOWN_RELEASE_GPU: ${CELERY_SHUTDOWN_RELEASE_GPU:-true}
+   # Shared leases only. Job state/evidence NEVER enters this Redis.
+   RESOURCE_GOVERNOR_ENABLED: ${RESOURCE_GOVERNOR_ENABLED:-true}
+   RESOURCE_GOVERNOR_REDIS_URL: ${RESOURCE_GOVERNOR_REDIS_URL:-redis://redis:6379/15}
+@@ -119,6 +122,8 @@
+ 
+   api:
+     <<: *app-common
++    init: true
++    stop_grace_period: 30s
+     environment:
+       <<: *mobile-env
+       DB_POOL_SIZE: ${MOBILE_API_DB_POOL_SIZE:-10}
+@@ -153,6 +158,9 @@
+ 
+   worker-build:
+     <<: *app-common
++    init: true
++    stop_signal: SIGTERM
++    stop_grace_period: 120s
+     depends_on:
+       api: {condition: service_healthy}
+       nvidia-cuda: {condition: service_healthy}
+@@ -163,6 +171,9 @@
+   # starve new ios acquisitions/builds.
+   worker-parse:
+     <<: *app-common
++    init: true
++    stop_signal: SIGTERM
++    stop_grace_period: 120s
+     depends_on:
+       api: {condition: service_healthy}
+       nvidia-cuda: {condition: service_healthy}
+@@ -171,6 +182,9 @@
+ 
+   worker-rag:
+     <<: *app-common
++    init: true
++    stop_signal: SIGTERM
++    stop_grace_period: 120s
+     environment:
+       <<: *mobile-env
+       OCR_ENABLED: "false"
+@@ -183,6 +197,9 @@
+ 
+   worker-ocr:
+     <<: *app-common
++    init: true
++    stop_signal: SIGTERM
++    stop_grace_period: 120s
+     environment:
+       <<: *mobile-env
+       OCR_CELERY_CONCURRENCY: "1"
+@@ -196,6 +213,9 @@
+ 
+   worker-report:
+     <<: *app-common
++    init: true
++    stop_signal: SIGTERM
++    stop_grace_period: 120s
+     depends_on:
+       api: {condition: service_healthy}
+       nvidia-cuda: {condition: service_healthy}
+@@ -204,6 +224,9 @@
+ 
+   worker-beat:
+     <<: *app-common
++    init: true
++    stop_signal: SIGTERM
++    stop_grace_period: 120s
+     depends_on:
+       api: {condition: service_healthy}
+       nvidia-cuda: {condition: service_healthy}
+--- /dev/null	2026-10-02 18:52:57.907876863 +0000
++++ b/scripts/docker-engine-recovery.ps1	2026-10-04 16:54:10.539710943 +0000
+@@ -0,0 +1,183 @@
++# V45.3b - Docker Desktop (WSL2) recovery for stuck containers.
++#
++# Symptom (production, during `docker compose up -d` recreate):
++#   Error response from daemon: cannot stop container: <id>: tried to kill container,
++#   but did not receive an exit event
++#
++# A process in the container is in an uninterruptible kernel state (Windows
++# bind-mount file-sharing layer or an NVIDIA/CUDA call). No docker command can
++# end it; only a docker-desktop VM restart can. This module:
++#   1. stops workers with the configured grace period BEFORE recreate;
++#   2. on the daemon error, tries `docker rm -f`; if that fails,
++#   3. restarts the Docker Desktop engine (wsl --shutdown + relaunch) and waits
++#      for `docker info` - gated by -AutoRecoverEngine.
++#
++# Windows PowerShell 5.1 rule (the V45.3a regression): when
++# $ErrorActionPreference = "Stop" is in effect, redirecting a native command's
++# stderr with 2>&1 turns EVERY stderr line into a terminating NativeCommandError.
++# Docker Compose prints its progress ("Container x Running") on stderr, so the
++# wrapper threw on the first healthy line. ALL native invocations in this file go
++# through Invoke-NativeCapture, which lowers the preference to Continue for the
++# duration of the call and converts ErrorRecords back into plain text.
++# Dot-source from start-stack.ps1.
++
++function Invoke-NativeCapture {
++    <#
++      Runs a native executable, merging stdout+stderr into plain text lines,
++      without letting $ErrorActionPreference = "Stop" terminate on stderr.
++      Returns @{ Lines = [string[]]; ExitCode = [int]; Text = [string] }.
++    #>
++    param(
++        [Parameter(Mandatory = $true)][string]$Exe,
++        [string[]]$Arguments = @()
++    )
++    $previous = $ErrorActionPreference
++    $ErrorActionPreference = "Continue"
++    $raw = @()
++    $code = 0
++    try {
++        $raw = @(& $Exe @Arguments 2>&1)
++        $code = $LASTEXITCODE
++    }
++    catch {
++        # Defensive: a host that still converts stderr into a terminating error.
++        $raw += $_.Exception.Message
++        $code = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 1 }
++    }
++    finally {
++        $ErrorActionPreference = $previous
++    }
++    $lines = @()
++    foreach ($item in $raw) {
++        if ($null -eq $item) { continue }
++        if ($item -is [System.Management.Automation.ErrorRecord]) {
++            $lines += [string]$item.Exception.Message
++        }
++        else {
++            $lines += [string]$item
++        }
++    }
++    if ($null -eq $code) { $code = 0 }
++    return @{ Lines = $lines; ExitCode = [int]$code; Text = ($lines -join "`n") }
++}
++
++function Test-StuckContainerError {
++    param([string]$Text)
++    if (-not $Text) { return $false }
++    return ($Text -match "did not receive an exit event") -or
++           ($Text -match "cannot stop container") -or
++           ($Text -match "cannot kill container") -or
++           ($Text -match "is not running or is not killable")
++}
++
++function Get-StuckContainerIds {
++    param([string]$Text)
++    $ids = @()
++    foreach ($m in [regex]::Matches(($Text | Out-String), "container[: ]+([0-9a-f]{12,64})")) {
++        $ids += $m.Groups[1].Value
++    }
++    return @($ids | Select-Object -Unique)
++}
++
++function Stop-AetherisWorkers {
++    param(
++        [string]$Docker,
++        [string[]]$ComposeArgs,
++        [string[]]$Services,
++        [int]$GraceSec = 120
++    )
++    if (-not $Services.Count) { return $true }
++    Write-Host "Stopping [$($Services -join ', ')] with ${GraceSec}s grace (Celery cold shutdown)..."
++    $r = Invoke-NativeCapture -Exe $Docker -Arguments ($ComposeArgs + @("stop", "-t", "$GraceSec") + $Services)
++    foreach ($line in $r.Lines) { Write-Host "  $line" }
++    if ($r.ExitCode -eq 0) { return $true }
++    return -not (Test-StuckContainerError $r.Text)
++}
++
++function Remove-StuckContainers {
++    param([string]$Docker, [string[]]$Ids)
++    $ok = $true
++    foreach ($id in $Ids) {
++        Write-Host "Force-removing stuck container $id ..." -ForegroundColor Yellow
++        $r = Invoke-NativeCapture -Exe $Docker -Arguments @("rm", "-f", $id)
++        foreach ($line in $r.Lines) { Write-Host "  $line" }
++        if ($r.ExitCode -ne 0 -and (Test-StuckContainerError $r.Text)) { $ok = $false }
++    }
++    return $ok
++}
++
++function Wait-DockerEngine {
++    param([string]$Docker, [int]$TimeoutSec = 420)
++    $deadline = (Get-Date).AddSeconds($TimeoutSec)
++    while ((Get-Date) -lt $deadline) {
++        $r = Invoke-NativeCapture -Exe $Docker -Arguments @("info")
++        if ($r.ExitCode -eq 0) { return $true }
++        Start-Sleep -Seconds 5
++    }
++    return $false
++}
++
++function Restart-DockerDesktopEngine {
++    param([string]$Docker)
++    Write-Host ""
++    Write-Host "Restarting the Docker Desktop engine to clear an unkillable container (docker-desktop VM restart)..." -ForegroundColor Yellow
++    $candidates = @()
++    if ($env:ProgramFiles) { $candidates += (Join-Path $env:ProgramFiles "Docker\Docker\Docker Desktop.exe") }
++    if ($env:LOCALAPPDATA) { $candidates += (Join-Path $env:LOCALAPPDATA "Programs\Docker\Docker\Docker Desktop.exe") }
++    $exe = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
++
++    foreach ($name in @("Docker Desktop", "com.docker.backend")) {
++        try { Get-Process -Name $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue } catch {}
++    }
++    Start-Sleep -Seconds 3
++    $wsl = Invoke-NativeCapture -Exe "wsl" -Arguments @("--shutdown")
++    foreach ($line in $wsl.Lines) { if ($line) { Write-Host "  wsl: $line" } }
++    Start-Sleep -Seconds 5
++    if (-not $exe) {
++        Write-Host "Docker Desktop.exe not found - start Docker Desktop manually, then re-run." -ForegroundColor Red
++        return $false
++    }
++    Start-Process -FilePath $exe | Out-Null
++    Write-Host "Waiting for the engine (up to 7 minutes)..."
++    if (-not (Wait-DockerEngine -Docker $Docker -TimeoutSec 420)) {
++        Write-Host "Docker engine did not come back." -ForegroundColor Red
++        return $false
++    }
++    Write-Host "Docker engine is back." -ForegroundColor Green
++    return $true
++}
++
++function Invoke-ComposeWithRecovery {
++    <#
++      Runs `docker <ComposeArgs> <ComposeCommand>`; on the stuck-container daemon
++      error, performs rm -f -> engine restart (if -AutoRecoverEngine) -> one retry.
++      Returns $true on success.
++    #>
++    param(
++        [string]$Docker,
++        [string[]]$ComposeArgs,
++        [string[]]$ComposeCommand,
++        [switch]$AutoRecoverEngine
++    )
++    $r = Invoke-NativeCapture -Exe $Docker -Arguments ($ComposeArgs + $ComposeCommand)
++    foreach ($line in $r.Lines) { Write-Host $line }
++    if ($r.ExitCode -eq 0) { return $true }
++    if (-not (Test-StuckContainerError $r.Text)) { return $false }
++
++    Write-Host ""
++    Write-Host "Docker could not stop a container (process in uninterruptible I/O or CUDA call)." -ForegroundColor Yellow
++    $ids = Get-StuckContainerIds $r.Text
++    if ($ids.Count -and (Remove-StuckContainers -Docker $Docker -Ids $ids)) {
++        Write-Host "Stuck container removed; retrying compose..."
++    }
++    elseif ($AutoRecoverEngine) {
++        if (-not (Restart-DockerDesktopEngine -Docker $Docker)) { return $false }
++    }
++    else {
++        Write-Host "Run again with -AutoRecoverEngine (or restart Docker Desktop manually: wsl --shutdown) and retry." -ForegroundColor Red
++        return $false
++    }
++    $r = Invoke-NativeCapture -Exe $Docker -Arguments ($ComposeArgs + $ComposeCommand)
++    foreach ($line in $r.Lines) { Write-Host $line }
++    return ($r.ExitCode -eq 0)
++}
+--- /dev/null	2026-10-02 18:52:57.907876863 +0000
++++ b/scripts/stage-evidence.ps1	2026-10-04 16:55:12.679283882 +0000
+@@ -0,0 +1,93 @@
++# V45.3 - Stage evidence (E01/EWF segments, DD, mobile dumps) into the docker-desktop VM.
++#
++#   .\scripts\stage-evidence.ps1 -Source "G:\Image of Reception Laptop" -CaseName reception-laptop
++#
++# Why: the forensic workers read evidence through Docker Desktop's Windows
++# file-sharing layer when it sits on G:\ / F:\ bind mounts. That layer tops out
++# at a few MB/s under parallel seeks (the 2 h 15 m / 50 GB extraction) and a
++# worker blocked inside it is in an uninterruptible kernel state - the source of
++#   "cannot stop container ... tried to kill container, but did not receive an exit event".
++# Staging copies the files ONCE, sequentially (what the sharing layer is good
++# at), into a named volume that is native ext4 inside the VM. Extraction then
++# reads at NVMe speed and the container always stops cleanly.
++#
++# The volume is mounted in api / worker-disk / worker-parse as /host/<letter>
++# (default z) so it shows in the UI as drive Z: - register evidence from there
++# exactly as from any other drive. Nothing in the workflow changes.
++param(
++    [Parameter(Mandatory = $true)][string]$Source,
++    [Parameter(Mandatory = $true)][string]$CaseName,
++    [string]$Letter = $(if ($env:EVIDENCE_STAGING_LETTER) { $env:EVIDENCE_STAGING_LETTER } else { "z" }),
++    [string]$ProjectName = "aetheris-forensic",
++    [switch]$Verify,
++    [switch]$Remove
++)
++
++$ErrorActionPreference = "Stop"
++$Letter = $Letter.ToLower()
++if ($Letter.Length -ne 1 -or $Letter -notmatch "^[a-z]$") { throw "Letter must be a single a-z character" }
++if (Get-PSDrive -Name $Letter.ToUpper() -ErrorAction SilentlyContinue) {
++    throw "Drive $($Letter.ToUpper()): exists on this Windows host. Pick an unused letter: set EVIDENCE_STAGING_LETTER in .env and re-run start_docker."
++}
++$case = ($CaseName -replace "[^A-Za-z0-9._-]", "_")
++$volume = "${ProjectName}_evidence_staging"
++
++if ($Remove) {
++    Write-Host "Removing staged case '$case' from volume $volume ..."
++    docker run --rm -v "${volume}:/dst" alpine:3.20 sh -c "rm -rf '/dst/$case' && ls -la /dst"
++    exit $LASTEXITCODE
++}
++
++if (-not (Test-Path -LiteralPath $Source)) { throw "Source not found: $Source" }
++$src = (Resolve-Path -LiteralPath $Source).Path
++$items = Get-ChildItem -LiteralPath $src -File
++$bytes = ($items | Measure-Object -Property Length -Sum).Sum
++Write-Host ("Staging {0} file(s), {1:N1} GB from '{2}' -> volume {3} as '{4}'" -f $items.Count, ($bytes / 1GB), $src, $volume, $case)
++
++# One sequential stream per file; cp -p keeps mtimes. The shell script is written
++# to a temp file and bind-mounted (never passed as a quoted argument - Windows
++# PowerShell 5.1 mangles embedded double quotes in native-command arguments).
++$shell = @"
++set -e
++mkdir -p "/dst/$case"
++for f in /src/*; do
++  n=`$(basename "`$f")
++  if [ -f "/dst/$case/`$n" ] && [ "`$(stat -c %s "`$f")" = "`$(stat -c %s "/dst/$case/`$n")" ]; then
++    echo "skip (same size): `$n"; continue
++  fi
++  start=`$(date +%s)
++  cp -p "`$f" "/dst/$case/`$n.part" && mv "/dst/$case/`$n.part" "/dst/$case/`$n"
++  sz=`$(stat -c %s "/dst/$case/`$n"); end=`$(date +%s); d=`$((end-start)); [ "`$d" -gt 0 ] || d=1
++  echo "copied `$n `$((sz/1048576)) MiB in `${d}s (`$((sz/1048576/d)) MiB/s)"
++done
++touch /dst/.evidence-staging
++df -h /dst | tail -1
++"@
++$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("aetheris-stage-" + [guid]::NewGuid().ToString("N") + ".sh")
++# LF line endings and no BOM - this file is executed by /bin/sh inside the container.
++[System.IO.File]::WriteAllText($tmp, ($shell -replace "`r`n", "`n"), (New-Object System.Text.UTF8Encoding($false)))
++try {
++    $prevEap = $ErrorActionPreference
++    $ErrorActionPreference = "Continue"
++    & docker run --rm -v "${volume}:/dst" -v "${src}:/src:ro" -v "${tmp}:/stage.sh:ro" alpine:3.20 sh /stage.sh
++    $code = $LASTEXITCODE
++    $ErrorActionPreference = $prevEap
++}
++finally {
++    Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
++}
++if ($code -ne 0) { throw "staging copy failed (exit $code)" }
++
++if ($Verify) {
++    Write-Host "Verifying SHA-256 (source vs staged)..."
++    foreach ($it in $items) {
++        $h1 = (Get-FileHash -LiteralPath $it.FullName -Algorithm SHA256).Hash.ToLower()
++        $h2 = (docker run --rm -v "${volume}:/dst" alpine:3.20 sha256sum "/dst/$case/$($it.Name)").Split(" ")[0]
++        if ($h1 -ne $h2) { throw "HASH MISMATCH: $($it.Name)" }
++        Write-Host "  ok $($it.Name) $h1"
++    }
++}
++
++Write-Host ""
++Write-Host "Staged. In the Polaron UI register evidence from drive $($Letter.ToUpper()): -> \$case\ (container path /host/$Letter/$case)." -ForegroundColor Green
++Write-Host "Set DISK_SOURCE_MEDIA=nvme in .env so the extractor uses the parallel-reader profile for staged evidence."
+--- /dev/null	2026-10-02 18:52:57.907876863 +0000
++++ b/diagnostics/lint_ps1_native_stderr.py	2026-10-04 16:55:32.678731968 +0000
+@@ -0,0 +1,28 @@
++"""Lint: Windows PowerShell 5.1 turns redirected native stderr (2>&1) into terminating
++errors when $ErrorActionPreference = "Stop". In scripts that set Stop, every 2>&1 on a
++native command must sit inside a block that lowers the preference (Invoke-NativeCapture
++or an explicit save/restore). Also flags non-ASCII characters inside .ps1 files, which
++mis-decode under CP-1252 (an em dash's 0x94 byte becomes a closing quote).
++Usage: python diagnostics/lint_ps1_native_stderr.py scripts/*.ps1 script_docker/*.ps1
++"""
++import re, sys
++
++bad = 0
++for path in sys.argv[1:]:
++    text = open(path, encoding="utf-8", errors="replace").read()
++    lines = text.splitlines()
++    sets_stop = re.search(r'\$ErrorActionPreference\s*=\s*"Stop"', text) is not None
++    for i, line in enumerate(lines, 1):
++        if line.strip().startswith("#"):
++            continue  # comments never reach the parser as code
++        if re.search(r"[^\x00-\x7f]", line):
++            print(f"{path}:{i}: non-ASCII character in .ps1 (CP-1252 decode hazard): {line.strip()[:80]}")
++            bad += 1
++        if "2>&1" in line and sets_stop:
++            # allowed only when the surrounding 12 lines lower the preference
++            window = "\n".join(lines[max(0, i - 12):i])
++            if 'ErrorActionPreference = "Continue"' not in window and 'ErrorActionPreference = "SilentlyContinue"' not in window:
++                print(f"{path}:{i}: 2>&1 on a native command under ErrorActionPreference=Stop: {line.strip()[:90]}")
++                bad += 1
++print("lint:", "FAIL" if bad else "OK", f"({len(sys.argv)-1} files)")
++sys.exit(1 if bad else 0)

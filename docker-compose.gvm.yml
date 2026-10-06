@@ -1,0 +1,288 @@
+# Greenbone Community Edition (headless GMP/OpenVAS stack).
+# Adapted to the current Greenbone community-container architecture.
+# The application talks to gvmd through /run/gvmd/gvmd.sock; gvmd does not
+# expose TCP/9390 in the standard community containers.
+#
+# Start together with the app:
+#   docker compose --profile gvm --profile vuln-scanners up -d --build
+#
+# First start/feed initialization can take a significant amount of time.
+# Check:
+#   docker compose --profile gvm ps
+#   docker compose --profile gvm logs -f gvmd ospd-openvas
+
+services:
+  vulnerability-tests:
+    image: registry.community.greenbone.net/community/vulnerability-tests
+    environment:
+      FEED_RELEASE: "24.10"
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm_vt_data:/mnt
+    profiles: [gvm]
+
+  notus-data:
+    image: registry.community.greenbone.net/community/notus-data
+    environment:
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm_notus_data:/mnt
+    profiles: [gvm]
+
+  scap-data:
+    image: registry.community.greenbone.net/community/scap-data
+    environment:
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm_scap_data:/mnt
+    profiles: [gvm]
+
+  cert-bund-data:
+    image: registry.community.greenbone.net/community/cert-bund-data
+    environment:
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm_cert_data:/mnt
+    profiles: [gvm]
+
+  dfn-cert-data:
+    image: registry.community.greenbone.net/community/dfn-cert-data
+    environment:
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm_cert_data:/mnt
+    depends_on:
+      cert-bund-data:
+        condition: service_healthy
+    profiles: [gvm]
+
+  data-objects:
+    image: registry.community.greenbone.net/community/data-objects
+    environment:
+      FEED_RELEASE: "24.10"
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm_data_objects:/mnt
+    profiles: [gvm]
+
+  report-formats:
+    image: registry.community.greenbone.net/community/report-formats
+    environment:
+      FEED_RELEASE: "24.10"
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm_data_objects:/mnt
+    depends_on:
+      data-objects:
+        condition: service_healthy
+    profiles: [gvm]
+
+  gpg-data:
+    image: registry.community.greenbone.net/community/gpg-data
+    volumes:
+      - gvm_gpg_data:/mnt
+    profiles: [gvm]
+
+  redis-gvm:
+    image: registry.community.greenbone.net/community/redis-server
+    restart: on-failure
+    volumes:
+      - gvm_redis_socket:/run/redis/
+    profiles: [gvm]
+
+  pg-gvm-migrator:
+    image: registry.community.greenbone.net/community/pg-gvm-migrator:stable
+    restart: "no"
+    volumes:
+      - gvm_pgdata:/var/lib/postgresql
+      - gvm_psql_socket:/var/run/postgresql
+    profiles: [gvm]
+
+  pg-gvm:
+    image: registry.community.greenbone.net/community/pg-gvm:stable
+    restart: on-failure
+    volumes:
+      - gvm_pgdata:/var/lib/postgresql
+      - gvm_psql_socket:/var/run/postgresql
+    depends_on:
+      pg-gvm-migrator:
+        condition: service_completed_successfully
+    # A cold production volume can spend several minutes in recovery. The image
+    # check gives up after about four minutes and then only three probes.
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "gvmd", "-d", "gvmd"]
+      interval: 10s
+      timeout: 20s
+      retries: 18
+      start_period: 300s
+    profiles: [gvm]
+
+  gvmd:
+    image: registry.community.greenbone.net/community/gvmd:stable
+    restart: on-failure
+    volumes:
+      - gvm_gvmd_data:/var/lib/gvm
+      - gvm_scap_data:/var/lib/gvm/scap-data/
+      - gvm_cert_data:/var/lib/gvm/cert-data
+      - gvm_data_objects:/var/lib/gvm/data-objects/gvmd
+      - gvm_vt_data:/var/lib/openvas/plugins
+      - gvm_pgdata:/var/lib/postgresql
+      - gvm_gvmd_socket:/run/gvmd
+      - gvm_ospd_socket:/run/ospd
+      - gvm_psql_socket:/var/run/postgresql
+    depends_on:
+      pg-gvm:
+        condition: service_healthy
+      scap-data:
+        condition: service_healthy
+      cert-bund-data:
+        condition: service_healthy
+      dfn-cert-data:
+        condition: service_healthy
+      data-objects:
+        condition: service_healthy
+      report-formats:
+        condition: service_healthy
+    # The image probe runs `<get_version/>` with a 3s timeout and 3 retries
+    # after 4 minutes. On a loaded production host that marks gvmd unhealthy
+    # while it is still opening the scanner database, and `compose up --wait`
+    # then aborts the rest of the start. Readiness here is the GMP socket.
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python3 -c \"import socket;s=socket.socket(socket.AF_UNIX);s.settimeout(8);s.connect('/run/gvmd/gvmd.sock')\"",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 40
+      start_period: 600s
+    profiles: [gvm]
+
+  configure-openvas:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    volumes:
+      - gvm_openvas_data:/mnt
+      - gvm_openvas_log:/var/log/openvas
+    command:
+      - /bin/sh
+      - -c
+      - |
+        printf "table_driven_lsc = yes\nopenvasd_server = http://openvasd:80\nmax_hosts = 16\nmax_checks = 24\noptimize_test = yes\nplugins_timeout = 2592000\nscanner_plugins_timeout = 2592000\n" > /mnt/openvas.conf
+        sed "s/127/128/" /etc/openvas/openvas_log.conf | sed 's/gvm/openvas/' > /mnt/openvas_log.conf
+        chmod 644 /mnt/openvas.conf /mnt/openvas_log.conf
+        touch /var/log/openvas/openvas.log
+        chmod 666 /var/log/openvas/openvas.log
+    profiles: [gvm]
+
+  openvas:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    volumes:
+      - gvm_openvas_data:/etc/openvas
+      - gvm_openvas_log:/var/log/openvas
+    command:
+      - /bin/sh
+      - -c
+      - |
+        cat /etc/openvas/openvas.conf
+        tail -f /var/log/openvas/openvas.log
+    depends_on:
+      configure-openvas:
+        condition: service_completed_successfully
+    profiles: [gvm]
+
+  openvasd:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    restart: on-failure
+    environment:
+      OPENVASD_MODE: service_notus
+      GNUPGHOME: /etc/openvas/gnupg
+      LISTENING: 0.0.0.0:80
+    volumes:
+      - gvm_openvas_data:/etc/openvas
+      - gvm_openvas_log:/var/log/openvas
+      - gvm_gpg_data:/etc/openvas/gnupg
+      - gvm_notus_data:/var/lib/notus
+      # NASL feed: openvasd still verifies sha256sums.asc hourly even in service_notus.
+      - gvm_vt_data:/var/lib/openvas/plugins
+    depends_on:
+      vulnerability-tests:
+        condition: service_healthy
+      notus-data:
+        condition: service_healthy
+      configure-openvas:
+        condition: service_completed_successfully
+      gpg-data:
+        condition: service_completed_successfully
+    networks:
+      default:
+        aliases: [openvasd]
+    profiles: [gvm]
+
+  ospd-openvas:
+    image: registry.community.greenbone.net/community/ospd-openvas:stable
+    hostname: ospd-openvas.local
+    restart: on-failure
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    command:
+      - ospd-openvas
+      - -f
+      - --config
+      - /etc/gvm/ospd-openvas.conf
+      - --notus-feed-dir
+      - /var/lib/notus/advisories
+      - -m
+      - "666"
+    volumes:
+      - gvm_gpg_data:/etc/openvas/gnupg
+      - gvm_vt_data:/var/lib/openvas/plugins
+      - gvm_notus_data:/var/lib/notus
+      - gvm_ospd_socket:/run/ospd
+      - gvm_redis_socket:/run/redis/
+      - gvm_openvas_data:/etc/openvas/
+      - gvm_openvas_log:/var/log/openvas
+    depends_on:
+      redis-gvm:
+        condition: service_started
+      gpg-data:
+        condition: service_completed_successfully
+      configure-openvas:
+        condition: service_completed_successfully
+      vulnerability-tests:
+        condition: service_healthy
+      notus-data:
+        condition: service_healthy
+    profiles: [gvm]
+
+  gvm-tools:
+    image: registry.community.greenbone.net/community/gvm-tools
+    volumes:
+      - gvm_gvmd_socket:/run/gvmd
+      - gvm_ospd_socket:/run/ospd
+    depends_on:
+      gvmd:
+        condition: service_started
+      ospd-openvas:
+        condition: service_started
+    profiles: [gvm]
+
+volumes:
+  gvm_gpg_data:
+  gvm_scap_data:
+  gvm_cert_data:
+  gvm_data_objects:
+  gvm_gvmd_data:
+  gvm_pgdata:
+  gvm_vt_data:
+  gvm_notus_data:
+  gvm_psql_socket:
+  gvm_gvmd_socket:
+  gvm_ospd_socket:
+  gvm_redis_socket:
+  gvm_openvas_data:
+  gvm_openvas_log:

@@ -1,0 +1,878 @@
+{
+  "filename": "WhatsApp-Decryption-Test-Cases.pdf",
+  "title": "WhatsApp Decryption\nFlows and Test Cases",
+  "short": "WhatsApp Decryption",
+  "subtitle": "Mobile extraction \u2192 matching key intake \u2192 derived evidence \u2192 RAG and reports",
+  "accent": "#A895DD",
+  "build_tag": "WHATSAPP RECOVERY / PROJECT RELEASE 9",
+  "cover_notes": [
+    "Supported: original .crypt; CRYPT5, 7, 8, 9, 10, 11, 12, 14 and 15.",
+    "Includes a runnable synthetic CRYPT14 case and missing/wrong-key behavior.",
+    "A CRYPT14 file alone cannot yield its key. Unsupported versions remain visible as encrypted evidence."
+  ],
+  "pages": [
+    {
+      "title": "WhatsApp / Supported formats and executable test case",
+      "intro": "The public QA files are synthetic. The CRYPT14 case includes its matching 158-byte key file; the keyless case must remain blocked.",
+      "headers": [
+        "Format",
+        "Required material",
+        "Validation / result"
+      ],
+      "rows": [
+        [
+          "Original .crypt",
+          "Historical public AES format key",
+          "AES-192-ECB; complete SQLite structural checks; authenticity unverified"
+        ],
+        [
+          "CRYPT5",
+          "Already-derived 24-byte / 48-hex key, or exact original Google account",
+          "AES-192-CBC; complete SQLite + quick_check; no authentication tag"
+        ],
+        [
+          "CRYPT7 / CRYPT8",
+          "Matching files/key or 32-byte AES secret",
+          "AES-256-CBC; CRYPT8 gzip; complete SQLite checks; authenticity unverified"
+        ],
+        [
+          "CRYPT9 / 10 / 11",
+          "Matching files/key or raw 32-byte AES secret",
+          "GCM tag when present; exact-EOF historical tagless streams remain unverified; failed tags never discarded"
+        ],
+        [
+          "CRYPT12 / CRYPT14",
+          "Matching files/key; raw / hexadecimal secret accepted",
+          "AES-GCM tag and any MD5 footer required; bounded expansion"
+        ],
+        [
+          "CRYPT15",
+          "Matching encrypted_backup.key or 64-character root secret",
+          "HKDF-SHA256 then AES-GCM authentication and footer validation"
+        ],
+        [
+          "Other CRYPT extensions",
+          "No validated decoder in this release",
+          "Retain encrypted bytes; unsupported_crypt_version; never assume another format"
+        ]
+      ],
+      "widths": [
+        90,
+        165,
+        252
+      ],
+      "notes": [
+        [
+          "Run",
+          "From the updated project: python scripts/test-whatsapp-decryption.py --out C:/Aetheris-QA/whatsapp-case (choose an empty output folder)."
+        ],
+        [
+          "Checks",
+          "The script checks ten formats, typed payloads, key capture offset, keyless blocking, chats, a surviving deleted row, attachment reference, RAG-ready text and unchanged input hashes."
+        ],
+        [
+          "Live status",
+          "Synthetic and PostgreSQL-compatible checks passed. No connected Android phone, native Windows device acquisition or GPU session was available for live acceptance."
+        ]
+      ],
+      "source": "scripts/whatsapp_qa_fixtures.py; scripts/test-whatsapp-decryption.py; backend/tests/test_whatsapp_payloads.py"
+    },
+    {
+      "title": "Key intake / what the CRYPT14 test actually supplies",
+      "intro": "A CRYPT14 backup does not contain its secret. Acquisition captures the matching private file when Android access permits it, or an examiner supplies that already-collected file.",
+      "height": 420,
+      "chart": {
+        "nodes": [
+          {
+            "id": "acquire",
+            "text": "Phone acquisition\nor collected key upload",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "access",
+            "text": "Private file readable?\nExisting root / run-as",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "gap",
+            "text": "Permission / sandbox gap\nNo usable key captured",
+            "r": 1,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "bytes",
+            "text": "Binary file + exit check\nReject ADB error text",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "valid",
+            "text": "Recognized key\nformat and length?",
+            "r": 3,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "reject",
+            "text": "Invalid / truncated key\nPrecise Intake diagnostic",
+            "r": 3,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "classic",
+            "text": "Classic 158-byte key\nBytes 126-157 => hex64",
+            "r": 4,
+            "c": 0,
+            "kind": "key"
+          },
+          {
+            "id": "backup",
+            "text": "E2E backup key\nRaw / Java / hex64",
+            "r": 4,
+            "c": 2,
+            "kind": "key"
+          },
+          {
+            "id": "save",
+            "text": "Private case Intake\nFull file + source hash",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "acquire",
+            "b": "access"
+          },
+          {
+            "a": "access",
+            "b": "gap",
+            "label": "No"
+          },
+          {
+            "a": "access",
+            "b": "bytes",
+            "label": "Yes"
+          },
+          {
+            "a": "bytes",
+            "b": "valid"
+          },
+          {
+            "a": "valid",
+            "b": "reject",
+            "label": "No"
+          },
+          {
+            "a": "valid",
+            "b": "classic",
+            "label": "Device"
+          },
+          {
+            "a": "valid",
+            "b": "backup",
+            "label": "E2E"
+          },
+          {
+            "a": "classic",
+            "b": "save"
+          },
+          {
+            "a": "backup",
+            "b": "save"
+          }
+        ]
+      },
+      "notes": [
+        [
+          "Path",
+          "The classic source is /data/data/com.whatsapp/files/key; user profiles and com.whatsapp.w4b variants are also captured when readable. CRYPT15 uses encrypted_backup.key."
+        ],
+        [
+          "Exact requirement",
+          "The 64 hexadecimal characters come from the collected key file, not the CRYPT14 ciphertext. Different installations/backups may need different secrets."
+        ]
+      ],
+      "source": "mobile_acquire/privileged_app_pull.py; mobile_forensic/key_intake.py; routers/report.py"
+    },
+    {
+      "title": "Modern CRYPT12 / CRYPT14 / CRYPT15 decryption",
+      "intro": "Modern backups authenticate before payload expansion. Payloads can contain SQLite databases, incremental ZIPs, settings, images or binary data.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "backup",
+            "text": "Encrypted backup retained\nOriginal path + SHA-256",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "keys",
+            "text": "Validate acquired / supplied\nkeys; reject error text",
+            "r": 1,
+            "c": 1,
+            "kind": "key"
+          },
+          {
+            "id": "format",
+            "text": "Parse header / IV / tag\nValidate container bounds",
+            "r": 2,
+            "c": 1,
+            "kind": "key"
+          },
+          {
+            "id": "aes",
+            "text": "crypt12/14: AES key\ncrypt15: HKDF-derived key",
+            "r": 3,
+            "c": 1,
+            "kind": "key"
+          },
+          {
+            "id": "auth",
+            "text": "AES-GCM tag\nauthenticates?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "next",
+            "text": "Next key /\nlayout exists?",
+            "r": 4,
+            "c": 2,
+            "kind": "decision"
+          },
+          {
+            "id": "nokey",
+            "text": "No matching key / layout\nKeep encrypted artifact",
+            "r": 5,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "verify",
+            "text": "Checksum + bounded inflate\nIdentify actual payload type",
+            "r": 5,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "integrity",
+            "text": "Payload expansion\nwithin supported limits?",
+            "r": 6,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "corrupt",
+            "text": "Corrupt / invalid plaintext\nKeep source + diagnostic",
+            "r": 6,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "derived",
+            "text": "Derived payload + hash\nRegister for native parsing",
+            "r": 7,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "backup",
+            "b": "keys"
+          },
+          {
+            "a": "keys",
+            "b": "format"
+          },
+          {
+            "a": "format",
+            "b": "aes"
+          },
+          {
+            "a": "aes",
+            "b": "auth"
+          },
+          {
+            "a": "auth",
+            "b": "next",
+            "label": "No"
+          },
+          {
+            "a": "next",
+            "b": "format",
+            "label": "Yes",
+            "side": "right"
+          },
+          {
+            "a": "next",
+            "b": "nokey",
+            "label": "No"
+          },
+          {
+            "a": "auth",
+            "b": "verify",
+            "label": "Yes"
+          },
+          {
+            "a": "verify",
+            "b": "integrity"
+          },
+          {
+            "a": "integrity",
+            "b": "corrupt",
+            "label": "No"
+          },
+          {
+            "a": "integrity",
+            "b": "derived",
+            "label": "Yes"
+          }
+        ]
+      },
+      "height": 542,
+      "notes": [
+        [
+          "Key formats",
+          "A 158-byte Android key file supplies its last 32 bytes (offset 126). Raw 32-byte / 64-hex keys and recognized Java byte-array envelopes are validated."
+        ],
+        [
+          "Crypto boundary",
+          "CRYPT15 uses HKDF-SHA256. Every key candidate is tried per source, including Business and Android profiles. Protobuf IVs avoid repeated historical guesses; source/key-set cache avoids repeat decryption."
+        ]
+      ],
+      "source": "backend/app/services/mobile_forensic/whatsapp_crypt.py; whatsapp_derivation.py"
+    },
+    {
+      "title": "WhatsApp / Historical CRYPT formats",
+      "intro": "Historical ECB, CBC and tagless stream backups do not establish cryptographic authenticity. Recovery verifies SQLite structure and records the integrity limit on every parsed chat.",
+      "height": 410,
+      "chart": {
+        "nodes": [
+          {
+            "id": "source",
+            "text": "Retained legacy backup\nPath + source hash",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "version",
+            "text": "Historical\nformat?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "account",
+            "text": "CRYPT5: 24-byte secret\nor original Google account",
+            "r": 2,
+            "c": 0,
+            "kind": "key"
+          },
+          {
+            "id": "static",
+            "text": "Original .crypt\nPublic historical key",
+            "r": 2,
+            "c": 1,
+            "kind": "key"
+          },
+          {
+            "id": "key",
+            "text": "Matching device secret\nCRYPT7/8/9/10/11",
+            "r": 2,
+            "c": 2,
+            "kind": "key"
+          },
+          {
+            "id": "cbc",
+            "text": "ECB / CBC / GCM stream\nValidate exact payload",
+            "r": 3,
+            "c": 1,
+            "kind": "key"
+          },
+          {
+            "id": "check",
+            "text": "SQLite size +\nquick_check pass?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "blocked",
+            "text": "Wrong input / corruption\nEncrypted evidence retained",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "copy",
+            "text": "Derived historical DB\nNo-MAC integrity label",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "source",
+            "b": "version"
+          },
+          {
+            "a": "version",
+            "b": "account",
+            "label": "5"
+          },
+          {
+            "a": "version",
+            "b": "static",
+            "label": ".crypt"
+          },
+          {
+            "a": "static",
+            "b": "cbc"
+          },
+          {
+            "a": "version",
+            "b": "key",
+            "label": "7-11"
+          },
+          {
+            "a": "account",
+            "b": "cbc"
+          },
+          {
+            "a": "key",
+            "b": "cbc"
+          },
+          {
+            "a": "cbc",
+            "b": "check"
+          },
+          {
+            "a": "check",
+            "b": "blocked",
+            "label": "No"
+          },
+          {
+            "a": "check",
+            "b": "copy",
+            "label": "Yes"
+          }
+        ]
+      },
+      "notes": [
+        [
+          "Meaning",
+          "Structural checks do not prove authenticity. Legacy chat records carry a medium confidence ceiling and the legacy_no_authentication_tag validation note."
+        ],
+        [
+          "Account",
+          "CRYPT5 account derivation is specific to this old format. It does not extract a CRYPT14 key from ciphertext."
+        ]
+      ],
+      "source": "mobile_forensic/whatsapp_crypt.py; integrity.py; parsers/messaging.py; frontend JobIntakePage.tsx"
+    },
+    {
+      "title": "WhatsApp / Derived payloads before artifact parsing",
+      "intro": "The materialize stage decrypts registered case bytes before native parsing, OCR, media review and text-only RAG. Original encrypted files remain in the case.",
+      "height": 405,
+      "chart": {
+        "nodes": [
+          {
+            "id": "plain",
+            "text": "Verified decrypted payload\nOriginal + plaintext hashes",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "kind",
+            "text": "Database, archive\nor other file?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "db",
+            "text": "SQLite working copy\nReuse identical snapshots",
+            "r": 2,
+            "c": 0,
+            "kind": "data"
+          },
+          {
+            "id": "zip",
+            "text": "ZIP + safe members\nCRC and expansion limits",
+            "r": 2,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "other",
+            "text": "JSON / images / binary\nTyped derived file",
+            "r": 2,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "register",
+            "text": "Register case-owned objects\nEncrypted-source proof",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "read",
+            "text": "Verify size / hash /\ncase namespace on reads",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "reject",
+            "text": "Missing proof / tampering\nExplicit artifact error",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "parse",
+            "text": "Native artifact parsers\nRAG / review / report inputs",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "plain",
+            "b": "kind"
+          },
+          {
+            "a": "kind",
+            "b": "db",
+            "label": "DB"
+          },
+          {
+            "a": "kind",
+            "b": "zip",
+            "label": "ZIP"
+          },
+          {
+            "a": "kind",
+            "b": "other",
+            "label": "File"
+          },
+          {
+            "a": "db",
+            "b": "register"
+          },
+          {
+            "a": "zip",
+            "b": "register"
+          },
+          {
+            "a": "other",
+            "b": "register"
+          },
+          {
+            "a": "register",
+            "b": "read"
+          },
+          {
+            "a": "read",
+            "b": "reject",
+            "label": "Fail"
+          },
+          {
+            "a": "read",
+            "b": "parse",
+            "label": "Pass"
+          }
+        ]
+      },
+      "notes": [
+        [
+          "ZIPs",
+          "Retain the authenticated archive even if a member cannot be expanded. Reject traversal, Windows device names, symlinks, duplicate names and separately encrypted members. Report limits explicitly."
+        ],
+        [
+          "Source boundary",
+          "After extraction finalization, the server reads sealed sources or verified registered derivations. It never reopens the original phone/dump folder for a newly created working copy."
+        ]
+      ],
+      "source": "whatsapp_derivation.py; forensic_serial_stages.py; sqlite_counts.py; artifact_parse.py; artifact_preview.py"
+    },
+    {
+      "title": "Recovered data / artifacts, RAG and report evidence",
+      "intro": "Recovered content follows the existing mobile processing and report paths. A recovered photo or message becomes a suspicious observation only when the evidence review supports that finding.",
+      "height": 420,
+      "chart": {
+        "nodes": [
+          {
+            "id": "data",
+            "text": "Registered derived evidence\nOriginal encrypted proof",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "type",
+            "text": "Select native parser\nfrom verified file type",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "chat",
+            "text": "Chat DB / JSON / mail\nMessages + record locators",
+            "r": 2,
+            "c": 0,
+            "kind": "data"
+          },
+          {
+            "id": "media",
+            "text": "Images / video / files\nOCR + evidence review",
+            "r": 2,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "normalize",
+            "text": "Normalized artifact + state\nOriginal and output hashes",
+            "r": 3,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "rag",
+            "text": "Text-only RAG\n2500 chars / 800 overlap",
+            "r": 4,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "review",
+            "text": "Examiner observations\nMedia + factual explanation",
+            "r": 4,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "report",
+            "text": "Grounded report sections\nSuspicious Activity + export",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "data",
+            "b": "type"
+          },
+          {
+            "a": "type",
+            "b": "chat",
+            "label": "Text / DB"
+          },
+          {
+            "a": "type",
+            "b": "media",
+            "label": "Media"
+          },
+          {
+            "a": "chat",
+            "b": "normalize"
+          },
+          {
+            "a": "media",
+            "b": "normalize"
+          },
+          {
+            "a": "normalize",
+            "b": "rag"
+          },
+          {
+            "a": "normalize",
+            "b": "review"
+          },
+          {
+            "a": "rag",
+            "b": "report"
+          },
+          {
+            "a": "review",
+            "b": "report"
+          }
+        ]
+      },
+      "notes": [
+        [
+          "State",
+          "Older backup rows are historical. Explicit deletion flags and retained residuals keep their distinct labels. ZIP JSON changesets are captured as structured evidence; unrecognized incremental schemas are not silently replayed into a base database."
+        ],
+        [
+          "Reports",
+          "Newly recovered evidence requires a new report run. Source-linked images and descriptions use the existing shared Disk/Mobile layout and Suspicious Activity section."
+        ]
+      ],
+      "source": "mobile_forensic/parsers/; mobile_rag.py; suspicious_activity.py; report_generator.py"
+    },
+    {
+      "title": "Run the supplied case / Windows or Python environment",
+      "intro": "Use the updated application environment, or install its backend requirements. Python 3.11+ is required. The fixture manifest clearly marks the included fixed keys as public synthetic data.",
+      "headers": [
+        "Step",
+        "Command / expected result"
+      ],
+      "widths": [
+        120,
+        387
+      ],
+      "rows": [
+        [
+          "Synthetic acceptance",
+          "python scripts/test-whatsapp-decryption.py --out C:/Aetheris-QA/whatsapp-case"
+        ],
+        [
+          "Expected test output",
+          "status=passed; 12 checks; whatsapp_synthetic_test_results.json and original/derived synthetic files"
+        ],
+        [
+          "Provided CRYPT14 file",
+          "python scripts/recover-whatsapp.py --source C:/QA/synthetic_inputs/WhatsApp/Databases/msgstore.db.crypt14 --key C:/QA/synthetic_inputs/data/data/com.whatsapp/files/key --out C:/QA/decoded-crypt14"
+        ],
+        [
+          "All fixture formats",
+          "python scripts/recover-whatsapp.py --source C:/QA/synthetic_inputs --legacy-account whatsapp-qa@example.test --out C:/QA/decoded-all"
+        ],
+        [
+          "Keyless negative case",
+          "Repeat the CRYPT14 command without --key. Expect exit code 2, no derived database and key_material_missing_or_invalid."
+        ],
+        [
+          "Application case",
+          "Acquire/import the originals; capture or upload matching keys in Intake; save; Reprocess mobile evidence when idle; inspect per-file status, WhatsApp Messages, Files and report observations."
+        ]
+      ],
+      "notes": [
+        [
+          "Output directory",
+          "Keep recovery output outside the input evidence directory. Original backup and key files are never rewritten."
+        ],
+        [
+          "Test integrity",
+          "The scripts verify expected plaintext hashes, chats, surviving deleted rows, attachment references and unchanged input hashes. A supplied key from another installation is expected to fail."
+        ]
+      ],
+      "source": "scripts/recover-whatsapp.py; scripts/test-whatsapp-decryption.py"
+    },
+    {
+      "title": "Failure cases / honest results for every source",
+      "headers": [
+        "Input condition",
+        "Expected behavior"
+      ],
+      "widths": [
+        178,
+        329
+      ],
+      "rows": [
+        [
+          "CRYPT14 only; no matching key",
+          "Keep encrypted source; key_material_missing_or_invalid; no fabricated key or plaintext."
+        ],
+        [
+          "ADB error saved as key",
+          "Reject during acquisition/Intake. It is not 158-byte usable key evidence, even if padded to that length."
+        ],
+        [
+          "Wrong installation key",
+          "Try other distinct collected keys. If none match, keep key_mismatch_or_damaged_backup."
+        ],
+        [
+          "Altered ciphertext / tag / MD5",
+          "Do not expose unauthenticated data; keep the original and exact diagnostic."
+        ],
+        [
+          "CRYPT5 without a matching 24-byte key or account",
+          "legacy_account_required; a modern 32-byte backup key is insufficient."
+        ],
+        [
+          "Unknown CRYPT version",
+          "unsupported_crypt_version; preserve encrypted bytes and report the unsupported capability."
+        ],
+        [
+          "Unsafe / oversize ZIP members",
+          "Retain authenticated ZIP, expand only permitted CRC-checked members and list every expansion gap."
+        ],
+        [
+          "Missing or tampered derived object",
+          "Reject namespace, source-link, size or hash mismatch before parsing/preview."
+        ]
+      ],
+      "notes": [
+        [
+          "Limits",
+          "WhatsApp backup keys do not decrypt Android filesystem encryption, unrelated applications, password-protected documents or transport-encrypted media with separate keys. Missing/overwritten data cannot be reconstructed by a parser."
+        ]
+      ],
+      "source": "backend/tests/test_whatsapp_payloads.py; test_whatsapp_derivation.py; test_whatsapp_key_intake.py"
+    },
+    {
+      "title": "Verification scope / performance and live acceptance",
+      "headers": [
+        "Verified in this update",
+        "Practical scope"
+      ],
+      "widths": [
+        190,
+        317
+      ],
+      "rows": [
+        [
+          "Independent synthetic encoders",
+          "Original .crypt and CRYPT5/7/8/9/10/11/12/14/15 use independent cryptography AES/HKDF fixtures; pre-existing independent wa-crypt-tools vectors remain covered."
+        ],
+        [
+          "Portable 12-check case",
+          "Key offset, keyless failure, ten supported layouts, ZIP/mail/image/JSON/binary recovery, chats, deleted row, media reference, RAG text and preserved hashes."
+        ],
+        [
+          "PostgreSQL-compatible service checks",
+          "Real service SQL, multi-key Intake, deduplicated registration, parser storage, message browser, RAG chunks, case namespace and tamper rejection."
+        ],
+        [
+          "Frontend compilation",
+          "Unified, Android and iOS builds include CRYPT5 48-hex/account input, per-file authentication status and preserved key uploads."
+        ],
+        [
+          "Resource changes",
+          "Documented IV dispatch; bounded fallback; source/key-set cache; no duplicate DB parses; bounded ZIP expansion; cooperative pause and per-source progress."
+        ],
+        [
+          "Live hardware still required",
+          "No physical phone, native Windows phone pull or GPU session was connected. Real case decryption also needs its matching keys; synthetic QA secrets are unusable for real cases."
+        ]
+      ],
+      "notes": [
+        [
+          "Coverage",
+          "This verifies supported code paths. It does not establish recovery of every possible encrypted format or every deleted mobile artifact."
+        ]
+      ],
+      "source": "WHATSAPP-CRYPT-RELEASE.md; WHATSAPP-CRYPT-MANIFEST.json; LIVE-PHONE-GPU-VERIFICATION.md"
+    }
+  ]
+}

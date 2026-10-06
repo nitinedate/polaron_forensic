@@ -1,0 +1,1 @@
+Synthetic CRYPT-family demo only. Public test keys: bytes 00..1f (32 bytes) and 00..17 (24 bytes). No real phone data. Ten database containers plus an authenticated binary resource. Four legacy formats decode without authentication; outputs must never be reported as cryptographically verified. Unknown versions are tested separately in test_crypt_family.py.

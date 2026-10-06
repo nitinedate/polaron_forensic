@@ -1,0 +1,10 @@
+﻿-[ RECORD 1 ]-----+-------------------------------------
+id                | 5ab9f684-813d-4b09-aa62-2b90afaa498d
+name              | external
+status            | active
+connection_mode   | edge_agent
+agent_token_hint  | oVaE
+token_hash_prefix | da48771e9efb
+version           | 1.2.2
+last_heartbeat_at | 2026-08-21 07:17:16.900203+00
+

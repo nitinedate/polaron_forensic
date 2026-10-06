@@ -1,0 +1,5 @@
+# CPU/GPU semaphore leases now use the shared Redis in services/common
+# (logical database 15, host port 6380). Do not start a second Redis here.
+name: aetheris-capacity
+
+services: {}

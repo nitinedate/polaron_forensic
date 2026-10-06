@@ -1,0 +1,2349 @@
+{
+  "filename": "Disk-Process-Flows.pdf",
+  "title": "Disk Forensics\nProcess Flows",
+  "short": "Disk Forensics",
+  "subtitle": "Acquisition → artifact creation → grounded reports",
+  "pages": [
+    {
+      "title": "Disk / Evidence-to-report overview",
+      "intro": "Every result traces back to an immutable acquisition or a clearly identified derivative. Extraction, artifact creation, RAG and reporting have separate completion gates.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "input",
+            "text": "Case + image / folder\nIntake and source plan",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "pre",
+            "text": "Validate segments\nPrepare read-only source",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "extract",
+            "text": "Extract / index bytes\nFinalize manifest",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "parse",
+            "text": "Materialize + parse\nRecovery + OCR",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "media",
+            "text": "Review source media\nCreate evidence descriptions",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "index",
+            "text": "Normalize + RAG\nEntities + graph",
+            "r": 5,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "gate",
+            "text": "Stage gates pass?",
+            "r": 6,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "gap",
+            "text": "Wait / fail / coverage gap\nPreserve checkpoints",
+            "r": 6,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "report",
+            "text": "Ready artifacts\nReport run + exports",
+            "r": 7,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "input",
+            "b": "pre"
+          },
+          {
+            "a": "pre",
+            "b": "extract"
+          },
+          {
+            "a": "extract",
+            "b": "parse"
+          },
+          {
+            "a": "parse",
+            "b": "media"
+          },
+          {
+            "a": "media",
+            "b": "index"
+          },
+          {
+            "a": "index",
+            "b": "gate"
+          },
+          {
+            "a": "gate",
+            "b": "gap",
+            "label": "No"
+          },
+          {
+            "a": "gate",
+            "b": "report",
+            "label": "Yes"
+          }
+        ]
+      },
+      "height": 542,
+      "notes": [
+        [
+          "Resource policy",
+          "One active serial stage per job; up to four CPU evidence workers inside a stage. OCR and vision share a single GPU permit. Embeddings are not a stage."
+        ],
+        [
+          "Evidence policy",
+          "Do not infer deleted status, content, identity or suspicious intent from a filename. Record a source locator, hash, evidence state and the reason for each observation."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_pipeline.py; disk.py; report_generator.py"
+    },
+    {
+      "title": "The 13 controlled stages",
+      "intro": "The same serial controller governs Disk evidence after acquisition handoff. One stage owns the job at a time; bounded workers may operate inside a stage.",
+      "notes": [
+        [
+          "State meanings",
+          "Ready means the configured gates completed. coverage_complete and exception counters still describe missing or inaccessible evidence. A completed acquisition does not prove that every possible artifact was captured."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_pipeline.py; forensic_serial_stages.py; forensic_serial_policy.py",
+      "headers": [
+        "Stage / key",
+        "Process agent",
+        "Required output"
+      ],
+      "rows": [
+        [
+          "01  intake",
+          "segments_agent",
+          "Source validation and an extraction plan"
+        ],
+        [
+          "02  source_prepare",
+          "virtual_disk_agent",
+          "Read-only source access / prepared mobile acquisition"
+        ],
+        [
+          "03  extraction",
+          "extraction_agent",
+          "Acquisition completion and a finalized manifest"
+        ],
+        [
+          "04  materialize",
+          "materialize_agent",
+          "Manifest files become durable artifact records"
+        ],
+        [
+          "05  parse",
+          "parse_agent",
+          "Structured records, text and decrypted WhatsApp databases"
+        ],
+        [
+          "06  recovery",
+          "recovery_agent",
+          "Retained deleted bytes and residual candidates"
+        ],
+        [
+          "07  ocr",
+          "ocr_agent",
+          "Text from acquired image/document pixels"
+        ],
+        [
+          "08  media_review",
+          "media_review_agent",
+          "Source images and sampled video frames with descriptions"
+        ],
+        [
+          "09  inventory",
+          "artifacts_agent",
+          "Normalize, classify and correlate evidence"
+        ],
+        [
+          "10  chunk",
+          "chunk_agent",
+          "Text-only RAG: 2500 characters; 800 overlap"
+        ],
+        [
+          "11  enrichment",
+          "entity_agent",
+          "Source-backed entities and enrichment"
+        ],
+        [
+          "12  graph",
+          "neo4j_agent",
+          "Idempotent evidence relationships"
+        ],
+        [
+          "13  validation",
+          "validation_agent",
+          "Stage gates, counts and explicit coverage gaps"
+        ]
+      ],
+      "widths": [
+        119,
+        124,
+        264
+      ]
+    },
+    {
+      "title": "01 / Intake and segment preflight",
+      "intro": "Choose the accessible source folder before processing. Intake links the job to its case and records the intended examination.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "case",
+            "text": "Case / intake saved\nSource folder chosen",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "type",
+            "text": "Source kind?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "image",
+            "text": "E01 / raw segments\nInventory and ordering",
+            "r": 2,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "folder",
+            "text": "Attached disk / folder\nReadable path inventory",
+            "r": 2,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "valid",
+            "text": "Complete and\nreadable source?",
+            "r": 3,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "bad",
+            "text": "Missing segment / access\nVisible preflight failure",
+            "r": 3,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "plan",
+            "text": "Persist extraction plan\nPaths + source metadata",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "handoff",
+            "text": "Source preparation\nStage checkpoint",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "case",
+            "b": "type"
+          },
+          {
+            "a": "type",
+            "b": "image",
+            "label": "Image"
+          },
+          {
+            "a": "type",
+            "b": "folder",
+            "label": "Folder"
+          },
+          {
+            "a": "image",
+            "b": "valid"
+          },
+          {
+            "a": "folder",
+            "b": "valid"
+          },
+          {
+            "a": "valid",
+            "b": "bad",
+            "label": "No"
+          },
+          {
+            "a": "valid",
+            "b": "plan",
+            "label": "Yes"
+          },
+          {
+            "a": "plan",
+            "b": "handoff"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Fail early",
+          "Incomplete image segments, an unreadable selected directory or an inaccessible drive must be visible before a parser job is dispatched."
+        ],
+        [
+          "Resume",
+          "Keep the source plan and progress checkpoint. A previously finalized acquisition can hand off to artifacts without repeating the image walk."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_pipeline.py; virtual_disk.py; extracted_disk.py"
+    },
+    {
+      "title": "02 / Read-only source preparation",
+      "intro": "The preparation step exposes acquired source bytes to extraction. It does not alter the original evidence image.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "plan",
+            "text": "Validated source plan\nSegment / path metadata",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "final",
+            "text": "Already finalized\nmanifest available?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "reuse",
+            "text": "Reuse manifest\nNo remount / rewalk",
+            "r": 1,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "open",
+            "text": "Open read-only image\nor prepared source path",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "parts",
+            "text": "Enumerate partitions\nFilesystem roots",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "read",
+            "text": "Readable filesystem?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "error",
+            "text": "Unsupported / inaccessible\nRecord coverage gap",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "ready",
+            "text": "Prepared roots + plan\nExtraction handoff",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "plan",
+            "b": "final"
+          },
+          {
+            "a": "final",
+            "b": "reuse",
+            "label": "Yes"
+          },
+          {
+            "a": "final",
+            "b": "open",
+            "label": "No"
+          },
+          {
+            "a": "open",
+            "b": "parts"
+          },
+          {
+            "a": "parts",
+            "b": "read"
+          },
+          {
+            "a": "read",
+            "b": "error",
+            "label": "No"
+          },
+          {
+            "a": "read",
+            "b": "ready",
+            "label": "Yes"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Source integrity",
+          "Keep original segment/path identifiers. Partitions and filesystem entries remain linked to their source image."
+        ],
+        [
+          "Support boundary",
+          "The flow records the filesystems and bytes the implemented readers expose. An unsupported encrypted volume requires an authorized decrypted source; preparation is not universal volume decryption."
+        ]
+      ],
+      "source": "backend/app/services/virtual_disk.py; backend/app/services/disk.py"
+    },
+    {
+      "title": "03 / Extraction, storage and finalization",
+      "intro": "Extraction walks readable roots, stores acquired bytes and records a finalized index. File-level failures remain explicit.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "roots",
+            "text": "Prepared filesystem\nRoots + extraction plan",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "walk",
+            "text": "Priority walk then\nremaining source files",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "file",
+            "text": "Read entry / bytes\nPath + metadata",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "ok",
+            "text": "Bytes readable?",
+            "r": 3,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "skip",
+            "text": "Failure / skip record\nPath + reason + count",
+            "r": 3,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "store",
+            "text": "SHA-256 + object write\nSharded MinIO index",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "more",
+            "text": "More entries?",
+            "r": 5,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "end",
+            "text": "Finalize manifest\nCounters + source plan",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "roots",
+            "b": "walk"
+          },
+          {
+            "a": "walk",
+            "b": "file"
+          },
+          {
+            "a": "file",
+            "b": "ok"
+          },
+          {
+            "a": "ok",
+            "b": "skip",
+            "label": "No"
+          },
+          {
+            "a": "ok",
+            "b": "store",
+            "label": "Yes"
+          },
+          {
+            "a": "skip",
+            "b": "more"
+          },
+          {
+            "a": "store",
+            "b": "more"
+          },
+          {
+            "a": "more",
+            "b": "file",
+            "label": "Yes",
+            "side": "left"
+          },
+          {
+            "a": "more",
+            "b": "end",
+            "label": "No"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Finalize barrier",
+          "The manifest is the durable handoff. Acquisition milestones are recorded at finalization; later evidence stages do not silently rewrite the original image."
+        ],
+        [
+          "Performance",
+          "Use resumable extraction plans, sharded indexes and bounded file workers. Counts include failed and skipped paths so a fast partial acquisition cannot masquerade as complete coverage."
+        ]
+      ],
+      "source": "backend/app/services/extracted_disk.py; virtual_disk.py; forensic_serial_stages.py"
+    },
+    {
+      "title": "04 / Manifest-to-artifact materialization",
+      "intro": "Each acquired file receives a stable artifact identity before parsing or model review.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "manifest",
+            "text": "Finalized extraction\nObject index + manifest",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "page",
+            "text": "Read manifest page\nBounded batch",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "exists",
+            "text": "Artifact identity\nalready stored?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "retain",
+            "text": "Retain identity\nResume checkpoint",
+            "r": 2,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "create",
+            "text": "Create job_artifacts\nPath, size, MIME, SHA-256",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "links",
+            "text": "Object / part locator\nSource metadata + state",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "next",
+            "text": "More manifest pages?",
+            "r": 5,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "done",
+            "text": "Materialization counts\nParse queue / checkpoint",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "manifest",
+            "b": "page"
+          },
+          {
+            "a": "page",
+            "b": "exists"
+          },
+          {
+            "a": "exists",
+            "b": "retain",
+            "label": "Yes"
+          },
+          {
+            "a": "exists",
+            "b": "create",
+            "label": "No"
+          },
+          {
+            "a": "create",
+            "b": "links"
+          },
+          {
+            "a": "retain",
+            "b": "next"
+          },
+          {
+            "a": "links",
+            "b": "next"
+          },
+          {
+            "a": "next",
+            "b": "page",
+            "label": "Yes",
+            "side": "left"
+          },
+          {
+            "a": "next",
+            "b": "done",
+            "label": "No"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Provenance",
+          "An artifact can be an acquired file or an identified derivative. Its path, content hash, storage locator and evidence state must distinguish those cases."
+        ],
+        [
+          "Bounded work",
+          "Paging and stable identities support large acquisitions without duplicate artifact rows after a retry."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_stages.py; forensic_priority_evidence.py"
+    },
+    {
+      "title": "05 / Native parsing and format dispatch",
+      "intro": "Identify content from signatures and structure as well as extensions. Binary candidates stay labeled when their schema or meaning is unverified.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "artifact",
+            "text": "Materialized file\nVerified source locator",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "detect",
+            "text": "Inspect signature, MIME\nand parser registry",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "format",
+            "text": "Supported plaintext\nformat?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "opaque",
+            "text": "Encrypted / unknown binary\nInventory + gap / candidate",
+            "r": 2,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "parse",
+            "text": "Native structured parse\nDocuments / mail / DBs",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "validate",
+            "text": "Parsed records valid?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "failed",
+            "text": "Parser failure / residual\nPreserve diagnostic",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "rows",
+            "text": "Text + normalized rows\nTable / row / source hashes",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "artifact",
+            "b": "detect"
+          },
+          {
+            "a": "detect",
+            "b": "format"
+          },
+          {
+            "a": "format",
+            "b": "opaque",
+            "label": "No"
+          },
+          {
+            "a": "format",
+            "b": "parse",
+            "label": "Yes"
+          },
+          {
+            "a": "parse",
+            "b": "validate"
+          },
+          {
+            "a": "validate",
+            "b": "failed",
+            "label": "No"
+          },
+          {
+            "a": "validate",
+            "b": "rows",
+            "label": "Yes"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Supported families",
+          "EML, EMLX, MSG, MBOX/MBX and attachments; office/PDF/text documents; JSON/JSONL/NDJSON, XML, CSV/TSV, plist/bplist and supported SQLite tables."
+        ],
+        [
+          "Quality",
+          "Native database rows are stronger than unverified binary or protobuf fragments. A filename or printable string is not enough to call a file a conversation database."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_stages.py; forensic_priority_evidence.py; forensic_priority_evidence.py"
+    },
+    {
+      "title": "Priority / Web, email and WhatsApp-linked media",
+      "intro": "Priority records preserve the distinction between actual browser events, copied URLs and attachment references.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "sources",
+            "text": "Browser / mail / app\nAcquired source files",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "kind",
+            "text": "Dispatch source\nfamily",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "web",
+            "text": "Visits, bookmarks\nDownloads / URL refs",
+            "r": 2,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "mail",
+            "text": "Mail headers / bodies\nAttachments / timestamps",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "chat",
+            "text": "Available chat databases\nSupported backup + key",
+            "r": 2,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "correlate",
+            "text": "Correlate source records\nand actual file identities",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "exact",
+            "text": "Exact attachment\npath / bytes?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "candidate",
+            "text": "Filename / URL candidate\nNo byte recovery claim",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "evidence",
+            "text": "Priority evidence records\nTimeline + source hashes",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "sources",
+            "b": "kind"
+          },
+          {
+            "a": "kind",
+            "b": "web"
+          },
+          {
+            "a": "kind",
+            "b": "mail"
+          },
+          {
+            "a": "kind",
+            "b": "chat"
+          },
+          {
+            "a": "web",
+            "b": "correlate"
+          },
+          {
+            "a": "mail",
+            "b": "correlate"
+          },
+          {
+            "a": "chat",
+            "b": "correlate"
+          },
+          {
+            "a": "correlate",
+            "b": "exact"
+          },
+          {
+            "a": "exact",
+            "b": "candidate",
+            "label": "No"
+          },
+          {
+            "a": "exact",
+            "b": "evidence",
+            "label": "Yes"
+          }
+        ]
+      },
+      "height": 448,
+      "notes": [
+        [
+          "Web coverage",
+          "Collect acquired history, bookmarks, download records, cookies and login metadata. Protected credentials and encrypted web stores are inventoried unless a supported decryption route is available."
+        ],
+        [
+          "WhatsApp",
+          "Disk-resident WhatsApp databases/backups use available matching keys and the same authenticated parser path documented in the Mobile PDF. A WhatsApp web URL does not prove decrypted chats were recovered."
+        ]
+      ],
+      "source": "backend/app/services/forensic_priority_evidence.py; forensic_priority_evidence.py; mobile_forensic/parsers/whatsapp_modern.py"
+    },
+    {
+      "title": "06 / Recovery and deleted-data evidence states",
+      "intro": "Recovery examines acquired retained bytes. It cannot reconstruct overwritten or unavailable content merely from metadata.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "bytes",
+            "text": "Acquired DB / filesystem\nRetained bytes + metadata",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "scan",
+            "text": "Recycle / retained files\nSQLite residual scan",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "explicit",
+            "text": "Explicit deletion\nmarker / retained file?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "deleted",
+            "text": "Deleted / retained evidence\nMarker + byte provenance",
+            "r": 3,
+            "c": 0,
+            "kind": "data"
+          },
+          {
+            "id": "residual",
+            "text": "Freelist / WAL / journal\nCandidate records",
+            "r": 3,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "check",
+            "text": "Validate structure\nSource offset / confidence",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "store",
+            "text": "Recovered or candidate\nSeparate evidence state",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "bytes",
+            "b": "scan"
+          },
+          {
+            "a": "scan",
+            "b": "explicit"
+          },
+          {
+            "a": "explicit",
+            "b": "deleted",
+            "label": "Yes"
+          },
+          {
+            "a": "explicit",
+            "b": "residual",
+            "label": "No"
+          },
+          {
+            "a": "deleted",
+            "b": "check"
+          },
+          {
+            "a": "residual",
+            "b": "check"
+          },
+          {
+            "a": "check",
+            "b": "store"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Interpretation",
+          "A row found in an old backup is historical evidence, not automatic proof that a user deleted the current chat. Residual candidates need corroboration."
+        ],
+        [
+          "Limits",
+          "This flow does not promise recovery of all unallocated image sectors or encrypted/overwritten deleted files. The source reader and retained bytes determine actual coverage."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_stages.py; mobile_forensic/recovery/analyzers.py; forensic_priority_evidence.py"
+    },
+    {
+      "title": "07 / OCR and searchable text",
+      "intro": "OCR processes acquired pixels and document pages. It records success, empty results and failures separately.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "i",
+            "text": "Image / document\nsource artifact",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "need",
+            "text": "OCR needed?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "skip",
+            "text": "Preserve native text\nRecord skip reason",
+            "r": 1,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "gpu",
+            "text": "Wait for shared\nGPU permit",
+            "r": 2,
+            "c": 1,
+            "kind": "key"
+          },
+          {
+            "id": "read",
+            "text": "Render page / orient\nimage; run OCR",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "save",
+            "text": "Text, page reference\nand source hash",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "done",
+            "text": "Release model + GPU\nRecord stage counters",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "i",
+            "b": "need"
+          },
+          {
+            "a": "need",
+            "b": "skip",
+            "label": "No"
+          },
+          {
+            "a": "need",
+            "b": "gpu",
+            "label": "Yes"
+          },
+          {
+            "a": "gpu",
+            "b": "read"
+          },
+          {
+            "a": "read",
+            "b": "save"
+          },
+          {
+            "a": "save",
+            "b": "done"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Scheduling",
+          "OCR and vision share one GPU permit. A legitimate permit or model wait is visible to progressAgent and is not classified as an invalid halt."
+        ],
+        [
+          "Evidence",
+          "OCR is derived text. Keep the original file, page/frame reference, source hash and OCR status; an OCR guess does not replace the original evidence."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_stages.py; ocr_gpu.py; forensic_media_review.py"
+    },
+    {
+      "title": "08 / Image and video evidence review",
+      "intro": "Suspicious Activity is created from observable source content and its provenance. Filenames alone do not establish suspicious conduct.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "source",
+            "text": "Acquired media\nPath + SHA-256",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "type",
+            "text": "Image or video?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "image",
+            "text": "Orient image\nDecode real pixels",
+            "r": 2,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "video",
+            "text": "Sample every 10 s\nplus final sample",
+            "r": 2,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "vision",
+            "text": "Vision model / OCR\nConcrete description",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "signal",
+            "text": "Evidence signal?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "regular",
+            "text": "Media artifact\nReview status",
+            "r": 4,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "susp",
+            "text": "Suspicious Activity\nSource-linked evidence",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "report",
+            "text": "Examiner review\nObservations + report",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "source",
+            "b": "type"
+          },
+          {
+            "a": "type",
+            "b": "image",
+            "label": "Image"
+          },
+          {
+            "a": "type",
+            "b": "video",
+            "label": "Video"
+          },
+          {
+            "a": "image",
+            "b": "vision"
+          },
+          {
+            "a": "video",
+            "b": "vision"
+          },
+          {
+            "a": "vision",
+            "b": "signal"
+          },
+          {
+            "a": "signal",
+            "b": "regular",
+            "label": "No"
+          },
+          {
+            "a": "signal",
+            "b": "susp",
+            "label": "Yes"
+          },
+          {
+            "a": "susp",
+            "b": "report"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Exact evidence",
+          "Retain artifact ID, original path/hash, model and description. Video evidence also retains decoded presentation time, derived frame PNG and frame hash."
+        ],
+        [
+          "Scope",
+          "Images are resized for review up to 1536 px; animated images use the first frame. Video sampling is not an examination of every frame. Missing models or decode failures produce a wait or recorded gap; model interpretation needs examiner review."
+        ]
+      ],
+      "source": "backend/app/services/forensic_media_review.py; suspicious_activity.py"
+    },
+    {
+      "title": "09 / Normalize, correlate and classify artifacts",
+      "intro": "Durable source files, native records and derivatives join the inventory without losing their different evidence strengths.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "inputs",
+            "text": "Files, records, OCR\nMedia descriptions",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "norm",
+            "text": "Normalize identities\nTimes / MIME / categories",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "join",
+            "text": "Join source artifact\nDB row + attachment links",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "signal",
+            "text": "Rule / visible-content\nevidence signal?",
+            "r": 3,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "standard",
+            "text": "Regular artifact category\nRetain source state",
+            "r": 3,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "sus",
+            "text": "Suspicious Activity\nDescription + reason",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "counts",
+            "text": "Inventory / coverage\nTimeline + counters",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "inputs",
+            "b": "norm"
+          },
+          {
+            "a": "norm",
+            "b": "join"
+          },
+          {
+            "a": "join",
+            "b": "signal"
+          },
+          {
+            "a": "signal",
+            "b": "standard",
+            "label": "No"
+          },
+          {
+            "a": "signal",
+            "b": "sus",
+            "label": "Yes"
+          },
+          {
+            "a": "standard",
+            "b": "counts"
+          },
+          {
+            "a": "sus",
+            "b": "counts"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "One evidence category",
+          "Suspicious Activity includes supported chat/mail text, web/download/file/application indicators, OCR and actual image/video observations. Each entry carries a source-backed explanation."
+        ],
+        [
+          "Review",
+          "Suspicious is a review flag, not a finding of guilt. Unverified fragments and inferred links remain identified as such."
+        ]
+      ],
+      "source": "backend/app/services/suspicious_activity.py; forensic_priority_evidence.py; forensic_serial_stages.py"
+    },
+    {
+      "title": "10 / Text-only RAG chunking",
+      "intro": "The embedding stage and forensic vector search are removed. The RAG source is normalized text, parsed content, OCR and evidence descriptions.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "text",
+            "text": "Parsed / OCR / media\ntext + provenance",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "normalize",
+            "text": "Normalize text\nKeep evidence locator",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "policy",
+            "text": "Current chunk\npolicy already applied?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "resume",
+            "text": "Resume existing\ncheckpoint / no duplicates",
+            "r": 2,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "split",
+            "text": "2500-character chunks\n800-character overlap",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "replace",
+            "text": "Replace stale policy\nWrite chunk records",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "index",
+            "text": "Text retrieval index\nCounts + checkpoint",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "text",
+            "b": "normalize"
+          },
+          {
+            "a": "normalize",
+            "b": "policy"
+          },
+          {
+            "a": "policy",
+            "b": "resume",
+            "label": "Yes"
+          },
+          {
+            "a": "policy",
+            "b": "split",
+            "label": "No"
+          },
+          {
+            "a": "split",
+            "b": "replace"
+          },
+          {
+            "a": "replace",
+            "b": "index"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Window definition",
+          "The limit is characters, not tokens. Headers count inside the 2500-character window. Maximum nominal advance is 1700 characters; boundaries can adjust to the content."
+        ],
+        [
+          "Query / report",
+          "Retrieval uses text search and evidence references. No GPU embeddings or CLIP retrieval are required. Indexing source descriptions does not add facts beyond the cited source content."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_policy.py; forensic_serial_stages.py; rag_index.py"
+    },
+    {
+      "title": "11–12 / Entities and evidence graph",
+      "intro": "Enrichment runs after durable chunks. Graph writes preserve source relationships and use idempotent keys.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "chunks",
+            "text": "Indexed text\nNormalized records",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "entities",
+            "text": "Extract identities, URLs\nTimes and identifiers",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "validate",
+            "text": "Source locator\nexists?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "discard",
+            "text": "Reject unsupported\nentity / record issue",
+            "r": 2,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "relate",
+            "text": "Correlate entities\nwith source artifacts",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "neo",
+            "text": "Neo4j available?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "wait",
+            "text": "Stage waiting\nDependency visible",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "write",
+            "text": "Upsert graph nodes\nand relationships",
+            "r": 5,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "gate",
+            "text": "Graph checkpoint\nProceed to validation",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "chunks",
+            "b": "entities"
+          },
+          {
+            "a": "entities",
+            "b": "validate"
+          },
+          {
+            "a": "validate",
+            "b": "discard",
+            "label": "No"
+          },
+          {
+            "a": "validate",
+            "b": "relate",
+            "label": "Yes"
+          },
+          {
+            "a": "relate",
+            "b": "neo"
+          },
+          {
+            "a": "neo",
+            "b": "wait",
+            "label": "No"
+          },
+          {
+            "a": "neo",
+            "b": "write",
+            "label": "Yes"
+          },
+          {
+            "a": "write",
+            "b": "gate"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Identity",
+          "A chat account, sender, image path or URL links to the actual acquired record. Matching names or filenames remain weaker correlation signals."
+        ],
+        [
+          "Dependency gate",
+          "A graph dependency wait holds the serial gate. progressAgent checks the wait reason and retries within policy; it must not report the job ready while the required stage remains waiting."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_stages.py; forensic_serial_pipeline.py; forensic_priority_evidence.py"
+    },
+    {
+      "title": "13 / Validation and readiness",
+      "intro": "Validation compares required stage outputs and checkpoints. Coverage status is retained alongside readiness.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "stage",
+            "text": "All required stage\ncheckpoints and counts",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "counts",
+            "text": "Check manifest / artifacts\nParsed rows / chunk policy",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "gates",
+            "text": "Required gates\ncompleted?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "wait",
+            "text": "Waiting / failed stage\nExpose reason + owner",
+            "r": 2,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "coverage",
+            "text": "Evaluate source failures\nParser and media gaps",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "record",
+            "text": "Persist coverage_complete\nExceptions and limitations",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "ready",
+            "text": "Mark processing ready\nArtifact / report access",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "stage",
+            "b": "counts"
+          },
+          {
+            "a": "counts",
+            "b": "gates"
+          },
+          {
+            "a": "gates",
+            "b": "wait",
+            "label": "No"
+          },
+          {
+            "a": "gates",
+            "b": "coverage",
+            "label": "Yes"
+          },
+          {
+            "a": "coverage",
+            "b": "record"
+          },
+          {
+            "a": "record",
+            "b": "ready"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Readiness vs completeness",
+          "Ready means this acquisition finished its configured stages. An unsupported encrypted source, missing bytes or recorded decode failure remains an explicit coverage limitation."
+        ],
+        [
+          "Retry",
+          "Resume only incomplete derived stages and preserve acquired bytes. Report regeneration uses new derived records rather than retroactively changing a saved report."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_pipeline.py; forensic_serial_stages.py"
+    },
+    {
+      "title": "The single progressAgent supervisor",
+      "intro": "progressAgent is the sole outside-process coordinator. Observe, Performance and Repair huddles are retired; queued legacy huddles perform no work.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "observe",
+            "text": "Read owner heartbeat\nCounters + checkpoint",
+            "r": 0,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "halt",
+            "text": "No useful progress\nfor 60 seconds?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "next",
+            "text": "Continue observation\nDefault check ~15 s",
+            "r": 1,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "valid",
+            "text": "Valid wait / pause?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "keep",
+            "text": "Keep owned process\nExpose reason / deadline",
+            "r": 2,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "inspect",
+            "text": "Inspect owned task\nLease and deadline",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "repair",
+            "text": "Cancel owned subprocess\nClean matched lease",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "retry",
+            "text": "Bounded redispatch\nMaximum three retries",
+            "r": 5,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "limit",
+            "text": "Retry budget left?",
+            "r": 6,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "fail",
+            "text": "Visible failed / blocked\nPreserve evidence",
+            "r": 6,
+            "c": 2,
+            "kind": "blocked"
+          }
+        ],
+        "edges": [
+          {
+            "a": "observe",
+            "b": "halt"
+          },
+          {
+            "a": "halt",
+            "b": "next",
+            "label": "No"
+          },
+          {
+            "a": "halt",
+            "b": "valid",
+            "label": "Yes"
+          },
+          {
+            "a": "valid",
+            "b": "keep",
+            "label": "Yes"
+          },
+          {
+            "a": "valid",
+            "b": "inspect",
+            "label": "No"
+          },
+          {
+            "a": "inspect",
+            "b": "repair"
+          },
+          {
+            "a": "repair",
+            "b": "retry"
+          },
+          {
+            "a": "retry",
+            "b": "limit"
+          },
+          {
+            "a": "limit",
+            "b": "observe",
+            "label": "Yes",
+            "side": "left"
+          },
+          {
+            "a": "limit",
+            "b": "fail",
+            "label": "No"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Valid waits",
+          "User pause, a shared GPU permit, a required model/dependency, or an operation inside its expected deadline may legitimately exceed one minute. A fresh heartbeat alone is not useful progress."
+        ],
+        [
+          "Ownership / cleanup",
+          "Recovery stops only the owned job process and matched leases. Routine legacy huddle lines are hidden from consoles; historical database rows and processing/evidence logs remain intact."
+        ]
+      ],
+      "source": "backend/app/services/progress_agent.py; forensic_serial_pipeline.py"
+    },
+    {
+      "title": "Report / Intake, scope and evidence selection",
+      "intro": "A report run starts from saved case intake and selected evidence. Disk uses image/source details and the finalized extraction. ",
+      "chart": {
+        "nodes": [
+          {
+            "id": "intake",
+            "text": "Saved intake\nObjectives + case scope",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "select",
+            "text": "Choose evidence\nArtifact IDs / observations",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "ready",
+            "text": "Required stages\nand fields ready?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "block",
+            "text": "Missing stage / input\nExpose gap; do not draft",
+            "r": 2,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "run",
+            "text": "Create report run\nSingle run owner",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "refresh",
+            "text": "Clear stale caches\nRefresh acquired inventory",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "facts",
+            "text": "Build section facts\nCase profile + evidence",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "intake",
+            "b": "select"
+          },
+          {
+            "a": "select",
+            "b": "ready"
+          },
+          {
+            "a": "ready",
+            "b": "block",
+            "label": "No"
+          },
+          {
+            "a": "ready",
+            "b": "run",
+            "label": "Yes"
+          },
+          {
+            "a": "run",
+            "b": "refresh"
+          },
+          {
+            "a": "refresh",
+            "b": "facts"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Refresh scope",
+          "Refresh reads the existing acquisition. Report generation does not acquire a missing phone database or remount an unavailable original source to invent evidence."
+        ],
+        [
+          "Selection",
+          "Retain selected artifact counts, objectives, procedure and examiner observations. Saved historic reports keep their content; a new run is needed to include new derived evidence."
+        ]
+      ],
+      "source": "backend/app/routers/report.py; backend/app/services/report_generator.py"
+    },
+    {
+      "title": "Report / Grounded section generation",
+      "intro": "Sections share a deterministic order. Structured facts and saved observations are preferred where the report has direct evidence.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "section",
+            "text": "Next section\nRequired fields + facts",
+            "r": 0,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "direct",
+            "text": "Direct template or\ncomplete observations?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "fixed",
+            "text": "Render saved facts\nArtifact / profile references",
+            "r": 2,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "retrieve",
+            "text": "Text-only retrieval\nskip_vector=True; top 10",
+            "r": 2,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "draft",
+            "text": "Compose section\nCite evidence locators",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "grade",
+            "text": "Supported statements\nand citations?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "fallback",
+            "text": "Flag / correct section\nFactual fallback if needed",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "persist",
+            "text": "Save section + review\nCheckpoint / progress",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "more",
+            "text": "More sections?",
+            "r": 6,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "final",
+            "text": "Final report content\nReady for review / export",
+            "r": 6,
+            "c": 2,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "section",
+            "b": "direct"
+          },
+          {
+            "a": "direct",
+            "b": "fixed",
+            "label": "Yes"
+          },
+          {
+            "a": "direct",
+            "b": "retrieve",
+            "label": "No"
+          },
+          {
+            "a": "fixed",
+            "b": "draft"
+          },
+          {
+            "a": "retrieve",
+            "b": "draft"
+          },
+          {
+            "a": "draft",
+            "b": "grade"
+          },
+          {
+            "a": "grade",
+            "b": "fallback",
+            "label": "No"
+          },
+          {
+            "a": "grade",
+            "b": "persist",
+            "label": "Yes"
+          },
+          {
+            "a": "fallback",
+            "b": "persist"
+          },
+          {
+            "a": "persist",
+            "b": "more"
+          },
+          {
+            "a": "more",
+            "b": "section",
+            "label": "Yes",
+            "side": "left"
+          },
+          {
+            "a": "more",
+            "b": "final",
+            "label": "No"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Model boundary",
+          "The model can describe source facts. Unsupported claims, incomplete evidence and failed generation are reported explicitly; factual templates provide fallback content."
+        ],
+        [
+          "Resuming",
+          "Section checkpoints and a single report owner support pause/resume. progressAgent tracks actual work, section state and valid model/dependency waits."
+        ]
+      ],
+      "source": "backend/app/services/report_generator.py; report_generator_agent.py; report_renderer.py"
+    },
+    {
+      "title": "Report / Suspicious Activity evidence panels",
+      "intro": "The report draws this section from source-linked artifacts and verified media, then allows examiner observations to be added.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "records",
+            "text": "Suspicious Activity\nSource-linked artifact IDs",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "source",
+            "text": "Source bytes / locator\nstill verifiable?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "gap",
+            "text": "Text limitation / reference\nDo not invent a picture",
+            "r": 1,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "picture",
+            "text": "Image or sampled frame\nVerified derivative hash",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "caption",
+            "text": "Caption: path, hash\nPTS + visible description",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "observe",
+            "text": "Examiner observation\nClearly separate from model",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "section",
+            "text": "Evidence panel + citations\nAnnexure links / pagination",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "records",
+            "b": "source"
+          },
+          {
+            "a": "source",
+            "b": "gap",
+            "label": "No"
+          },
+          {
+            "a": "source",
+            "b": "picture",
+            "label": "Yes"
+          },
+          {
+            "a": "picture",
+            "b": "caption"
+          },
+          {
+            "a": "caption",
+            "b": "observe"
+          },
+          {
+            "a": "observe",
+            "b": "section"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Text evidence",
+          "Chats, email, browsing, downloads and application indicators cite their native record locator and explanation. A URL reference alone does not establish browsing or downloading."
+        ],
+        [
+          "Media evidence",
+          "Present the actual retained image or sampled video frame with its description. Frame timestamps locate evidence in the video; a sampled frame does not represent the complete video."
+        ]
+      ],
+      "source": "backend/app/services/suspicious_activity.py; report_renderer.py; forensic_priority_evidence.py"
+    },
+    {
+      "title": "Report / Common section and page structure",
+      "intro": "The shared renderer keeps the Disk and Mobile report sections aligned. Platform-specific source headings are substituted without changing the surrounding structure.",
+      "notes": [
+        [
+          "Shared formatting",
+          "A4 page width, section spacing, header, watermark, page numbers, evidence captions and annexure links use the same rendering path."
+        ],
+        [
+          "Content and pagination",
+          "Fourteen logical sections are saved in the report run. Evidence volume determines the page count; identical layout does not imply identical length."
+        ],
+        [
+          "Suspicious Activity",
+          "This is a dedicated report section and artifact category. It includes source-linked reasons, real retained media or sampled frames, and separate examiner observations."
+        ]
+      ],
+      "source": "backend/app/services/report_generator.py; report_renderer.py; report_pdf_export.py; report_docx_export.py",
+      "headers": [
+        "Report block",
+        "Shared content / platform substitution"
+      ],
+      "rows": [
+        [
+          "A / opening",
+          "Cover; contents; introduction; scope; tools"
+        ],
+        [
+          "A / source",
+          "Disk: Forensic Imaging; Mobile: Extraction Summary"
+        ],
+        [
+          "A / profile",
+          "Disk: OS Information; Mobile: Device Information; User Profile"
+        ],
+        [
+          "B",
+          "Artifact Summary"
+        ],
+        [
+          "C",
+          "Objectives, Procedure and Observation"
+        ],
+        [
+          "New evidence section",
+          "Suspicious Activity"
+        ],
+        [
+          "D",
+          "Annexure"
+        ],
+        [
+          "E",
+          "Final Analysis Summary"
+        ],
+        [
+          "F",
+          "Appendix"
+        ]
+      ],
+      "widths": [
+        137,
+        370
+      ]
+    },
+    {
+      "title": "Report / Shared layout, review and export",
+      "intro": "Disk reports use the shared report renderer and section order. The number of pages changes with the evidence; page styling and alignment are shared.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "saved",
+            "text": "Saved section content\nReview grades + citations",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "review",
+            "text": "Examiner review\nCorrect observations",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "render",
+            "text": "Shared A4 page renderer\nHeaders + watermark",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "pdf",
+            "text": "PDF / preview\nPaginated evidence",
+            "r": 3,
+            "c": 0,
+            "kind": "data"
+          },
+          {
+            "id": "docx",
+            "text": "DOCX export\nSame section content",
+            "r": 3,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "retain",
+            "text": "Save run + exports\nTrace to source artifacts",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "saved",
+            "b": "review"
+          },
+          {
+            "a": "review",
+            "b": "render"
+          },
+          {
+            "a": "render",
+            "b": "pdf"
+          },
+          {
+            "a": "render",
+            "b": "docx"
+          },
+          {
+            "a": "pdf",
+            "b": "retain"
+          },
+          {
+            "a": "docx",
+            "b": "retain"
+          }
+        ]
+      },
+      "height": 340,
+      "notes": [
+        [
+          "Media alignment",
+          "Use verified source pictures and derived video frame images with captions, artifact IDs, paths/hashes and frame timestamps. Keep examiner observations distinct from model descriptions."
+        ],
+        [
+          "Limits",
+          "The shared layout does not force Disk and Mobile reports to have identical page counts. Missing source pixels or unverified deleted-data candidates must not be presented as exact recovered media."
+        ]
+      ],
+      "source": "backend/app/services/report_renderer.py; report_pdf_export.py; report_docx_export.py"
+    },
+    {
+      "title": "Verification, performance and implementation map",
+      "intro": "Source tracing describes what the package does. Live hardware acceptance is a separate result.",
+      "notes": [
+        [
+          "Performance already in code",
+          "Bounded workers, manifest paging/checkpoints, source-preserving resume, text-only RAG and serialized GPU inference reduce contention. A waiting model or large file is evaluated against its stage deadline."
+        ],
+        [
+          "Deployment",
+          "Use the existing Disk/Mobile serial deployment instructions in DISK-MOBILE-SERIAL-RELEASE.md. The scanner update scripts affect the vulnerability services, not the source evidence acquisition."
+        ]
+      ],
+      "source": "All service file names above are under backend/app/services unless stated otherwise.",
+      "headers": [
+        "Area",
+        "Current contract / main implementation"
+      ],
+      "rows": [
+        [
+          "Acquisition",
+          "disk.py; virtual_disk.py; extracted_disk.py — read-only access, manifest finalization, resumable walk"
+        ],
+        [
+          "Serial / resources",
+          "forensic_serial_pipeline.py / policy.py — 13 stage gates, four CPU workers, one shared OCR/vision GPU permit"
+        ],
+        [
+          "Parsing / evidence",
+          "forensic_priority_evidence.py / evidence.py; mobile parsers — native records and explicit evidence states"
+        ],
+        [
+          "Media / suspicious",
+          "forensic_media_review.py; suspicious_activity.py — real pixels and frame provenance"
+        ],
+        [
+          "Search / report",
+          "Text chunks 2500 / overlap 800; report_generator.py; shared renderer and PDF/DOCX exporters"
+        ],
+        [
+          "Supervisor",
+          "progress_agent.py — useful-progress checks after 60 s; matched-owner bounded recovery"
+        ],
+        [
+          "Live acceptance",
+          "Test-Live-Phone-GPU.ps1 and LIVE-PHONE-GPU-VERIFICATION.md — real phone, actual bytes and GPU inference required"
+        ],
+        [
+          "This release",
+          "Disk/Mobile pipeline code retained from the latest supplied project. Laptop/central scanner fixes and these flow documents are added separately."
+        ]
+      ],
+      "widths": [
+        112,
+        395
+      ]
+    }
+  ],
+  "accent": "#50BDA8",
+  "cover_notes": [
+    "Complete source-traced process diagrams, stage gates and failure paths.",
+    "Includes native parsing, recovery states, suspicious images/videos, text-only RAG and PDF/DOCX report generation.",
+    "Readiness does not guarantee that inaccessible or overwritten evidence was recovered."
+  ]
+}

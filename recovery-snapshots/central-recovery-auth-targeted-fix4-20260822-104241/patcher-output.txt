@@ -1,0 +1,13 @@
+﻿{
+  "target_file": "backend/app/services/scanner_agent_auth.py",
+  "focus_files": [
+    "backend/app/routers/scanner_agent.py",
+    "backend/app/services/scanner_agent_auth.py"
+  ],
+  "changed": true,
+  "sql_patches": 1,
+  "python_patches": 0,
+  "durable_in_get_edge_agent": true,
+  "source_sha256": "72c6b4fdc71a6f62eabc02978b52665137893e87eb589e193eaa24bf99c328ce",
+  "staged_sha256": "6f2400d77d10dafda6014a7630312a46c0750af271c16a4c4283f416b3d999f9"
+}

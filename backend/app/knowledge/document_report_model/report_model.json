@@ -1,0 +1,679 @@
+{
+  "version": "document-report-model-v1",
+  "purpose": "Trained from the physical reports in document_report_model. Agents use extraction_queries to retrieve the current case's extracted content, then writing_moves to draft the observation. Exemplar case facts are not stored.",
+  "query_method": [
+    "Match the objective title to a trained pattern from the physical reports.",
+    "Run each extraction_query against this job's extracted content only, scoped by job id.",
+    "Use browser history, device connections, installed programs, email artifacts and cloud records as the procedure names them.",
+    "Do not answer from a physical training report. If the query returns nothing, the observation says the activity was not identified in the available records."
+  ],
+  "observation_writing": {
+    "rules": [
+      "Write the observation only after the extraction queries have been run on the current case.",
+      "Use the same shape as the physical reports: what was examined, whether traces were identified or not identified, and what that does or does not establish.",
+      "Keep access, connection and presence separate from transfer, use and unauthorized intent.",
+      "End with one short sentence beginning 'This means' that restates the finding in plain language.",
+      "Never copy a name, account, URL, hash, date or count from a file in document_report_model."
+    ]
+  },
+  "documents": [
+    {
+      "file": "Azim Lalani Google Takeout Forensic Report.pdf",
+      "objectives_learned": 7
+    },
+    {
+      "file": "Ex.1 Darshan Forensic Report.pdf",
+      "objectives_learned": 7
+    },
+    {
+      "file": "Manish Google Takeout Forensic Report.pdf",
+      "objectives_learned": 5
+    },
+    {
+      "file": "Master Report.pdf",
+      "objectives_learned": 12
+    },
+    {
+      "file": "Saish Google Takeout Forensic Report .pdf",
+      "objectives_learned": 5
+    },
+    {
+      "file": "Saurabh Kushwah Data Report.pdf",
+      "objectives_learned": 5
+    },
+    {
+      "file": "Saurabh@fanory.com Email Forensic Report.pdf",
+      "objectives_learned": 9
+    }
+  ],
+  "objectives": [
+    {
+      "title": "Access from unauthorized devices",
+      "extraction_queries": [
+        "Access from unauthorized devices extracted evidence for the current case"
+      ],
+      "examination_method": "Search extracted content for records that answer: Access from unauthorized devices",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Access from unauthorized devices' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Master Report.pdf"
+      ]
+    },
+    {
+      "title": "All Email IDs Used in the Browser",
+      "extraction_queries": [
+        "All Email IDs Used in the Browser extracted evidence for the current case",
+        "The browser history and saved account information were examined to identify email IDs that were logged into or used on the system",
+        "browser history in extracted content for this case"
+      ],
+      "examination_method": "The browser history and saved account information were examined to identify email IDs that were logged into or used on the system",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'All Email IDs Used in the Browser' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Ex.1 Darshan Forensic Report.pdf"
+      ]
+    },
+    {
+      "title": "Cloud Storage Service URL Usage",
+      "extraction_queries": [
+        "Cloud Storage Service URL Usage extracted evidence for the current case",
+        "The web browser history, installed applications, and system records were examined to identify access to cloud storage platforms (such as online file storage and sharing services)",
+        "browser history in extracted content for this case",
+        "installed applications in extracted content for this case",
+        "cloud storage in extracted content for this case",
+        "synchronization folders in extracted content for this case"
+      ],
+      "examination_method": "The web browser history, installed applications, and system records were examined to identify access to cloud storage platforms (such as online file storage and sharing services). Downloaded files, uploaded files, synchronization folders, and login records were reviewed to assess cloud usage activity",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Cloud Storage Service URL Usage' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Ex.1 Darshan Forensic Report.pdf"
+      ]
+    },
+    {
+      "title": "Cloud Storage Trace Review",
+      "extraction_queries": [
+        "Cloud Storage Trace Review extracted evidence for the current case",
+        "Checked cloud-related folders, sync traces, and configuration files included in the logical dataset"
+      ],
+      "examination_method": "Checked cloud-related folders, sync traces, and configuration files included in the logical dataset",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Cloud Storage Trace Review' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Saurabh Kushwah Data Report.pdf"
+      ]
+    },
+    {
+      "title": "Combined Summary",
+      "extraction_queries": [
+        "Combined Summary extracted evidence for the current case"
+      ],
+      "examination_method": "Search extracted content for records that answer: Combined Summary",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Combined Summary' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Master Report.pdf"
+      ]
+    },
+    {
+      "title": "Email Artifacts",
+      "extraction_queries": [
+        "Email Artifacts extracted evidence for the current case",
+        "check whether any email software, such as Microsoft Outlook, was installed and used on the computer",
+        "Outlook in extracted content for this case"
+      ],
+      "examination_method": "The system was examined to check whether any email software, such as Microsoft Outlook, was installed and used on the computer. The analysis included checking for stored email data, email files, and other related records that would indicate that email communication was carried out through a locally installed email application",
+      "observation_shape": "not_identified",
+      "writing_moves": [
+        "Answer only the question in 'Email Artifacts' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records do not contain the activity, say the examination did not identify it. Do not turn a missing record into proof the activity never occurred if the source was not fully available.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Ex.1 Darshan Forensic Report.pdf"
+      ]
+    },
+    {
+      "title": "External file sharing of internal documents",
+      "extraction_queries": [
+        "External file sharing of internal documents extracted evidence for the current case"
+      ],
+      "examination_method": "Search extracted content for records that answer: External file sharing of internal documents",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'External file sharing of internal documents' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Master Report.pdf"
+      ]
+    },
+    {
+      "title": "External Sharing of Company Files",
+      "extraction_queries": [
+        "External Sharing of Company Files extracted evidence for the current case"
+      ],
+      "examination_method": "Search extracted content for records that answer: External Sharing of Company Files",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'External Sharing of Company Files' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Master Report.pdf"
+      ]
+    },
+    {
+      "title": "Forwarding Official Company Documents to Personal Gmail",
+      "extraction_queries": [
+        "Forwarding Official Company Documents to Personal Gmail extracted evidence for the current case",
+        "Gmail in extracted content for this case"
+      ],
+      "examination_method": "Search extracted content for records that answer: Forwarding Official Company Documents to Personal Gmail",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Forwarding Official Company Documents to Personal Gmail' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Master Report.pdf"
+      ]
+    },
+    {
+      "title": "Forwarding official data to personal Gmail accounts",
+      "extraction_queries": [
+        "Forwarding official data to personal Gmail accounts extracted evidence for the current case",
+        "Gmail in extracted content for this case"
+      ],
+      "examination_method": "Search extracted content for records that answer: Forwarding official data to personal Gmail accounts",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Forwarding official data to personal Gmail accounts' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Master Report.pdf"
+      ]
+    },
+    {
+      "title": "Image & Media File Review",
+      "extraction_queries": [
+        "Image & Media File Review extracted evidence for the current case",
+        "Reviewed image/video folders, scanned available metadata, and examined file names and storage locations for context"
+      ],
+      "examination_method": "Reviewed image/video folders, scanned available metadata, and examined file names and storage locations for context",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Image & Media File Review' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Saurabh Kushwah Data Report.pdf"
+      ]
+    },
+    {
+      "title": "Missing activity logs, test records, and documentation",
+      "extraction_queries": [
+        "Missing activity logs, test records, and documentation extracted evidence for the current case"
+      ],
+      "examination_method": "Search extracted content for records that answer: Missing activity logs, test records, and documentation",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Missing activity logs, test records, and documentation' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Master Report.pdf"
+      ]
+    },
+    {
+      "title": "Mixing personal and work data in Google Photos/Drive",
+      "extraction_queries": [
+        "Mixing personal and work data in Google Photos/Drive extracted evidence for the current case"
+      ],
+      "examination_method": "Search extracted content for records that answer: Mixing personal and work data in Google Photos/Drive",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Mixing personal and work data in Google Photos/Drive' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Master Report.pdf"
+      ]
+    },
+    {
+      "title": "Mobile phones wiped before handover (improper data preservation)",
+      "extraction_queries": [
+        "Mobile phones wiped before handover (improper data preservation) extracted evidence for the current case"
+      ],
+      "examination_method": "Search extracted content for records that answer: Mobile phones wiped before handover (improper data preservation)",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Mobile phones wiped before handover (improper data preservation)' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Master Report.pdf"
+      ]
+    },
+    {
+      "title": "Network Connections (RDP Connection)",
+      "extraction_queries": [
+        "Network Connections (RDP Connection) extracted evidence for the current case",
+        "Network-related records of the system were examined to identify connections to other systems or services, including remote access connections"
+      ],
+      "examination_method": "Network-related records of the system were examined to identify connections to other systems or services, including remote access connections",
+      "observation_shape": "not_identified",
+      "writing_moves": [
+        "Answer only the question in 'Network Connections (RDP Connection)' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records do not contain the activity, say the examination did not identify it. Do not turn a missing record into proof the activity never occurred if the source was not fully available.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Ex.1 Darshan Forensic Report.pdf"
+      ]
+    },
+    {
+      "title": "No Control on Calendar/Activity Tracking",
+      "extraction_queries": [
+        "No Control on Calendar/Activity Tracking extracted evidence for the current case",
+        "Calendar in extracted content for this case"
+      ],
+      "examination_method": "Search extracted content for records that answer: No Control on Calendar/Activity Tracking",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'No Control on Calendar/Activity Tracking' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Master Report.pdf"
+      ]
+    },
+    {
+      "title": "Review of connected Devices History",
+      "extraction_queries": [
+        "Review of connected Devices History extracted evidence for the current case",
+        "Device activity logs were examined, including registered devices, login history, and synchronization details across mobile and desktop platforms",
+        "Review of Connected Devices History extracted evidence for the current case"
+      ],
+      "examination_method": "Device activity logs were examined, including registered devices, login history, and synchronization details across mobile and desktop platforms",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Review of connected Devices History' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Azim Lalani Google Takeout Forensic Report.pdf",
+        "Saurabh@fanory.com Email Forensic Report.pdf"
+      ]
+    },
+    {
+      "title": "Review of Gmail Usage",
+      "extraction_queries": [
+        "Review of Gmail Usage extracted evidence for the current case",
+        "Gmail folders including Inbox, Sent Mail, Drafts were examined",
+        "Gmail in extracted content for this case",
+        "Analyzed Inbox, Sent, Drafts, and exported MBOX/JSON email structure to identify subjects and themes"
+      ],
+      "examination_method": "Gmail folders including Inbox, Sent Mail, Drafts were examined. The JSON and MBOX files were reviewed to identify email topics, communication patterns, and any project-related information",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Review of Gmail Usage' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Azim Lalani Google Takeout Forensic Report.pdf",
+        "Manish Google Takeout Forensic Report.pdf",
+        "Saish Google Takeout Forensic Report .pdf",
+        "Saurabh@fanory.com Email Forensic Report.pdf"
+      ]
+    },
+    {
+      "title": "Review of Google Account Activity Logs",
+      "extraction_queries": [
+        "Review of Google Account Activity Logs extracted evidence for the current case",
+        "Google Account Activity logs, including login timestamps, device access, app activity, and IP logs, were reviewed"
+      ],
+      "examination_method": "Google Account Activity logs, including login timestamps, device access, app activity, and IP logs, were reviewed. These logs were compared with the expected usage pattern",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Review of Google Account Activity Logs' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Azim Lalani Google Takeout Forensic Report.pdf",
+        "Saurabh@fanory.com Email Forensic Report.pdf"
+      ]
+    },
+    {
+      "title": "Review of Google Calendar Events",
+      "extraction_queries": [
+        "Review of Google Calendar Events extracted evidence for the current case",
+        "Exported Google Calendar files were checked for meeting titles, event descriptions, reminders, and milestone dates",
+        "Calendar in extracted content for this case",
+        "Inspected calendar export for meeting scheduling patterns",
+        "calendar in extracted content for this case"
+      ],
+      "examination_method": "Exported Google Calendar files were checked for meeting titles, event descriptions, reminders, and milestone dates. Both created and attended events were reviewed",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Review of Google Calendar Events' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Azim Lalani Google Takeout Forensic Report.pdf",
+        "Manish Google Takeout Forensic Report.pdf",
+        "Saish Google Takeout Forensic Report .pdf",
+        "Saurabh@fanory.com Email Forensic Report.pdf"
+      ]
+    },
+    {
+      "title": "Review of Google Drive Files",
+      "extraction_queries": [
+        "Review of Google Drive Files extracted evidence for the current case",
+        "All Drive directories were opened, including “My Drive,” “Shared with me,” and folder-level contents"
+      ],
+      "examination_method": "All Drive directories were opened, including “My Drive,” “Shared with me,” and folder-level contents. Document titles, file formats, modification timestamps, and shared items were examined to locate project files",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Review of Google Drive Files' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Azim Lalani Google Takeout Forensic Report.pdf",
+        "Saurabh@fanory.com Email Forensic Report.pdf"
+      ]
+    },
+    {
+      "title": "Review of Google Drive Shared Files",
+      "extraction_queries": [
+        "Review of Google Drive Shared Files extracted evidence for the current case",
+        "The “Shared with others” and “Shared with me” sections were reviewed",
+        "Checked “Shared With Me” and “Shared By Me”"
+      ],
+      "examination_method": "The “Shared with others” and “Shared with me” sections were reviewed. File owners, access permissions, and sharing timestamps were inspected",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Review of Google Drive Shared Files' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Azim Lalani Google Takeout Forensic Report.pdf",
+        "Manish Google Takeout Forensic Report.pdf",
+        "Saish Google Takeout Forensic Report .pdf",
+        "Saurabh@fanory.com Email Forensic Report.pdf"
+      ]
+    },
+    {
+      "title": "Review of Google Drive Shared Permissions",
+      "extraction_queries": [
+        "Review of Google Drive Shared Permissions extracted evidence for the current case",
+        "Checked recipient access level and link-sharing setups",
+        "Permissions for shared documents were checked, including edit/view access, email accounts with access, and link-sharing configurations",
+        "email accounts in extracted content for this case"
+      ],
+      "examination_method": "Checked recipient access level and link-sharing setups",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Review of Google Drive Shared Permissions' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Saish Google Takeout Forensic Report .pdf",
+        "Saurabh@fanory.com Email Forensic Report.pdf"
+      ]
+    },
+    {
+      "title": "Review of Google Photos Albums",
+      "extraction_queries": [
+        "Review of Google Photos Albums extracted evidence for the current case",
+        "Photos and albums were reviewed for screenshots, mockups, UI designs, or references"
+      ],
+      "examination_method": "Photos and albums were reviewed for screenshots, mockups, UI designs, or references. Metadata including timestamps and file names was examined",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Review of Google Photos Albums' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Manish Google Takeout Forensic Report.pdf",
+        "Saurabh@fanory.com Email Forensic Report.pdf"
+      ]
+    },
+    {
+      "title": "Social Media URL Usage",
+      "extraction_queries": [
+        "Social Media URL Usage extracted evidence for the current case",
+        "identify access to social media platforms",
+        "social media in extracted content for this case",
+        "saved sessions in extracted content for this case"
+      ],
+      "examination_method": "The system and browser records were examined to identify access to social media platforms. This included reviewing browsing history, saved sessions, and related internet records to determine whether any social media accounts were accessed from the system",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Social Media URL Usage' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Ex.1 Darshan Forensic Report.pdf"
+      ]
+    },
+    {
+      "title": "Storing Personal Photos Mixed With Work Screenshots",
+      "extraction_queries": [
+        "Storing Personal Photos Mixed With Work Screenshots extracted evidence for the current case"
+      ],
+      "examination_method": "Search extracted content for records that answer: Storing Personal Photos Mixed With Work Screenshots",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Storing Personal Photos Mixed With Work Screenshots' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Master Report.pdf"
+      ]
+    },
+    {
+      "title": "Suspicious URL Review",
+      "extraction_queries": [
+        "Suspicious URL Review extracted evidence for the current case",
+        "Scanned browser history, bookmarks, for unusual domains or signs of malware-related activity",
+        "browser history in extracted content for this case"
+      ],
+      "examination_method": "Scanned browser history, bookmarks, for unusual domains or signs of malware-related activity",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Suspicious URL Review' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Saurabh Kushwah Data Report.pdf"
+      ]
+    },
+    {
+      "title": "USB and External Device Usage",
+      "extraction_queries": [
+        "USB and External Device Usage extracted evidence for the current case",
+        "identify records of USB devices connected to it",
+        "USB in extracted content for this case",
+        "connection times in extracted content for this case"
+      ],
+      "examination_method": "The system was examined to identify records of USB devices connected to it. System logs and related records were reviewed to detect connected USB storage devices and their connection times",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'USB and External Device Usage' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Ex.1 Darshan Forensic Report.pdf"
+      ]
+    },
+    {
+      "title": "Use of Multiple Unsanctioned Devices",
+      "extraction_queries": [
+        "Use of Multiple Unsanctioned Devices extracted evidence for the current case"
+      ],
+      "examination_method": "Search extracted content for records that answer: Use of Multiple Unsanctioned Devices",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Use of Multiple Unsanctioned Devices' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Master Report.pdf"
+      ]
+    },
+    {
+      "title": "Verification of Google Account Data",
+      "extraction_queries": [
+        "Verification of Google Account Data extracted evidence for the current case",
+        "The entire Google Takeout directory was extracted and manually reviewed",
+        "Google Takeout in extracted content for this case",
+        "Gmail in extracted content for this case",
+        "Extracted and reviewed all Google Takeout folders, files, and data structure for completeness and validity"
+      ],
+      "examination_method": "The entire Google Takeout directory was extracted and manually reviewed. All folders representing Google services (such as Gmail, Drive, Photos, and Account Activity) were opened and inspected to verify whether the data was complete, readable, and properly Structured according to Google’s export format",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Verification of Google Account Data' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Azim Lalani Google Takeout Forensic Report.pdf",
+        "Manish Google Takeout Forensic Report.pdf",
+        "Saish Google Takeout Forensic Report .pdf",
+        "Saurabh@fanory.com Email Forensic Report.pdf"
+      ]
+    },
+    {
+      "title": "Web Chat URL / Communication Applications",
+      "extraction_queries": [
+        "Web Chat URL / Communication Applications extracted evidence for the current case",
+        "identify whether communication platforms such as WhatsApp or Facebook were accessed from the computer",
+        "WhatsApp in extracted content for this case",
+        "Facebook in extracted content for this case"
+      ],
+      "examination_method": "The system and browser records were examined to identify whether communication platforms such as WhatsApp or Facebook were accessed from the computer. The analysis included reviewing browsing history and related records to determine whether these services were opened or used on the system",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Web Chat URL / Communication Applications' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Ex.1 Darshan Forensic Report.pdf"
+      ]
+    },
+    {
+      "title": "Web-Chat URL Activity Review",
+      "extraction_queries": [
+        "Web-Chat URL Activity Review extracted evidence for the current case",
+        "Reviewed browser history, bookmarks, and exported browser files for URLs related to web-based messaging or chat services",
+        "browser history in extracted content for this case"
+      ],
+      "examination_method": "Reviewed browser history, bookmarks, and exported browser files for URLs related to web-based messaging or chat services",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Web-Chat URL Activity Review' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Saurabh Kushwah Data Report.pdf"
+      ]
+    },
+    {
+      "title": "Work Document Identification Review",
+      "extraction_queries": [
+        "Work Document Identification Review extracted evidence for the current case",
+        "Searched filenames, document titles, using work-related keywords and scanned metadata for relevance"
+      ],
+      "examination_method": "Searched filenames, document titles, using work-related keywords and scanned metadata for relevance",
+      "observation_shape": "identified",
+      "writing_moves": [
+        "Answer only the question in 'Work Document Identification Review' from records retrieved for this case.",
+        "Open by stating whether the examined records identified the activity or did not identify it.",
+        "When the retrieved records contain the activity, name the evidence family and what it indicates. Access or a connection is not file transfer, use, or unauthorized intent unless a separate record supports that stronger claim.",
+        "Do not copy accounts, names, URLs, hashes, dates or counts from the physical training reports."
+      ],
+      "source_documents": [
+        "Saurabh Kushwah Data Report.pdf"
+      ]
+    }
+  ]
+}

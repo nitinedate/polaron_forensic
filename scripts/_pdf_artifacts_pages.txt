@@ -1,0 +1,431 @@
+
+========== PAGE 6 ==========
+
+A. OPERATING SYSTEM
+1. OPERATING SYSTEM INFORMATION:
+This refers to details about the installed OS (Windows, macOS, Linux, etc.), including
+version, system settings, user accounts, boot logs, and configurations. It's foundational for
+understanding how the device was used and by whom.
+Sr.
+Artifacts Details Value
+No.
+1 Operating System Windows 10 Pro (2009)
+2 Version Number 6.3
+3 Installed/Updated Date/Time 5/13/2023 12:33:24 PM
+4 Product Key VK7JG-NPHTM-C97JM-9MPGT-3V66T
+5 Computer Name HISTOTECHLAB1
+6 Operating System Version Professional
+19045
+7 Build Number
+8 Product ID 00330-80000-00000-AA094
+9 Last Shutdown Date/Time 9/25/2025 12:31:11 PM
+10 System Root C:\Windows
+11 Path C:\Windows
+Page 6 of 27
+
+--- TABLES on page 6: 1 ---
+
+[table 0]
+Sr. |  | 
+ | Artifacts Details | Value
+No. |  | 
+ |  | 
+ |  | 
+1 | Operating System | Windows 10 Pro (2009)
+ |  | 
+2 | Version Number | 6.3
+ |  | 
+ |  | 5/13/2023 12:33:24 PM
+3 | Installed/Updated Date/Time | 
+ |  | 
+4 | Product Key | VK7JG-NPHTM-C97JM-9MPGT-3V66T
+5 | Computer Name | HISTOTECHLAB1
+ |  | 
+6 | Operating System Version | Professional
+ |  | 
+ |  | 19045
+7 | Build Number | 
+ |  | 
+ |  | 
+8 | Product ID | 00330-80000-00000-AA094
+ |  | 
+ |  | 9/25/2025 12:31:11 PM
+9 | Last Shutdown Date/Time | 
+ |  | 
+10 | System Root | C:\Windows
+11 | Path | C:\Windows
+ |  | 
+
+========== PAGE 7 ==========
+
+2. USER PROFILE:
+The User Profile contains key information about individuals who have used the computer. It
+includes the name of the user, the type of account they used, where their personal data is
+stored, when they last accessed the device, and the last time their password was changed. This
+data helps investigators understand who was using the device, what kind of access they had,
+and when they were active.
+• Username
+This is the name of the person or account holder who has used the device. It helps identify
+different users on the same system.
+• Type of User
+This shows whether the user is a local user (created only on this device), a
+domain user (linked to a larger network like in offices or institutions), or a
+system account (used internally by Windows or certain software). Understanding
+the type helps clarify the level of access and the role of the user.
+• Profile Path:
+This is the specific location on the computer’s storage where the user’s files and data are
+saved. For example, a typical path like C:\Users\Sandeep shows where that user’s documents,
+browser data, and application files are stored.
+• Last Local Login:
+This shows the exact date and time the user last signed into the device. It helps in determining
+recent usage activity and whether the account was active during the time of interest.
+• Password Change:
+This shows when the password for the account was last changed. This can indicate whether
+the user was actively maintaining the account or if there might have been any recent changes
+suggesting suspicious activity.
+Status:
+All user profile information was examined to determine the users present on the system, the
+nature of their accounts, and their most recent activity.
+Page 7 of 27
+
+========== PAGE 8 ==========
+
+Sr. Type of Last Local Login Last Password
+Username Profile path
+No User Date/Time Change Date/Time
+%systemroot%\ServiceProfiles\
+1 Built-in
+NetworkService
+Domain
+2 C:\Users\kishore000004
+User
+5/24/2023 9:59:21
+3 lenovo Local User C:\Users\lenovo
+AM
+%systemroot%\ServiceProfiles\
+4 Built-in
+LocalService
+5 DefaultAccount Local User
+%systemroot%\system32\config
+6 Built-in
+\systemprofile
+Domain %SystemRoot%\ServiceProfiles
+7
+User \ksnproxy
+Domain
+8 C:\Users\pathlab
+User
+9 Guest Local User
+WDAGUtilityAcc 5/13/2023 12:32:15
+10 Local User
+ount PM
+8/26/2024 12:05:52 5/24/2023 9:59:55
+11 Administrator Local User C:\Users\Administrator
+PM AM
+Page 8 of 27
+
+--- TABLES on page 8: 11 ---
+
+[table 0]
+Sr.
+No | Username | Type of
+User | Profile path | Last Local Login
+Date/Time | Last Password
+Change Date/Time
+1 |  | Built-in | %systemroot%\ServiceProfiles\
+NetworkService |  | 
+2 |  | Domain
+User | C:\Users\kishore000004 |  | 
+3 | lenovo | Local User | C:\Users\lenovo | 5/24/2023 9:59:21
+AM | 
+4 |  | Built-in | %systemroot%\ServiceProfiles\
+LocalService |  | 
+5 | DefaultAccount | Local User |  |  | 
+6 |  | Built-in | %systemroot%\system32\config
+\systemprofile |  | 
+7 |  | Domain
+User | %SystemRoot%\ServiceProfiles
+\ksnproxy |  | 
+8 |  | Domain
+User | C:\Users\pathlab |  | 
+9 | Guest | Local User |  |  | 
+10 | WDAGUtilityAcc
+ount | Local User |  |  | 5/13/2023 12:32:15
+PM
+11 | Administrator | Local User | C:\Users\Administrator | 8/26/2024 12:05:52
+PM | 5/24/2023 9:59:55
+AM
+[table 1]
+Sr.
+No
+[table 2]
+Type of
+User
+[table 3]
+Last Local Login
+Date/Time
+[table 4]
+Last Password
+Change Date/Time
+[table 5]
+Domain
+User
+[table 6]
+%systemroot%\ServiceProfiles\
+LocalService
+[table 7]
+%systemroot%\system32\config
+\systemprofile
+[table 8]
+Domain
+User
+[table 9]
+WDAGUtilityAcc
+ount
+[table 10]
+5/13/2023 12:32:15
+PM
+
+========== PAGE 9 ==========
+
+B. ARTIFACTS
+1. Connected Devices:
+1. USB Devices
+Count: 39
+Description: External storage devices like pen drives or hard drives used to move or
+copy data. These can carry user files or malware.
+2. Your Phone Device
+Count: 02
+Description: Mobile devices connected using Microsoft’s “Your Phone” feature.
+Enables syncing of texts, calls, and media.
+3. Remote Desktop Protocol (RDP)
+Count: 06
+Description: Allows remote access/control of the desktop. May indicate authorized
+or unauthorized remote sessions.
+2. Application Usages:
+1. Feature Usage
+Count: 42
+Description: Records of system feature usage like accessibility tools, file explorer,
+or system settings.
+2. Installed Microsoft Programs
+Count: 31
+Description: Microsoft applications such as Word, Excel, Outlook installed on the
+system.
+3. Installed Programs (Non-Microsoft)
+Count: 167
+Description: User-installed software, including browsers, communication tools, or
+utilities.
+4. Windows Defender Logs
+Count: 03
+Description: Logs from Windows Defender antivirus software, capturing scans and
+threat detections.
+Page 9 of 27
+
+========== PAGE 10 ==========
+
+3. Communication:
+1. Web Chat URLs
+Count: 10
+Description: Links to web-based chat platforms (e.g., WhatsApp Web, Messenger)
+indicating chat usage.
+2. Social Media URLs
+Count: 50
+Description: URLs linking to platforms like Instagram, Facebook, LinkedIn, Twitter,
+etc.
+3. Malware/Phishing URLs
+Count: 00
+Description: Links designed to steal information or install harmful software on your
+device.
+4. Documents:
+1. CSV Documents
+Count: 05
+Description: Raw data or logs stored in comma-separated format.
+2. Microsoft PowerPoint Documents
+Count: 21
+Description: Presentation files used for discussions, lectures, or visual reporting.
+3. Microsoft Excel Documents
+Count: 150
+Description: Spreadsheets used for calculations, lists, logs, and financial data.
+4. PDF Documents
+Count: 400
+Description: Fixed-layout documents like contracts, bills, and receipts.
+5. RTF Documents
+Count: 5,847
+Description: Rich Text Format files with styled text, common for documentation.
+6. Text Documents
+Count: 2,473
+Description: Plain text files, often used for scripts, logs, or notes.
+7. Microsoft Word Documents
+Count: 305
+Description: Word-processed documents such as reports, letters, and internal
+communication.
+Page 10 of 27
+
+========== PAGE 11 ==========
+
+5. Email & Calendar:
+1. Email Attachments
+Count: 312
+Description: Email attachments detected in local email clients.
+2. EML(X) Files
+Count: 18
+Description: Archived or exported emails preserving full headers and metadata.
+3. Windows Mail
+Count: 00
+Description: Emails and related information saved by the Windows Mail app, like
+messages and attachments.
+4. Outlook Emails
+Count: 216
+Description: Emails found from Microsoft Outlook client.
+5. Outlook Tasks
+Count: 00
+Description: Entries created in Microsoft Outlook to manage and track tasks,
+including due dates, reminders, and notes.
+6. Outlook Contacts
+Count: 00
+Description: Saved contact details in Outlook, such as names, phone numbers, and
+email addresses.
+7. Outlook Appointments
+Count:00
+Description: Calendar events saved in Outlook, including meeting times, dates, and
+reminders.
+6. Encryption & Credentials:
+1. Encrypted Files
+Count: 56
+Description: Files encrypted, potentially indicating attempts to protect or hide
+content.
+2. Windows Stored Credentials
+Count: 00
+Description: Passwords and authentication data saved by Windows for accounts or
+services.
+Page 11 of 27
+
+========== PAGE 12 ==========
+
+7. Media:
+1. Audio
+Count: 594
+Description: Sound or voice recordings possibly related to user activity or media
+consumption.
+2. Picture
+Count: 70,580
+Description: Includes personal photos, screenshots, and internet images.
+3. Video
+Count: 330
+Description: Saved or downloaded videos that may show usage, recordings, or
+visual evidence.
+4. Photoshop Files
+Count: 50
+Description: Edited or created images using Adobe Photoshop, useful for visual
+forensic analysis.
+8. Operating System:
+1. Logfile Analysis
+Count: 12,463
+Description: System logs showing user activity, shutdowns, errors, and access
+patterns.
+2. Jump List
+Count: 721
+Description: Recently accessed files or programs used by the user via Start Menu or
+taskbar.
+3. LNK Files
+Count: 1,443
+Description: Shortcut files referencing deleted or moved data, used to trace
+historical access.
+9. Web Related:
+Web Related Files
+Count: Reviewed (No numerical count specified)
+Description: Includes browser history, cookies, cache, downloads, and other web usage
+artifacts. All were examined during forensic review.
+Page 12 of 27
+
+========== PAGE 13 ==========
+
+C. OBJECTIVE, PROCEDURE & OBSERVATION:
+-Desktop [Ex-5]
+1. User Accounts & Login Activity
+Objective:
+To find out who used the system, when they logged in, and whether any unauthorized person
+tried to access it.
+Procedure:
+• Checked all user accounts created on the computer.
+• Reviewed system logs to track login and logout events.
+• Looked for any login attempts during unusual hours or from unknown users.
+Observation:
+All user accounts on the Desktop looked normal. There were no strange logins or attempts by
+outsiders to get into the system. Everyone who used the Desktop seemed to be an authorized
+user.
+2. File Access and Handling
+Objective:
+To check if important files were opened, changed, copied, or deleted in ways that go against
+hospital policies.
+Procedure:
+• Examined file access logs and timestamps for unusual activity.
+• Looked for files that were renamed, compressed, or deleted.
+• Checked for signs of mass file movement or use of backup folders.
+Observation:
+The files on the Desktop were used in a regular way. No files were deleted, renamed, or copied
+in a suspicious manner. Everything matched normal work activity.
+Page 13 of 27
+
+========== PAGE 14 ==========
+
+3. USB and External Device Usage
+Objective:
+To find whether any external storage devices were connected and possibly used for data
+movement or copying.
+Procedure:
+• Analyzed USB device history using system logs and registry data.
+• Identified all connected USB devices, along with timestamps.
+• Matched this with any file access or data transfer events.
+Observation:
+The system records showed that USB storage devices, such as pen drives or external drives,
+were connected to the Desktop. These entries confirm that the devices were attached at some
+point. However, the records do not confirm whether the connected devices were actively used
+for opening, copying, or transferring files.
+4. Network Connections
+Objective:
+To see whether the system connected to any suspicious or unauthorized websites or services.
+Procedure:
+• Checked network logs for connections to IP addresses or external servers.
+• Looked for the use of remote desktop or other remote access tools.
+• Flagged unusual or persistent connections that could suggest data exfiltration.
+Observation:
+The Desktop was used for remote connections and also linked with a mobile phone through the
+“Your Phone” app. This means data could have been accessed or transferred remotely.
+Page 14 of 27
+
+========== PAGE 15 ==========
+
+5. Installed Applications & Tools
+Objective:
+To check for the presence of unauthorized programs or tools that could allow remote access or
+conceal activities.
+Procedure:
+• Reviewed the list of installed programs.
+• Searched for known remote control, data wiping, or suspicious tools.
+• Looked at usage logs for recently launched applications.
+Observation:
+Only normal programs were installed. No special tools for hacking, remote control, or hiding
+activity were found.
+6. Registry Analysis
+Objective:
+To identify startup entries, recently used devices, or any traces left by unauthorized tools.
+Procedure:
+• Searched for entries in startup/run locations.
+• Checked USB registry keys and recently opened file lists.
+• Analyzed persistence mechanisms that might be used by attackers.
+Observation:
+The system’s settings and records looked normal. There were no signs that someone tried to
+secretly make changes or hide their activity.
+7. Scheduled Tasks & Startup Items
+Objective:
+To check for scheduled actions or programs that may launch automatically without user
+awareness.
+Procedure:
+• Listed all scheduled tasks and verified their triggers.
+• Analyzed the task contents and execution logs.
+• Looked for links to scripts or unknown applications.
+Observation:
+The Desktop did not have any hidden programs set to run automatically. All scheduled
+activities were regular and safe.
+Page 15 of 27

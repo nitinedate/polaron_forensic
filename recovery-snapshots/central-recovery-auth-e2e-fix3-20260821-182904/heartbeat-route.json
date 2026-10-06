@@ -1,0 +1,37 @@
+﻿{
+  "app_module": "app.main",
+  "routes": [
+    {
+      "path": "/api/scanner-agent/heartbeat",
+      "methods": [
+        "POST"
+      ],
+      "endpoint": {
+        "name": "agent_heartbeat",
+        "qualname": "agent_heartbeat",
+        "module": "app.routers.scanner_agent",
+        "file": "/app/app/routers/scanner_agent.py"
+      },
+      "dependencies": [
+        {
+          "name": "agent_heartbeat",
+          "qualname": "agent_heartbeat",
+          "module": "app.routers.scanner_agent",
+          "file": "/app/app/routers/scanner_agent.py"
+        },
+        {
+          "name": "get_edge_agent",
+          "qualname": "get_edge_agent",
+          "module": "app.services.scanner_agent_auth",
+          "file": "/app/app/services/scanner_agent_auth.py"
+        },
+        {
+          "name": "HTTPBearer",
+          "qualname": "HTTPBearer",
+          "module": "fastapi.security.http",
+          "file": null
+        }
+      ]
+    }
+  ]
+}

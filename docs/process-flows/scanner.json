@@ -1,0 +1,2730 @@
+{
+  "filename": "Vulnerability-Scanner-Process-Flows.pdf",
+  "title": "Vulnerability Scanner\nProcess Flows",
+  "short": "Vulnerability Scanner",
+  "subtitle": "Laptop OpenVAS \u2192 central findings \u2192 gap reports and exports",
+  "pages": [
+    {
+      "title": "Scanner / System boundary and complete execution",
+      "intro": "The attached Laptop Scanner runs local Greenbone/OpenVAS. The central Vulnerability service owns case scope, job dispatch, persisted findings and reports.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "user",
+            "text": "Case / scanner / targets\nAuthorized scan request",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "central",
+            "text": "Central readiness + scope\nCreate edge-owned job",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "claim",
+            "text": "Laptop agent claims\nSame scanner / network",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "openvas",
+            "text": "Per-IP OpenVAS tasks\nConfigured port coverage",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "results",
+            "text": "Native reports + coverage\nAll parsed findings",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "store",
+            "text": "Central normalize / score\nPersist per-IP state",
+            "r": 5,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "review",
+            "text": "Coverage and findings\nreviewed?",
+            "r": 6,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "gap",
+            "text": "Incomplete / warnings\nNo full-scope clean claim",
+            "r": 6,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "report",
+            "text": "Gap report / exports\nRemediation and follow-up",
+            "r": 7,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "user",
+            "b": "central"
+          },
+          {
+            "a": "central",
+            "b": "claim"
+          },
+          {
+            "a": "claim",
+            "b": "openvas"
+          },
+          {
+            "a": "openvas",
+            "b": "results"
+          },
+          {
+            "a": "results",
+            "b": "store"
+          },
+          {
+            "a": "store",
+            "b": "review"
+          },
+          {
+            "a": "review",
+            "b": "gap",
+            "label": "No"
+          },
+          {
+            "a": "review",
+            "b": "report",
+            "label": "Yes"
+          }
+        ]
+      },
+      "height": 542,
+      "notes": [
+        [
+          "Other engines",
+          "Nmap, Nuclei, ZAP, Wazuh, Trivy and licensed Nessus are separately configured central adapters. They are not all bundled into the portable Laptop Scanner."
+        ],
+        [
+          "Assessment semantics",
+          "Task completion, useful findings and proven assessment coverage are separate. A zero-finding or skipped stage does not establish that the requested hosts are clean."
+        ]
+      ],
+      "source": "laptop-scanner/scanner-agent/agent/main.py; backend/app/services/scan_orchestrator.py; multi_scanner_clients.py"
+    },
+    {
+      "title": "Laptop / Startup and container boot",
+      "intro": "Start-Laptop.cmd runs the laptop startup script. An existing installation keeps its environment, instance identity and Greenbone data volumes.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "cmd",
+            "text": "Start-Laptop.cmd\nLocal scanner folder",
+            "r": 0,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "preflight",
+            "text": "Docker Desktop Linux\nCompose / host checks",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "docker",
+            "text": "Docker usable?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "stop",
+            "text": "Startup diagnostic\nNo claimed ready state",
+            "r": 2,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "config",
+            "text": "Prepare / retain .env\nRuntime instance identity",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "start",
+            "text": "Start Greenbone services\nAgent + feed dependencies",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "ready",
+            "text": "Feed / engine readiness\nAuthenticated heartbeat",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "cmd",
+            "b": "preflight"
+          },
+          {
+            "a": "preflight",
+            "b": "docker"
+          },
+          {
+            "a": "docker",
+            "b": "stop",
+            "label": "No"
+          },
+          {
+            "a": "docker",
+            "b": "config",
+            "label": "Yes"
+          },
+          {
+            "a": "config",
+            "b": "start"
+          },
+          {
+            "a": "start",
+            "b": "ready"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Secret handling",
+          "Use placeholder examples for a fresh deployment. Retain the user\u2019s real .env and runtime tokens locally; release ZIPs exclude those files."
+        ],
+        [
+          "Update path",
+          "Apply-Scanner-v1.5.3.ps1 rebuilds the agent/bootstrap and recreates only the agent. It does not delete GVM database/feed volumes or restart the engine solely to update agent code."
+        ]
+      ],
+      "source": "laptop-scanner/Start-Laptop.cmd; scripts/start-laptop.ps1; Apply-Scanner-v1.5.3.ps1"
+    },
+    {
+      "title": "Laptop / Greenbone feeds and scan readiness",
+      "intro": "A GMP socket alone is insufficient. The agent waits for the scan configuration and usable VT inventory before accepting new work.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "feeds",
+            "text": "NVT / Notus / SCAP / CERT\nData objects / report formats",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "load",
+            "text": "Feed containers populate\nPersistent engine volumes",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "services",
+            "text": "PostgreSQL / Redis\nOSPd/OpenVAS \u2192 gvmd",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "check",
+            "text": "GMP + config + VT\ninventory ready?",
+            "r": 3,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "wait",
+            "text": "Readiness false\nFeed / import detail",
+            "r": 3,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "repair",
+            "text": "Bounded feed-owner /\ndata-object import repair",
+            "r": 4,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "heartbeat",
+            "text": "Heartbeat readiness true\nOwn scanner only",
+            "r": 4,
+            "c": 0,
+            "kind": "data"
+          },
+          {
+            "id": "launch",
+            "text": "Central/UI permit launch\nOnly authorized scope",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "feeds",
+            "b": "load"
+          },
+          {
+            "a": "load",
+            "b": "services"
+          },
+          {
+            "a": "services",
+            "b": "check"
+          },
+          {
+            "a": "check",
+            "b": "wait",
+            "label": "No"
+          },
+          {
+            "a": "wait",
+            "b": "repair"
+          },
+          {
+            "a": "repair",
+            "b": "check",
+            "side": "right"
+          },
+          {
+            "a": "check",
+            "b": "heartbeat",
+            "label": "Yes"
+          },
+          {
+            "a": "heartbeat",
+            "b": "launch"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Readiness threshold",
+          "The current checks require the expected Full-and-fast configuration and a usable NVT inventory (10,000+), not merely a listening socket."
+        ],
+        [
+          "Bounded startup",
+          "Feed import repair is an existing startup process step, not a separate persistent healing agent. Failures remain visible; the code does not erase feed volumes to force a green state."
+        ]
+      ],
+      "source": "laptop-scanner/scanner-agent/check_greenbone_ready.py; check_greenbone_feed_state.py; scripts/start-laptop.ps1"
+    },
+    {
+      "title": "Laptop / Central discovery, TLS and token binding",
+      "intro": "Bootstrap verifies the central API, obtains the requested account token and binds the laptop scanner identity.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "url",
+            "text": "Configured central URL\nTLS-verified request",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "health",
+            "text": "GET /api/health\nAPI status = ok?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "bad",
+            "text": "URL / certificate /\nhealth diagnostic",
+            "r": 1,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "login",
+            "text": "Explicit token login\nAuthorized account",
+            "r": 2,
+            "c": 1,
+            "kind": "key"
+          },
+          {
+            "id": "bind",
+            "text": "Bind client token\nScanner / tenant / LAN",
+            "r": 3,
+            "c": 1,
+            "kind": "key"
+          },
+          {
+            "id": "persist",
+            "text": "Store runtime agent token\nUnique instance identity",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "auth",
+            "text": "401 on agent call?",
+            "r": 5,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "recover",
+            "text": "Bounded one-time\nrecovery-token route",
+            "r": 5,
+            "c": 2,
+            "kind": "key"
+          },
+          {
+            "id": "online",
+            "text": "Authenticated agent\nHeartbeat / job polling",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "url",
+            "b": "health"
+          },
+          {
+            "a": "health",
+            "b": "bad",
+            "label": "No"
+          },
+          {
+            "a": "health",
+            "b": "login",
+            "label": "Yes"
+          },
+          {
+            "a": "login",
+            "b": "bind"
+          },
+          {
+            "a": "bind",
+            "b": "persist"
+          },
+          {
+            "a": "persist",
+            "b": "auth"
+          },
+          {
+            "a": "auth",
+            "b": "recover",
+            "label": "Yes"
+          },
+          {
+            "a": "auth",
+            "b": "online",
+            "label": "No"
+          },
+          {
+            "a": "recover",
+            "b": "online"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "URL contract",
+          "Redirect canonical nonsecret GET requests when needed. Validate certificate hostname/SNI and API-shaped health; a generic {ok:true} response is not accepted as this API."
+        ],
+        [
+          "Security / ownership",
+          "Tokens and passwords do not enter logs or packaged runtime directories. Scanner instance identity fences active tasks and avoids competing laptops posting into the same owned job."
+        ]
+      ],
+      "source": "laptop-scanner/scanner-agent/agent/bootstrap_control_plane.py; backend/app/services/scanner_agent_auth.py"
+    },
+    {
+      "title": "Central / Registration, readiness and launch",
+      "intro": "Authenticated heartbeats now update only the calling scanner. Launch and claim decisions read that scanner\u2019s real engine readiness.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "beat",
+            "text": "Authenticated scanner\nVersion + readiness + detail",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "persist",
+            "text": "Update own scanner row\nHeartbeat and ready timestamp",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "launch",
+            "text": "Launch request\nCase / tenant / target scope",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "ready",
+            "text": "Edge OpenVAS\nready = true?",
+            "r": 3,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "block",
+            "text": "409 not ready\nUI launch disabled + reason",
+            "r": 3,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "scope",
+            "text": "Validate scanner role\nLAN / network authorization",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "queue",
+            "text": "Create assigned scan job\nTargets and exclusions",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "beat",
+            "b": "persist"
+          },
+          {
+            "a": "persist",
+            "b": "launch"
+          },
+          {
+            "a": "launch",
+            "b": "ready"
+          },
+          {
+            "a": "ready",
+            "b": "block",
+            "label": "No"
+          },
+          {
+            "a": "ready",
+            "b": "scope",
+            "label": "Yes"
+          },
+          {
+            "a": "scope",
+            "b": "queue"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Fixed behavior",
+          "One laptop heartbeat can no longer mark other active edge scanners online. The API exposes openvas_ready, status detail and readiness time to the UI."
+        ],
+        [
+          "Schema",
+          "Migration 037_firm_vuln_readiness.sql adds readiness columns. The authenticated heartbeat has an idempotent compatibility check for an existing deployment."
+        ]
+      ],
+      "source": "backend/app/routers/scanner_agent.py; routers/vuln.py; services/scanner_agent_jobs.py; db/sql_migrations/037_firm_vuln_readiness.sql"
+    },
+    {
+      "title": "Laptop / Job claim, resume and ownership",
+      "intro": "Default laptop execution accepts one central job at a time. Multiple per-IP tasks run inside that job.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "poll",
+            "text": "Authenticated agent\nPoll assigned work",
+            "r": 0,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "ready",
+            "text": "Local readiness\nand LAN valid?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "wait",
+            "text": "No new job claim\nExpose current wait reason",
+            "r": 1,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "claim",
+            "text": "Claim scanner-assigned job\nSet owner instance",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "resume",
+            "text": "Existing owned tasks\nor assessed hosts?",
+            "r": 3,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "restore",
+            "text": "Restore task IDs / coverage\nKeep assessed-host status",
+            "r": 3,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "targets",
+            "text": "Build active target list\nExclusions + current LAN",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "run",
+            "text": "Initial complete snapshot\nStart per-IP scheduler",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "poll",
+            "b": "ready"
+          },
+          {
+            "a": "ready",
+            "b": "wait",
+            "label": "No"
+          },
+          {
+            "a": "ready",
+            "b": "claim",
+            "label": "Yes"
+          },
+          {
+            "a": "claim",
+            "b": "resume"
+          },
+          {
+            "a": "resume",
+            "b": "restore",
+            "label": "Yes"
+          },
+          {
+            "a": "resume",
+            "b": "targets",
+            "label": "No"
+          },
+          {
+            "a": "restore",
+            "b": "targets"
+          },
+          {
+            "a": "targets",
+            "b": "run"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Resume precision",
+          "Persisted task IDs allow a restarted agent to observe its tasks. Previously assessed hosts are shown complete/incomplete according to their retained coverage, rather than incorrectly reset to waiting."
+        ],
+        [
+          "Scope change",
+          "A changed network stops only the old job\u2019s owned tasks. Results from different LAN scopes must not merge into one assessment."
+        ]
+      ],
+      "source": "laptop-scanner/scanner-agent/agent/main.py; agent/target_progress.py; backend/app/services/scanner_agent_jobs.py"
+    },
+    {
+      "title": "Laptop / Adaptive per-IP task scheduling",
+      "intro": "One OpenVAS task is created per IP. The scheduler fills available slots and retains waiting hosts in every progress snapshot.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "targets",
+            "text": "Assigned active targets\nWaiting / resumed state",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "capacity",
+            "text": "Inspect CPU, RAM\nThermal / engine capacity",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "pause",
+            "text": "Critical resource\npressure?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "hold",
+            "text": "Pause NEW admissions\nExisting tasks continue",
+            "r": 2,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "slots",
+            "text": "Calculate allowed workers\nOperational floor five",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "fill",
+            "text": "Start next waiting IP\nUp to available slots",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "poll",
+            "text": "Poll all active tasks\nPost full target snapshot",
+            "r": 5,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "done",
+            "text": "Task ends / slot freed?",
+            "r": 6,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "harvest",
+            "text": "Harvest owned report\nAdmit next waiting host",
+            "r": 6,
+            "c": 2,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "targets",
+            "b": "capacity"
+          },
+          {
+            "a": "capacity",
+            "b": "pause"
+          },
+          {
+            "a": "pause",
+            "b": "hold",
+            "label": "Yes"
+          },
+          {
+            "a": "pause",
+            "b": "slots",
+            "label": "No"
+          },
+          {
+            "a": "slots",
+            "b": "fill"
+          },
+          {
+            "a": "fill",
+            "b": "poll"
+          },
+          {
+            "a": "poll",
+            "b": "done"
+          },
+          {
+            "a": "done",
+            "b": "harvest",
+            "label": "Yes"
+          },
+          {
+            "a": "done",
+            "b": "poll",
+            "label": "No",
+            "side": "left"
+          },
+          {
+            "a": "harvest",
+            "b": "capacity",
+            "side": "right"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Concurrency",
+          "Auto mode commonly uses five to six per-IP workers within the configured maximum. The example and Compose maximum may differ; inspect effective environment. Resource pressure pauses starts instead of killing unfinished scans."
+        ],
+        [
+          "Throughput estimate",
+          "Six workers at an observed 20-minute mean would imply 18 IPs/hour. This is planning arithmetic, not a live measured guarantee. Full port sweeps, credentials, feeds and host behavior determine actual duration."
+        ]
+      ],
+      "source": "laptop-scanner/scanner-agent/agent/capacity.py; agent/main.py"
+    },
+    {
+      "title": "Laptop / Port profiles and discovery observations",
+      "intro": "Full defaults to TCP 1\u201365535 and 30 priority UDP ports. Named Fast/Common/Vuln modes retain 88 TCP ports, the guide baseline, selected UDP mode and custom additions.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "profile",
+            "text": "Job policy + local defaults\nVersioned guide scope",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "full",
+            "text": "Full profile?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "all",
+            "text": "TCP 1\u201365535\nPriority UDP by default",
+            "r": 2,
+            "c": 0,
+            "kind": "data"
+          },
+          {
+            "id": "catalog",
+            "text": "88 TCP ports + custom\nGuide baseline retained",
+            "r": 2,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "probe",
+            "text": "Optional connect probes\nObserve answering ports",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "keep",
+            "text": "Retain configured scope\nSilence does not narrow it",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "protect",
+            "text": "Exclude control endpoint\nTCP where applicable",
+            "r": 5,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "target",
+            "text": "Create engine port list\nExplicit scan target",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "profile",
+            "b": "full"
+          },
+          {
+            "a": "full",
+            "b": "all",
+            "label": "Yes"
+          },
+          {
+            "a": "full",
+            "b": "catalog",
+            "label": "No"
+          },
+          {
+            "a": "all",
+            "b": "probe"
+          },
+          {
+            "a": "catalog",
+            "b": "probe"
+          },
+          {
+            "a": "probe",
+            "b": "keep"
+          },
+          {
+            "a": "keep",
+            "b": "protect"
+          },
+          {
+            "a": "protect",
+            "b": "target"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Coverage fix",
+          "Fast discovery is observational. A probe that sees only SMB, or sees nothing, cannot remove SSH/TLS and other configured services from the OpenVAS target."
+        ],
+        [
+          "UDP",
+          "Priority UDP includes the guide\u2019s 17-port baseline, six additional transports and seven existing infrastructure ports. UDP off/full applies to every named TCP mode. Effective exclusions/counts are recorded."
+        ]
+      ],
+      "source": "agent/service_policy.py; service_catalog.json; gmp_local.py; port_discovery.py; vuln_ports.json"
+    },
+    {
+      "title": "Laptop / Create and start the OpenVAS task",
+      "intro": "Task construction records the exact port plan and configuration before starting the engine.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "scope",
+            "text": "Single-IP target\nConfigured TCP / UDP plan",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "config",
+            "text": "Find Full and fast\nBase scan configuration",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "clone",
+            "text": "Writable SYN-scan\nconfig clone available?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "fallback",
+            "text": "Use supported base config\nLog effective fallback",
+            "r": 2,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "tune",
+            "text": "Apply safe / host settings\nScanner and VT timeouts",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "create",
+            "text": "Create target + task\nMax hosts = one per IP",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "start",
+            "text": "Start task\nRetain task / report IDs",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "scope",
+            "b": "config"
+          },
+          {
+            "a": "config",
+            "b": "clone"
+          },
+          {
+            "a": "clone",
+            "b": "fallback",
+            "label": "No"
+          },
+          {
+            "a": "clone",
+            "b": "tune",
+            "label": "Yes"
+          },
+          {
+            "a": "fallback",
+            "b": "tune"
+          },
+          {
+            "a": "tune",
+            "b": "create"
+          },
+          {
+            "a": "create",
+            "b": "start"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Quality defaults",
+          "Full profile uses optimize_test=no; VT timeout 320 s and scanner-plugin timeout 36,000 s avoid premature port-scan truncation. Safe checks and service recognition remain enabled."
+        ],
+        [
+          "Compatibility",
+          "Record effective target range, config/scanner IDs, feed version, applied preferences and SHA-256 at task creation. Explicit local GMP UUIDs bind SSH/SMB/SNMP/ESXi credentials; unsuccessful binding leaves a visible gap and detection continues."
+        ]
+      ],
+      "source": "laptop-scanner/scanner-agent/agent/gmp_local.py (_ensure_portscan_config, LocalOpenVAS)"
+    },
+    {
+      "title": "Service policy / Request to actual target scope",
+      "intro": "A policy is snapshotted when the central job is created, so later policy edits cannot change the claimed job\u2019s request.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "p",
+            "text": "Scan policy settings\nNamed mode / custom ports",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "v",
+            "text": "Validate ports and UUIDs\nDrop raw secrets",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "j",
+            "text": "Store job policy request\nAuthenticated edge owner",
+            "r": 2,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "c",
+            "text": "Laptop computes scope\nBaseline + selected UDP",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "creds",
+            "text": "Local credentials\navailable?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "bind",
+            "text": "Bind supported GMP UUIDs\nSSH custom port if supplied",
+            "r": 5,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "gap",
+            "text": "Record binding gap\nContinue native detection",
+            "r": 5,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "start",
+            "text": "Create target and task\nCapture applied policy",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "p",
+            "b": "v"
+          },
+          {
+            "a": "v",
+            "b": "j"
+          },
+          {
+            "a": "j",
+            "b": "c"
+          },
+          {
+            "a": "c",
+            "b": "creds"
+          },
+          {
+            "a": "creds",
+            "b": "bind",
+            "label": "Yes"
+          },
+          {
+            "a": "creds",
+            "b": "gap",
+            "label": "No"
+          },
+          {
+            "a": "bind",
+            "b": "start"
+          },
+          {
+            "a": "gap",
+            "b": "start"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Credential boundary",
+          "Credentials must already exist in the local Greenbone vault. A central credential_ref is not a local GMP UUID. WMI/WinRM and product-specific authenticated inventory depend on supported native feed methods; no new universal collector is implied."
+        ]
+      ],
+      "source": "backend/app/routers/vuln.py; scanner_agent_jobs.py; agent/service_policy.py; gmp_local.py"
+    },
+    {
+      "title": "Service evidence / Native report to family status",
+      "intro": "A service label is a source-backed observation. Port numbers alone do not identify a product or establish vulnerability.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "raw",
+            "text": "All paged native results\nStable result IDs / context",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "e",
+            "text": "Endpoint context available?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "route",
+            "text": "Route protocol / product\nIncludes custom port evidence",
+            "r": 2,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "hint",
+            "text": "Port hint only\nPreserve low confidence",
+            "r": 2,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "rows",
+            "text": "Map source-backed references\n52 service families",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "state",
+            "text": "Finding or observation\nMissing \u2192 not-tested",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "net",
+            "text": "No network collector\nDHCP \u2192 unsupported",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "db",
+            "text": "Central recomputes + scopes\nDurable result and job JSON",
+            "r": 5,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "show",
+            "text": "UI / CSV / JSON / appendix\nNo per-rule pass from silence",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "raw",
+            "b": "e"
+          },
+          {
+            "a": "e",
+            "b": "route",
+            "label": "Yes"
+          },
+          {
+            "a": "e",
+            "b": "hint",
+            "label": "No"
+          },
+          {
+            "a": "route",
+            "b": "rows"
+          },
+          {
+            "a": "hint",
+            "b": "rows"
+          },
+          {
+            "a": "rows",
+            "b": "state"
+          },
+          {
+            "a": "rows",
+            "b": "net"
+          },
+          {
+            "a": "state",
+            "b": "db"
+          },
+          {
+            "a": "net",
+            "b": "db"
+          },
+          {
+            "a": "db",
+            "b": "show"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Evidence limit",
+          "Native plugin-name references can associate a family without proving a precise fingerprint; they remain references, not a fabricated version/CPE. Missing score is explicitly marked. Configuration IP forwarding requires source-backed role/configuration evidence."
+        ]
+      ],
+      "source": "agent/service_policy.py; gmp_local.py; backend/app/services/scanner_agent_jobs.py; vuln_report_export.py"
+    },
+    {
+      "title": "Service scope / Guide families and remaining validation",
+      "intro": "The attached guide is implemented as a versioned registry and native-engine routing contract. It is not evidence that every product check was exercised on a live target.",
+      "headers": [
+        "Group",
+        "Registered scope / current boundary"
+      ],
+      "rows": [
+        [
+          "Windows / identity",
+          "SMB/CIFS, RPC, WMI, WinRM, RDP, LDAP/LDAPS, Kerberos, AD Global Catalog. Local credential binding is supported; successful authentication/privilege needs native evidence."
+        ],
+        [
+          "Remote / mail / transport",
+          "SSH OpenSSH/Dropbear, FTP/FTPS, SFTP, HTTP, HTTPS/TLS, SMTP/SMTPS, POP3/POP3S, IMAP/IMAPS, DNS, SNMP, Telnet, TFTP. Legacy TLS / STARTTLS tests remain native-feed and runtime dependent."
+        ],
+        [
+          "Data / platform",
+          "MSSQL, MySQL/MariaDB, PostgreSQL, Oracle, MongoDB, Redis, Elasticsearch, VNC, VMware, Docker, Kubernetes, kubelet, Jenkins, GitLab/Git, RabbitMQ, Kafka, Memcached."
+        ],
+        [
+          "Application servers",
+          "Tomcat, JBoss/WildFly, IIS, Apache HTTPD, nginx, WebLogic, WebSphere. Custom ports and actual product identity are retained; titles do not set severity."
+        ],
+        [
+          "Network / printer / RPC",
+          "IPsec/IKE, NTP, DHCP, IPP, JetDirect, NFS and rpcbind. DHCP/SSDP/mDNS network collectors and a new authenticated IPv4/IPv6 collector are not implemented by the per-IP agent."
+        ],
+        [
+          "Vendor appliances",
+          "Cisco, Fortinet, Palo Alto, Juniper, Aruba, HP/HPE, Dell, MikroTik, VMware and TP-Link are retained as intended vendor scope; rule coverage depends on native fingerprint/feed evidence."
+        ],
+        [
+          "Detailed list",
+          "Aetheris-Service-Coverage-List.csv and the updated Service Implementation Guide list every one of the 52 entries, hint ports, requested checks and remaining acceptance."
+        ]
+      ],
+      "widths": [
+        129,
+        378
+      ],
+      "notes": [],
+      "source": "agent/service_catalog.json; Aetheris-Scanner-Service-Implementation-Guide-Updated.pdf"
+    },
+    {
+      "title": "Laptop / Polling, task completion and cancellation",
+      "intro": "Task status, coverage and report evidence control completion. A high percent alone is not a completed full scan.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "task",
+            "text": "Owned task IDs\nBounded GMP polling",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "status",
+            "text": "Read task status\nPercent / current report",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "cancel",
+            "text": "Central cancel / missing\njob / LAN change?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "stop",
+            "text": "Stop owned task IDs\nRetain partial evidence",
+            "r": 2,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "terminal",
+            "text": "Engine task\nterminal?",
+            "r": 3,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "observe",
+            "text": "Continue polling\nPublish actual activity",
+            "r": 3,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "read",
+            "text": "Harvest final report\nMetadata + all result pages",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "coverage",
+            "text": "Assess host coverage\nComplete / degraded / failed",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "task",
+            "b": "status"
+          },
+          {
+            "a": "status",
+            "b": "cancel"
+          },
+          {
+            "a": "cancel",
+            "b": "stop",
+            "label": "Yes"
+          },
+          {
+            "a": "cancel",
+            "b": "terminal",
+            "label": "No"
+          },
+          {
+            "a": "terminal",
+            "b": "observe",
+            "label": "No"
+          },
+          {
+            "a": "observe",
+            "b": "status",
+            "side": "right"
+          },
+          {
+            "a": "terminal",
+            "b": "read",
+            "label": "Yes"
+          },
+          {
+            "a": "read",
+            "b": "coverage"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "No forced tail harvest",
+          "HIGH_PROGRESS_STALL_SEC=0 disables degraded high-percent harvesting by default. An unfinished port scanner is allowed to finish; optional limits must retain incomplete coverage."
+        ],
+        [
+          "Timeouts",
+          "The agent uses bounded calls and optional explicit runtime ceilings. It does not abort a valid scan simply because an IP\u2019s percentage did not move for one minute."
+        ]
+      ],
+      "source": "laptop-scanner/scanner-agent/agent/main.py; agent/gmp_local.py"
+    },
+    {
+      "title": "Laptop / Report pagination and native evidence",
+      "intro": "Read Greenbone XML without silently dropping low-QoD or informational results. Keep each source finding\u2019s identity.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "report",
+            "text": "Task / report ID\nFinal native report",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "meta",
+            "text": "Hosts, start/end, errors\nFull / filtered result counts",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "page",
+            "text": "Read result pages\nFilter includes QoD \u2265 0",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "parse",
+            "text": "Parse each result\nNVT/plugin, port, CVE, QoD",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "more",
+            "text": "More result pages?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "count",
+            "text": "Materialized rows\nmatch expected count?",
+            "r": 5,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "mismatch",
+            "text": "Parser / filtering loss\nIncomplete assessment",
+            "r": 5,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "bundle",
+            "text": "Finding rows + metadata\nHost coverage evidence",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "report",
+            "b": "meta"
+          },
+          {
+            "a": "meta",
+            "b": "page"
+          },
+          {
+            "a": "page",
+            "b": "parse"
+          },
+          {
+            "a": "parse",
+            "b": "more"
+          },
+          {
+            "a": "more",
+            "b": "page",
+            "label": "Yes",
+            "side": "left"
+          },
+          {
+            "a": "more",
+            "b": "count",
+            "label": "No"
+          },
+          {
+            "a": "count",
+            "b": "mismatch",
+            "label": "No"
+          },
+          {
+            "a": "count",
+            "b": "bundle",
+            "label": "Yes"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Retained details",
+          "Keep task/report IDs, source result ID, plugin/NVT identifiers, all available CVSS version signals, QoD, references, CVEs/CWEs, host, protocol and port."
+        ],
+        [
+          "Integrity",
+          "Compare the report\u2019s declared count with uploaded parsed rows. A report with 81 results and only three uploaded rows cannot become a valid assessment."
+        ]
+      ],
+      "source": "laptop-scanner/scanner-agent/agent/gmp_local.py (_report_evidence_from_xml, _vulnerabilities_from_report)"
+    },
+    {
+      "title": "Central / Completion and coverage verdict",
+      "intro": "Result ingestion verifies execution evidence and preserves degraded host coverage even when the top-level task says Done.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "upload",
+            "text": "Findings + task / report IDs\nPer-host coverage metadata",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "lock",
+            "text": "Lock owned job row\nValidate scanner / instance",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "verify",
+            "text": "Check hosts, result counts\nTimestamps and read errors",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "complete",
+            "text": "Execution evidence\nvalid?",
+            "r": 3,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "fail",
+            "text": "Failed / cancelled assessment\nKeep ingested findings",
+            "r": 3,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "host",
+            "text": "Port coverage full\nfor every intended host?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "degraded",
+            "text": "Host = incomplete\nPartial / warning flags",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "persist",
+            "text": "Persist evidence + verdict\nNo clean claim on gaps",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "upload",
+            "b": "lock"
+          },
+          {
+            "a": "lock",
+            "b": "verify"
+          },
+          {
+            "a": "verify",
+            "b": "complete"
+          },
+          {
+            "a": "complete",
+            "b": "fail",
+            "label": "No"
+          },
+          {
+            "a": "complete",
+            "b": "host",
+            "label": "Yes"
+          },
+          {
+            "a": "host",
+            "b": "degraded",
+            "label": "No"
+          },
+          {
+            "a": "host",
+            "b": "persist",
+            "label": "Yes"
+          },
+          {
+            "a": "degraded",
+            "b": "persist"
+          },
+          {
+            "a": "fail",
+            "b": "persist"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Three consistent views",
+          "Stored scan result evidence, orchestration state and the result API response now agree on partial, clean_eligible and warnings. A degraded per-IP scan stays incomplete."
+        ],
+        [
+          "Clean eligibility",
+          "Task execution can finish with warnings. Missing requested hosts, parser count mismatch, skipped scope or a truncated port scanner prevent a full-scope clean conclusion."
+        ]
+      ],
+      "source": "backend/app/services/scanner_agent_jobs.py; laptop-scanner/scanner-agent/agent/scan_coverage.py"
+    },
+    {
+      "title": "Central / Durable per-IP progress to the UI",
+      "intro": "The agent submits a complete snapshot for all assigned IPs, including hosts still waiting for a worker slot.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "local",
+            "text": "Active tasks + waiting IPs\nPrior assessed-host coverage",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "snapshot",
+            "text": "State + percent + task ID\nMonotonic event sequence",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "patch",
+            "text": "PATCH job progress\nAuthenticated owner",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "merge",
+            "text": "Lock and scope merge\nExclude unassigned targets",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "rules",
+            "text": "Monotonic same-task percent\nProtect terminal coverage",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "persist",
+            "text": "Persist orchestration JSON\nServer timestamp",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "ui",
+            "text": "Scan details table\nEvery IP + percent + state",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "local",
+            "b": "snapshot"
+          },
+          {
+            "a": "snapshot",
+            "b": "patch"
+          },
+          {
+            "a": "patch",
+            "b": "merge"
+          },
+          {
+            "a": "merge",
+            "b": "rules"
+          },
+          {
+            "a": "rules",
+            "b": "persist"
+          },
+          {
+            "a": "persist",
+            "b": "ui"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Displayed states",
+          "Waiting = 0%; running stays below 100%. The per-job sequence is restored on resume; stale or duplicate events are rejected before a different task ID can reopen a host. Same-task percent cannot decrease."
+        ],
+        [
+          "Ownership / races",
+          "Non-owner updates are ignored. Completed jobs cannot reopen from late polling. Row locks prevent simultaneous progress and result ingestion from overwriting each other\u2019s JSON."
+        ]
+      ],
+      "source": "agent/target_progress.py; backend/app/services/scanner_agent_jobs.py; scan_orchestrator.py; frontend/src/pages/vuln/ScanJobsPage.tsx"
+    },
+    {
+      "title": "Central / Normalize, deduplicate and retain findings",
+      "intro": "Native scanner rows remain linked to the assessment that produced them. Retries within a job do not reassign historic findings to a later scan.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "raw",
+            "text": "Native finding rows\nEngine + source result ID",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "normalize",
+            "text": "Normalize plugin, CVEs\nProtocol, port and scores",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "asset",
+            "text": "Match scoped asset\nHost / network identity",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "dedup",
+            "text": "Existing same-job\nfinding occurrence?",
+            "r": 3,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "update",
+            "text": "Update same occurrence\nRetain first-seen context",
+            "r": 4,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "insert",
+            "text": "Insert new occurrence\nPreserve historical job",
+            "r": 4,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "enrich",
+            "text": "KEV / asset context\nTechnical severity + risk",
+            "r": 5,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "store",
+            "text": "vuln_findings + assets\nCorrelation / remediation",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "raw",
+            "b": "normalize"
+          },
+          {
+            "a": "normalize",
+            "b": "asset"
+          },
+          {
+            "a": "asset",
+            "b": "dedup"
+          },
+          {
+            "a": "dedup",
+            "b": "update",
+            "label": "Yes"
+          },
+          {
+            "a": "dedup",
+            "b": "insert",
+            "label": "No"
+          },
+          {
+            "a": "update",
+            "b": "enrich"
+          },
+          {
+            "a": "insert",
+            "b": "enrich"
+          },
+          {
+            "a": "enrich",
+            "b": "store"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Identity",
+          "Deduplication uses scan job, asset, source result ID, plugin, CVE, port and protocol. Do not merge separate host/port occurrences merely because their titles match."
+        ],
+        [
+          "Score provenance",
+          "Retain version-specific CVSS candidates, chosen source/basis, scanner labels, native VPR/EPSS if supplied and QoD. Auxiliary engines may map labels to numeric scores; those mappings are not native CVSS vectors."
+        ]
+      ],
+      "source": "backend/app/services/vuln_finding_ingest.py; aetheris_severity.py; vuln_kev_feed.py"
+    },
+    {
+      "title": "Scoring / Technical severity and contextual priority",
+      "intro": "The configured CVSS version selects technical severity. A separate local contextual risk number supports prioritization.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "signals",
+            "text": "CVSS v2 / v3 / v4\nGeneric engine signals",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "select",
+            "text": "Select configured basis\nExplicit fallback provenance",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "severity",
+            "text": "Numeric severity band\nNo title-based severity floor",
+            "r": 2,
+            "c": 0,
+            "kind": "data"
+          },
+          {
+            "id": "context",
+            "text": "CVSS + supplied threat\nKEV / exposure / asset / age",
+            "r": 2,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "risk",
+            "text": "Aetheris contextual risk\n0\u2013100 with components",
+            "r": 3,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "preserve",
+            "text": "Store severity AND risk\nNative VPR kept separately",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "signals",
+            "b": "select"
+          },
+          {
+            "a": "select",
+            "b": "severity"
+          },
+          {
+            "a": "select",
+            "b": "context"
+          },
+          {
+            "a": "context",
+            "b": "risk"
+          },
+          {
+            "a": "severity",
+            "b": "preserve"
+          },
+          {
+            "a": "risk",
+            "b": "preserve"
+          }
+        ]
+      },
+      "height": 338,
+      "notes": [
+        [
+          "VPR boundary",
+          "MODEL_VERSION=nessus-aligned-weighted-1 is a custom Aetheris contextual model. It is not Tenable VPR. Absent threat data contributes zero; CVSS does not fabricate threat probability."
+        ]
+      ],
+      "source": "backend/app/services/aetheris_severity.py; vuln_risk.py; Tenable risk metric documentation",
+      "headers": [
+        "Signal",
+        "Classification / contribution"
+      ],
+      "rows": [
+        [
+          "Technical severity",
+          "Default CVSS v3; v3/v4 Critical \u22659.0, High \u22657.0, Medium \u22654.0. CVSS v2 Critical =10.0."
+        ],
+        [
+          "Local risk components",
+          "Technical \u226425; supplied VPR/EPSS threat \u226420; KEV 15; exposure \u226415; impact \u226415; age \u22645; confidence \u22645."
+        ],
+        [
+          "Local risk bands",
+          "Critical \u226580; High \u226560; Medium \u226535; Low >0; Info =0."
+        ]
+      ],
+      "widths": [
+        117,
+        390
+      ]
+    },
+    {
+      "title": "Central optional / Nmap and Nuclei execution",
+      "intro": "These central engines require their own executable and scoped targets. Their outputs are not a replacement for the laptop\u2019s full OpenVAS assessment.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "dispatch",
+            "text": "Configured optional\ncentral engine stage",
+            "r": 0,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "nmap",
+            "text": "Nmap executable + hosts\nService-discovery request",
+            "r": 1,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "nuclei",
+            "text": "Nuclei binary + templates\nCandidate scoped URLs",
+            "r": 1,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "runmap",
+            "text": "-sV; top 200 ports\nBounded XML execution",
+            "r": 2,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "runnuc",
+            "text": "JSONL template scan\nTimeout / concurrency limits",
+            "r": 2,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "parsemap",
+            "text": "Parse host / service\nDiscovery observations",
+            "r": 3,
+            "c": 0,
+            "kind": "data"
+          },
+          {
+            "id": "parsenuc",
+            "text": "Parse actual matches\nPlugin / CVE / URL",
+            "r": 3,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "live",
+            "text": "Live outputs\navailable?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "skip",
+            "text": "Missing / failed / stub\nExplicit skip or failure",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "ingest",
+            "text": "Normalize live output\nRetain engine scope",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "dispatch",
+            "b": "nmap"
+          },
+          {
+            "a": "dispatch",
+            "b": "nuclei"
+          },
+          {
+            "a": "nmap",
+            "b": "runmap"
+          },
+          {
+            "a": "nuclei",
+            "b": "runnuc"
+          },
+          {
+            "a": "runmap",
+            "b": "parsemap"
+          },
+          {
+            "a": "runnuc",
+            "b": "parsenuc"
+          },
+          {
+            "a": "parsemap",
+            "b": "live"
+          },
+          {
+            "a": "parsenuc",
+            "b": "live"
+          },
+          {
+            "a": "live",
+            "b": "skip",
+            "label": "No"
+          },
+          {
+            "a": "live",
+            "b": "ingest",
+            "label": "Yes"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Nmap scope",
+          "The implemented auxiliary scan uses top-200 discovery/service ports, not all 65,535 TCP ports. Record service observations as that bounded scope."
+        ],
+        [
+          "Nuclei scope",
+          "Configured templates check matching known conditions at attempted URLs. No matches do not prove the entire host or every application vulnerability was assessed."
+        ]
+      ],
+      "source": "backend/app/services/multi_scanner_clients.py (NmapScanner, NucleiScanner); scan_orchestrator.py"
+    },
+    {
+      "title": "Central optional / ZAP, Trivy and Wazuh routes",
+      "intro": "The actual central implementation has distinct capabilities and limitations. Unsupported routes are not drawn as a successful live scan.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "target",
+            "text": "Configured engine\nScoped target kind",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "zap",
+            "text": "ZAP URL route\nSpider + passive queue",
+            "r": 1,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "wazuh",
+            "text": "Wazuh target-to-agent\nmapping required",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "trivy",
+            "text": "Trivy image reference\nLocal binary / server",
+            "r": 1,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "alerts",
+            "text": "Read passive alerts\nCurrent cap: 500 per URL",
+            "r": 2,
+            "c": 0,
+            "kind": "data"
+          },
+          {
+            "id": "missing",
+            "text": "Mapping not implemented\nNo live inventory here",
+            "r": 2,
+            "c": 1,
+            "kind": "blocked"
+          },
+          {
+            "id": "image",
+            "text": "trivy image JSON\nPackage vulnerabilities",
+            "r": 2,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "normalize",
+            "text": "Normalize actual ZAP /\nTrivy output",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "store",
+            "text": "Findings + scope / limits\nReject stubs; record skips",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "target",
+            "b": "zap"
+          },
+          {
+            "a": "target",
+            "b": "wazuh"
+          },
+          {
+            "a": "target",
+            "b": "trivy"
+          },
+          {
+            "a": "zap",
+            "b": "alerts"
+          },
+          {
+            "a": "wazuh",
+            "b": "missing",
+            "kind": "blocked"
+          },
+          {
+            "a": "trivy",
+            "b": "image"
+          },
+          {
+            "a": "alerts",
+            "b": "normalize"
+          },
+          {
+            "a": "image",
+            "b": "normalize"
+          },
+          {
+            "a": "normalize",
+            "b": "store"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "ZAP limitations",
+          "The current adapter performs spidering and passive alert retrieval; it does not implement an active-scan flow here. Its 500-alert cap is a coverage limitation to review before relying on a large-site assessment."
+        ],
+        [
+          "Trivy / Wazuh",
+          "Trivy scans container image references and skips IP-only targets. Wazuh currently reports that enrolled-agent target mapping is missing; a configured API URL alone does not implement live endpoint inventory."
+        ]
+      ],
+      "source": "backend/app/services/multi_scanner_clients.py (ZapScanner, TrivyScanner, WazuhScanner)"
+    },
+    {
+      "title": "Central optional / Licensed Nessus and native imports",
+      "intro": "The product can use a separately configured licensed Nessus API or an actual Nessus CSV export. The Laptop Scanner itself is OpenVAS.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "source",
+            "text": "Licensed Nessus instance\nor actual exported CSV",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "route",
+            "text": "API execution\nor report import?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "api",
+            "text": "Validate API / template\nCreate authorized scan",
+            "r": 2,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "csv",
+            "text": "Parse each CSV row\nRetain versioned scores",
+            "r": 2,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "poll",
+            "text": "Launch / poll licensed scan\nRead native report findings",
+            "r": 3,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "signals",
+            "text": "Host / port / plugin / CVE\nCVSS + supplied VPR / EPSS",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "normalize",
+            "text": "Normalize + dedup\nSame source provenance",
+            "r": 5,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "persist",
+            "text": "Persist finding occurrences\nCoverage review / reports",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "source",
+            "b": "route"
+          },
+          {
+            "a": "route",
+            "b": "api",
+            "label": "API"
+          },
+          {
+            "a": "route",
+            "b": "csv",
+            "label": "Import"
+          },
+          {
+            "a": "api",
+            "b": "poll"
+          },
+          {
+            "a": "poll",
+            "b": "signals"
+          },
+          {
+            "a": "csv",
+            "b": "signals"
+          },
+          {
+            "a": "signals",
+            "b": "normalize"
+          },
+          {
+            "a": "normalize",
+            "b": "persist"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "License boundary",
+          "OpenVAS is not presented as the licensed Nessus engine. Similar technical severity bands do not reproduce proprietary Nessus plugins, coverage or VPR."
+        ],
+        [
+          "Import retention",
+          "Retain every exported host/protocol/port row and all supplied score signals. A native VPR score remains a supplied signal, distinct from the local contextual risk number."
+        ]
+      ],
+      "source": "backend/app/services/nessus_client.py; nessus_report.py; nessus_sync.py"
+    },
+    {
+      "title": "Scanner report / Coverage review to gap assessment",
+      "intro": "Reports load current case/site data, persisted findings, assessment status and durable service-family evidence. The client PDF/DOCX now includes a coverage appendix.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "review",
+            "text": "Review Scan Details\nScope + incomplete / warnings",
+            "r": 0,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "data",
+            "text": "Case / site / findings\nAssessment + service evidence",
+            "r": 1,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "group",
+            "text": "Group report finding titles\nRetain host / port occurrences",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "counts",
+            "text": "Derive affected endpoints\nSeverity and risk counts",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "llm",
+            "text": "Optional mitigation prose\nGrounded in finding facts",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "render",
+            "text": "Styled report + appendix\nCover / watermark / pages",
+            "r": 5,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "export",
+            "text": "PDF / DOCX + findings XLSX\nCoverage CSV / JSON",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "review",
+            "b": "data"
+          },
+          {
+            "a": "data",
+            "b": "group"
+          },
+          {
+            "a": "group",
+            "b": "counts"
+          },
+          {
+            "a": "counts",
+            "b": "llm"
+          },
+          {
+            "a": "llm",
+            "b": "render"
+          },
+          {
+            "a": "render",
+            "b": "export"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Coverage boundary",
+          "The appendix distinguishes native engine assessment from per-rule coverage and lists missing/unsupported evidence. Export remains available for incomplete scans; it does not certify all 52 families passed. The companion CSV has all families per host."
+        ],
+        [
+          "Exports",
+          "Solution CSV/XLSX keeps the approved eight-column layout. Separate service-coverage CSV/JSON includes family states and source result IDs; JSON retains task scope, feed/preferences and hashes. Case merges retain each job\u2019s coverage."
+        ]
+      ],
+      "source": "backend/app/services/gap_assessment_report.py; gap_report_template.py; gap_report_llm.py; vuln_report_export.py"
+    },
+    {
+      "title": "Monitoring / Performance without false completion",
+      "intro": "The forensic progressAgent rule and the portable scanner\u2019s task loop are different runtime boundaries. Both need valid waits to remain visible.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "observe",
+            "text": "Observe owned operation\nStatus / counters / resource use",
+            "r": 0,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "wait",
+            "text": "Progress absent\nfor one minute?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "continue",
+            "text": "Keep observing\nUpdate actual task state",
+            "r": 1,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "valid",
+            "text": "Valid engine / GPU /\nfeed or deadline wait?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "retain",
+            "text": "Retain running operation\nExpose reason / scope",
+            "r": 2,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "fix",
+            "text": "Owned call / task recovery\nBounded policy only",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "coverage",
+            "text": "Retain partial output\nMark unproven coverage",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "retry",
+            "text": "Retry permitted?",
+            "r": 5,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "fail",
+            "text": "Visible failed / incomplete\nNo synthetic completed state",
+            "r": 5,
+            "c": 2,
+            "kind": "blocked"
+          }
+        ],
+        "edges": [
+          {
+            "a": "observe",
+            "b": "wait"
+          },
+          {
+            "a": "wait",
+            "b": "continue",
+            "label": "No"
+          },
+          {
+            "a": "wait",
+            "b": "valid",
+            "label": "Yes"
+          },
+          {
+            "a": "valid",
+            "b": "retain",
+            "label": "Yes"
+          },
+          {
+            "a": "valid",
+            "b": "fix",
+            "label": "No"
+          },
+          {
+            "a": "fix",
+            "b": "coverage"
+          },
+          {
+            "a": "coverage",
+            "b": "retry"
+          },
+          {
+            "a": "retry",
+            "b": "observe",
+            "label": "Yes",
+            "side": "left"
+          },
+          {
+            "a": "retry",
+            "b": "fail",
+            "label": "No"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Implemented performance changes",
+          "Canonical packaging avoids stale agents; complete snapshots remove log-only status; adaptive five/six IP scheduling fills slots; bounded polling and paged report reads preserve results. Critical pressure pauses new work."
+        ],
+        [
+          "Control boundary",
+          "progressAgent is the sole outside coordinator for forensic serial/report jobs. The laptop scanner polls its owned OpenVAS tasks internally; this release does not claim that one central forensic agent can control a disconnected laptop\u2019s processes."
+        ]
+      ],
+      "source": "backend/app/services/progress_agent.py; laptop-scanner/scanner-agent/agent/main.py; capacity.py"
+    },
+    {
+      "title": "Release 1.5.3 / Changes and verification",
+      "intro": "The supplied standalone scanner and the canonical embedded scanner are synchronized. The central packager now preserves the modern source.",
+      "notes": [
+        [
+          "Test semantics",
+          "Regression tests include a seven-IP scheduling simulation and a finished task with degraded port scanning. Database behavior checks use actual PostgreSQL-compatible execution, not only a mocked query string."
+        ],
+        [
+          "Remaining optional-engine limits",
+          "ZAP pagination beyond its current 500-alert cap and Wazuh target-to-agent mapping are documented limitations of separate central adapters; they are not installed laptop-agent processes."
+        ]
+      ],
+      "source": "SCANNER-INTEGRATION-V153-RELEASE.md; SCANNER-INTEGRATION-V153-MANIFEST.json",
+      "headers": [
+        "Change",
+        "Result / validation"
+      ],
+      "rows": [
+        [
+          "Canonical packaging",
+          "Stop deleting modern laptop code or copying the older repo-root agent; exclude secret/runtime/cache/log files."
+        ],
+        [
+          "Progress",
+          "Complete IP snapshots; waiting/running/failed/skipped/incomplete states; percent clamping; resume preserves assessed hosts."
+        ],
+        [
+          "Readiness",
+          "Only authenticated scanner heartbeat updates; API/UI launch fence; explicit engine readiness fields."
+        ],
+        [
+          "Coverage flags",
+          "Persisted evidence, orchestration and API agree on partial/clean/warnings even when the task says Done."
+        ],
+        [
+          "Port / capacity defaults",
+          "Full TCP + priority UDP; Full optimize_test=no; floor of five workers; pressure pauses new starts."
+        ],
+        [
+          "Guide policy / evidence",
+          "52 registered service families + IP forwarding; custom scope, UDP transports, local credential references, family status, policy audit, coverage exports and report appendix."
+        ],
+        [
+          "Severity / priority",
+          "Version-aware CVSS; retain numeric signals; no title-based floors or fabricated threat probability; contextual risk separate from VPR."
+        ],
+        [
+          "Verification completed",
+          "102 standalone tests; 107 embedded agent tests; 175 focused central/report tests; PostgreSQL/WASM behavior; Vuln + Unified builds; Python 3.11 syntax and changed PowerShell grammar."
+        ],
+        [
+          "Live verification pending",
+          "Windows PowerShell execution, actual Docker/Greenbone scan timing/coverage, and live phone/GPU acceptance were not executed on target hardware."
+        ]
+      ],
+      "widths": [
+        122,
+        385
+      ]
+    },
+    {
+      "title": "Deployment / Apply the Laptop and central fixes",
+      "intro": "Update both source folders before testing live progress. Preserve existing local .env files and runtime tokens; do not reuse a packaged scanner identity.",
+      "notes": [
+        [
+          "What the scripts do",
+          "Rebuild/recreate the relevant application/agent containers, validate Compose/imports and run the agent test suite. They preserve database/feed volumes and do not remove real local credentials."
+        ],
+        [
+          "Validation limit",
+          "Changed PowerShell syntax was parsed successfully here. Native Windows/Docker execution remains a required target-host check."
+        ]
+      ],
+      "source": "scripts/Apply-Scanner-Integration.ps1; laptop-scanner/Apply-Scanner-v1.5.3.ps1",
+      "headers": [
+        "Host / step",
+        "Command / expected result"
+      ],
+      "rows": [
+        [
+          "Central source",
+          "Extract the updated polaron-disk-mobile-serial.zip into the existing project, preserving local environment and data."
+        ],
+        [
+          "Central vulnerability service",
+          "From the project root: powershell -ExecutionPolicy Bypass -File .\\scripts\\Apply-Scanner-Integration.ps1"
+        ],
+        [
+          "Custom central configuration",
+          "Use -ProjectName and -ComposeOverrides for the deployment\u2019s existing Compose name/overlays. Use -IncludeGateway only when that gateway must rebuild shared UI/API routing."
+        ],
+        [
+          "Laptop source",
+          "Extract Aetheris-Laptop-Scanner-v1.5.3.zip into the existing laptop-scanner folder. Existing .env and scanner-agent/runtime are retained."
+        ],
+        [
+          "Laptop agent update",
+          "From that folder: powershell -ExecutionPolicy Bypass -File .\\Apply-Scanner-v1.5.3.ps1"
+        ],
+        [
+          "Effective scan coverage",
+          "The update retains .env. Check output: PORT_PROFILE=full and UDP_PROFILE=priority for full TCP/default priority UDP. Explicit older profile overrides still apply."
+        ],
+        [
+          "Fresh installation",
+          "Use Start-Laptop.cmd to configure the scanner and bind it to the authorized central account."
+        ],
+        [
+          "Live acceptance",
+          "Wait for real Greenbone readiness. Launch known authorized targets; verify waiting/running IPs, retained coverage, native findings, and API/UI flags. Read Scan Details before final reports."
+        ]
+      ],
+      "widths": [
+        135,
+        372
+      ]
+    },
+    {
+      "title": "Implementation map and primary references",
+      "intro": "Project paths trace every diagram to the supplied implementation. External references support protocol and metric definitions.",
+      "notes": [
+        [
+          "OpenDocument copy",
+          "The companion .odt contains editable text/tables and embedded flow diagrams. The PDF is the inspected fixed-layout reference; the embedded diagram nodes are not individually editable shapes."
+        ],
+        [
+          "Reproducible documents",
+          "docs/process-flows contains the structured diagram data and generation script in the updated central project. Use ReportLab and PyMuPDF to regenerate the PDFs and ODT."
+        ]
+      ],
+      "source": "",
+      "headers": [
+        "Area",
+        "Source location / primary documentation"
+      ],
+      "rows": [
+        [
+          "Agent lifecycle / scheduling",
+          "laptop-scanner/scanner-agent/agent/main.py; capacity.py; target_progress.py; bootstrap_control_plane.py"
+        ],
+        [
+          "GMP / native report",
+          "laptop-scanner/scanner-agent/agent/gmp_local.py; scan_coverage.py; port_discovery.py"
+        ],
+        [
+          "Central API / state",
+          "backend/app/routers/scanner_agent.py; vuln.py; services/scanner_agent_jobs.py; scan_orchestrator.py"
+        ],
+        [
+          "Scores / findings",
+          "backend/app/services/aetheris_severity.py; vuln_risk.py; vuln_finding_ingest.py; nessus_report.py"
+        ],
+        [
+          "Other engines / reports",
+          "backend/app/services/multi_scanner_clients.py; gap_assessment_report.py; gap_report_template.py; vuln_report_export.py"
+        ],
+        [
+          "Greenbone GMP",
+          "https://docs.greenbone.net/API/GMP/gmp-22.7.html"
+        ],
+        [
+          "Tenable severity basis",
+          "https://docs.tenable.com/nessus/Content/ConfigureIndividualScanSeverity.htm"
+        ],
+        [
+          "Tenable risk metrics",
+          "https://docs.tenable.com/nessus/Content/RiskMetrics.htm"
+        ],
+        [
+          "FIRST CVSS v3.1",
+          "https://www.first.org/cvss/v3-1/specification-document"
+        ]
+      ],
+      "widths": [
+        129,
+        378
+      ]
+    }
+  ],
+  "accent": "#E6AC55",
+  "cover_notes": [
+    "Complete startup, feed, authentication, per-IP scan, coverage, scoring and report diagrams.",
+    "Includes separately configured central engines and their actual implementation limits.",
+    "Scanner source 1.5.3-v45.7. Live Windows/Docker/Greenbone acceptance remains pending.",
+    "Versioned scope for all 52 guide families; actual service evidence and credential/network gaps are reported."
+  ]
+}

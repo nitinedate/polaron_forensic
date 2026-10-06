@@ -1,0 +1,71 @@
+services:
+  # Postgres, Redis, MinIO, pgAdmin, and MailHog are the shared aetheris-common stack.
+  ollama:
+    ports: !override
+      - "127.0.0.1:11434:11434"
+
+  neo4j:
+    ports: !override
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+
+  opensearch:
+    ports: !override
+      - "127.0.0.1:9200:9200"
+
+  api:
+    # Local debugging is still available at http://127.0.0.1:8080.
+    # Inbound LAN/Internet traffic cannot reach this loopback binding.
+    ports: !override
+      - "127.0.0.1:8080:8080"
+    environment:
+      APP_BASE_URL: https://122.170.114.36
+
+  frontend:
+    ports: !override
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deployment/windows-ip-https/nginx.https.conf:/etc/nginx/conf.d/default.conf:ro
+      - certbot_etc:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+
+  # Used only for certificate issue/renewal commands, e.g.
+  # docker compose ... run --rm certbot certonly ...
+  certbot:
+    image: certbot/certbot:latest
+    profiles: ["certbot"]
+    volumes:
+      - certbot_etc:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+
+  # Initial HTTP-only server used before the first certificate exists.
+  # Start it alone, obtain the certificate, remove it, then start frontend.
+  acme-bootstrap:
+    image: nginx:1.27-alpine
+    profiles: ["acme-bootstrap"]
+    ports:
+      - "80:80"
+    volumes:
+      - certbot_www:/usr/share/nginx/html:ro
+
+  # Optional scanner services are kept host-local if their profiles are enabled.
+  gvmd:
+    ports: !override
+      - "127.0.0.1:${GVM_PORT:-9390}:9390"
+
+  zap:
+    ports: !override
+      - "127.0.0.1:${ZAP_PORT:-8090}:8080"
+
+  trivy:
+    ports: !override
+      - "127.0.0.1:${TRIVY_PORT:-4954}:4954"
+
+  wazuh-manager:
+    ports: !override
+      - "127.0.0.1:${WAZUH_API_PORT:-55000}:55000"
+
+volumes:
+  certbot_etc:
+  certbot_www:

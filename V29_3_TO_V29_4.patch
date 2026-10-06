@@ -1,0 +1,484 @@
+--- /mnt/data/polaron2_v29_4_baseline/polaron2_v29_3_server_hdd/frontend/src/lib/pipelineStepModal.ts	2026-09-24 01:25:40.000000000 +0000
++++ /mnt/data/polaron2_v29_4_agentfix/polaron2_v29_3_server_hdd/frontend/src/lib/pipelineStepModal.ts	2026-09-26 06:51:42.103998365 +0000
+@@ -1,6 +1,6 @@
+ import type { Job } from "./types/forensic";
+ import { stripAxiomBranding } from "./displayText";
+-import { AGENT_ORDER, inferRunningAgentIndex, isPipelineFullyComplete } from "./orchestrationStages";
++import { AGENT_ORDER, agentOrderForJob, drivesAlreadyMounted, inferRunningAgentIndex, isMobilePipelineJob, isPipelineFullyComplete } from "./orchestrationStages";
+ 
+ export type PipelineStepStatus = "running" | "error" | "done";
+ 
+@@ -105,8 +105,8 @@
+   },
+ };
+ 
+-export const PIPELINE_STEP_DEFS: PipelineStepDef[] = [
+-  ...AGENT_ORDER.map((agent) => ({
++function agentStepDef(agent: { id: string; label: string }): PipelineStepDef {
++  return {
+     id: agent.id,
+     title: agent.label,
+     ...(AGENT_STEP_COPY[agent.id] || {
+@@ -114,16 +114,38 @@
+       errorMessage: `Error during ${agent.label}. Try again.`,
+       doneMessage: `${agent.label} complete.`,
+     }),
+-  })),
+-  {
+-    id: "complete",
+-    title: "Pipeline complete",
+-    runningMessage: "Finalizing pipeline…",
+-    errorMessage: "Pipeline did not finish. Try again.",
+-    doneMessage: "All pipeline agents finished.",
+-  },
++  };
++}
++
++const COMPLETE_STEP: PipelineStepDef = {
++  id: "complete",
++  title: "Pipeline complete",
++  runningMessage: "Finalizing pipeline…",
++  errorMessage: "Pipeline did not finish. Try again.",
++  doneMessage: "All pipeline agents finished.",
++};
++
++/** Full catalog retained for generic callers; job UIs must use pipelineStepDefsForJob(). */
++export const PIPELINE_STEP_DEFS: PipelineStepDef[] = [
++  ...AGENT_ORDER.map(agentStepDef),
++  COMPLETE_STEP,
+ ];
+ 
++/**
++ * Visible modal steps for the actual product. Disk never shows iOS/Android
++ * agents; mobile never shows Disk-only mount/download/virtual-disk stages.
++ */
++export function pipelineStepDefsForJob(job: Job | null): PipelineStepDef[] {
++  if (!job) return PIPELINE_STEP_DEFS;
++  return [...agentOrderForJob(job).map(agentStepDef), COMPLETE_STEP];
++}
++
++function stepIndexForAgent(job: Job, agentId: string): number {
++  const defs = pipelineStepDefsForJob(job);
++  const index = defs.findIndex((def) => def.id === agentId);
++  return index >= 0 ? index : 0;
++}
++
+ export interface PipelineStepContext {
+   open: boolean;
+   stepIndex: number;
+@@ -153,11 +175,11 @@
+   registering: boolean,
+   opts?: { listingFolder?: boolean }
+ ): number {
+-  if (opts?.listingFolder) return 0;
+-  if (registering) return 1;
+-  if (["created", "registered", "awaiting_segments"].includes(job.status) && !job.segment_readiness?.ready) {
+-    return 1;
+-  }
++  const defs = pipelineStepDefsForJob(job);
++  const completeIndex = defs.length - 1;
++
++  if (opts?.listingFolder) return stepIndexForAgent(job, "list_folder_agent");
++  if (registering) return stepIndexForAgent(job, "segments_agent");
+ 
+   const status = job.status;
+   const { phase, completed, total } = phase3(job);
+@@ -166,16 +188,33 @@
+     total > 0 &&
+     completed >= total;
+ 
+-  if (phase === "complete" || isPipelineFullyComplete(job)) return PIPELINE_STEP_DEFS.length - 1;
++  if (phase === "complete" || isPipelineFullyComplete(job)) return completeIndex;
+   if (inventoryCountsDone && (status === "indexed" || status === "ready")) {
+-    return PIPELINE_STEP_DEFS.length - 1;
++    return completeIndex;
++  }
++
++  // A not-yet-started mobile job begins with its platform owner. A Disk job
++  // begins with drive mount/listing and must never surface iOS/Android cards.
++  if (["created", "registered", "awaiting_segments"].includes(status) && !job.segment_readiness?.ready) {
++    if (isMobilePipelineJob(job)) {
++      return 0;
++    }
++    return drivesAlreadyMounted(job)
++      ? stepIndexForAgent(job, "list_folder_agent")
++      : stepIndexForAgent(job, "drive_mount_agent");
+   }
+ 
+   const inferred = inferRunningAgentIndex(job);
+-  if (inferred >= AGENT_ORDER.length) return PIPELINE_STEP_DEFS.length - 1;
+-  if (inferred >= 0) return inferred;
+-  if (job.segment_readiness?.ready) return AGENT_ORDER.findIndex((a) => a.id === "virtual_disk_agent");
+-  return 1;
++  if (inferred >= AGENT_ORDER.length) return completeIndex;
++  if (inferred >= 0) {
++    const agentId = AGENT_ORDER[inferred]?.id;
++    if (agentId) {
++      const mapped = defs.findIndex((def) => def.id === agentId);
++      if (mapped >= 0) return mapped;
++    }
++  }
++  if (job.segment_readiness?.ready) return stepIndexForAgent(job, "virtual_disk_agent");
++  return 0;
+ }
+ 
+ const UPLOAD_FOLDER_ERROR =
+@@ -222,30 +261,44 @@
+ 
+   if (!job) return empty;
+ 
++  const stepDefs = pipelineStepDefsForJob(job);
++  const completedBefore = (index: number) =>
++    Array.from({ length: Math.max(0, index) }, (_, i) => i);
++
+   // A live browser upload is success-path progress — never overlay it with a path-register error.
+   if (opts.uploading) {
++    const stepIndex = stepIndexForAgent(job, "download_agent");
+     return {
+       open: true,
+-      stepIndex: 1,
++      stepIndex,
+       status: "running",
+       detail: opts.uploadDetail?.trim() || "Uploading evidence files from this computer…",
+-      completedStepIndexes: [0],
++      completedStepIndexes: completedBefore(stepIndex),
+     };
+   }
+ 
+   if (opts.registerError) {
+-    const errStep = opts.listingFolder ? 0 : 1;
++    const errorText = String(opts.registerError || "");
++    const agentId =
++      /download agent|client upload|upload.*segment/i.test(errorText)
++        ? "download_agent"
++        : opts.mountingDrive || /hostdrive|docker mount|mount(?:ing|ed)? drive/i.test(errorText)
++          ? "drive_mount_agent"
++          : opts.listingFolder || /list(?:ing)? folder/i.test(errorText)
++            ? "list_folder_agent"
++            : "segments_agent";
++    const stepIndex = stepIndexForAgent(job, agentId);
+     return {
+       open: true,
+-      stepIndex: errStep,
++      stepIndex,
+       status: "error",
+       detail: sanitizeRegisterError(opts.registerError),
+-      completedStepIndexes: errStep > 0 ? [0] : [],
++      completedStepIndexes: completedBefore(stepIndex),
+     };
+   }
+ 
+   if (opts.pipelineError) {
+-    const stepIndex = opts.pipelineErrorStep ?? Math.max(1, derivePipelineStepIndex(job, false));
++    const stepIndex = opts.pipelineErrorStep ?? Math.max(0, derivePipelineStepIndex(job, false));
+     return {
+       open: true,
+       stepIndex,
+@@ -256,24 +309,29 @@
+   }
+ 
+   if (opts.mountingDrive || opts.listingFolder) {
++    const stepIndex = stepIndexForAgent(
++      job,
++      opts.mountingDrive ? "drive_mount_agent" : "list_folder_agent"
++    );
+     return {
+       open: true,
+-      stepIndex: 0,
++      stepIndex,
+       status: "running",
+       detail: opts.mountingDrive
+         ? "Mounting the selected drive so Docker can see it. Extraction starts as soon as the folder is visible."
+         : null,
+-      completedStepIndexes: [],
++      completedStepIndexes: completedBefore(stepIndex),
+     };
+   }
+ 
+   if (opts.registering || (opts.receivingSegmentsStarted && !segmentsStepComplete(job))) {
++    const stepIndex = stepIndexForAgent(job, "segments_agent");
+     return {
+       open: true,
+-      stepIndex: 1,
++      stepIndex,
+       status: "running",
+       detail: null,
+-      completedStepIndexes: [0],
++      completedStepIndexes: completedBefore(stepIndex),
+     };
+   }
+ 
+@@ -299,7 +357,7 @@
+   // Normal pipeline progress is shown on the Job Detail left step list —
+   // keep this modal closed except for register / fatal error overlays above.
+   if (isPipelineFullyComplete(job)) {
+-    const last = PIPELINE_STEP_DEFS.length - 1;
++    const last = stepDefs.length - 1;
+     return {
+       open: false,
+       stepIndex: last,
+--- /mnt/data/polaron2_v29_4_baseline/polaron2_v29_3_server_hdd/frontend/src/hooks/usePipelineStepTracker.ts	2026-09-23 16:20:29.000000000 +0000
++++ /mnt/data/polaron2_v29_4_agentfix/polaron2_v29_3_server_hdd/frontend/src/hooks/usePipelineStepTracker.ts	2026-09-26 06:51:42.104134730 +0000
+@@ -4,6 +4,7 @@
+   derivePipelineStepContext,
+   formatElapsed,
+   PIPELINE_STEP_DEFS,
++  pipelineStepDefsForJob,
+   sanitizeRegisterError,
+   type PipelineStepContext,
+ } from "../lib/pipelineStepModal";
+@@ -44,6 +45,8 @@
+   const wasOpenRef = useRef(false);
+   const prevStageStateRef = useRef<Record<string, string>>({});
+ 
++  const stepDefs = useMemo(() => (job ? pipelineStepDefsForJob(job) : PIPELINE_STEP_DEFS), [job]);
++
+   const ctx: PipelineStepContext = derivePipelineStepContext(job, {
+     registering: opts.registering,
+     receivingSegmentsStarted: opts.receivingSegmentsStarted,
+@@ -240,7 +243,7 @@
+     }
+   }, [opts.registering, opts.uploading]);
+ 
+-  const currentStep = PIPELINE_STEP_DEFS[ctx.stepIndex] ?? PIPELINE_STEP_DEFS[0];
++  const currentStep = stepDefs[ctx.stepIndex] ?? stepDefs[0] ?? PIPELINE_STEP_DEFS[0];
+   const totalLabel =
+     finalElapsedMs != null
+       ? formatElapsed(finalElapsedMs)
+@@ -250,6 +253,7 @@
+ 
+   return {
+     ctx,
++    steps: stepDefs,
+     currentStep,
+     elapsedLabel: formatElapsed(elapsedMs),
+     /** Live total while pipeline runs; final after complete. */
+--- /mnt/data/polaron2_v29_4_baseline/polaron2_v29_3_server_hdd/frontend/src/components/forensic/PipelineStepModal.tsx	2026-09-21 06:14:26.000000000 +0000
++++ /mnt/data/polaron2_v29_4_agentfix/polaron2_v29_3_server_hdd/frontend/src/components/forensic/PipelineStepModal.tsx	2026-09-26 06:51:42.104205727 +0000
+@@ -13,6 +13,7 @@
+ interface PipelineStepModalProps {
+   open: boolean;
+   step: PipelineStepDef;
++  steps?: PipelineStepDef[];
+   stepIndex: number;
+   status: PipelineStepStatus;
+   detail: string | null;
+@@ -26,6 +27,7 @@
+ export function PipelineStepModal({
+   open,
+   step,
++  steps,
+   stepIndex,
+   status,
+   detail,
+@@ -35,6 +37,7 @@
+   onCancel,
+ }: PipelineStepModalProps) {
+   const { panelStyle, dragHandleProps } = useDraggablePanel(open);
++  const visibleSteps = steps?.length ? steps : PIPELINE_STEP_DEFS;
+ 
+   if (!open) return null;
+ 
+@@ -70,7 +73,7 @@
+             </span>
+           </div>
+           <p className="mt-1 text-xs text-ink-500">
+-            Step {stepIndex + 1} of {PIPELINE_STEP_DEFS.length - 1} · Elapsed time
++            Step {stepIndex + 1} of {Math.max(1, visibleSteps.length - 1)} · Elapsed time
+           </p>
+         </div>
+ 
+@@ -106,7 +109,7 @@
+           </div>
+ 
+           <ol className="max-h-52 space-y-2 overflow-y-auto text-xs">
+-            {PIPELINE_STEP_DEFS.slice(0, -1).map((def, index) => {
++            {visibleSteps.slice(0, -1).map((def, index) => {
+               const done = completedStepIndexes.includes(index);
+               const current = index === stepIndex && status === "running";
+               const failed = index === stepIndex && status === "error";
+--- /mnt/data/polaron2_v29_4_baseline/polaron2_v29_3_server_hdd/frontend/src/pages/forensic/JobDetailPage.tsx	2026-09-24 14:37:36.000000000 +0000
++++ /mnt/data/polaron2_v29_4_agentfix/polaron2_v29_3_server_hdd/frontend/src/pages/forensic/JobDetailPage.tsx	2026-09-26 06:51:42.104415814 +0000
+@@ -724,7 +724,12 @@
+     }
+     setReceivingSegmentsStarted(false);
+     setRegisterProgress({ active: false, pct: 0, fileName: "", phase: "idle" });
+-    if (pipelineSteps.ctx.stepIndex <= 1) {
++    const evidenceStepId = pipelineSteps.currentStep.id;
++    if (evidenceStepId === "download_agent") {
++      evidencePanelRef.current?.openEvidenceFolder();
++      return;
++    }
++    if (["drive_mount_agent", "list_folder_agent", "segments_agent"].includes(evidenceStepId)) {
+       if (evidencePanelRef.current?.registerManualPath) {
+         evidencePanelRef.current.registerManualPath();
+       } else {
+@@ -739,7 +744,7 @@
+     setReceivingSegmentsStarted(false);
+     setRegisterProgress({ active: false, pct: 0, fileName: "", phase: "idle" });
+     pipelineSteps.setRegisterError(
+-      "Registration cancelled. Choose the folder on this computer again so upload can start."
++      "Registration cancelled. Choose the server evidence folder again, or explicitly choose client upload if the evidence is on another computer."
+     );
+   }
+ 
+@@ -1162,6 +1167,7 @@
+       <PipelineStepModal
+         open={pipelineSteps.ctx.open}
+         step={pipelineSteps.currentStep}
++        steps={pipelineSteps.steps}
+         stepIndex={pipelineSteps.ctx.stepIndex}
+         status={pipelineSteps.ctx.status}
+         detail={pipelineSteps.ctx.detail}
+@@ -1234,7 +1240,9 @@
+                 pipelineSteps.setRegisterError(msg);
+               }}
+               onProcessingError={(message) => {
+-                setPipelineErrorStep(1);
++                // Let the tracker derive the visible product-specific stage. Fixed numeric
++                // indexes used to point Disk errors at the Android Agent card.
++                setPipelineErrorStep(undefined);
+                 setPipelineError(message);
+               }}
+             />
+--- /mnt/data/polaron2_v29_4_baseline/polaron2_v29_3_server_hdd/frontend/src/components/forensic/HostEvidencePanel.tsx	2026-09-26 05:49:12.000000000 +0000
++++ /mnt/data/polaron2_v29_4_agentfix/polaron2_v29_3_server_hdd/frontend/src/components/forensic/HostEvidencePanel.tsx	2026-09-26 06:51:42.104745030 +0000
+@@ -1164,14 +1164,11 @@
+       return;
+     }
+ 
+-    if (folder.fileBlobs?.length) {
+-      toastRef.current.info("Uploading the selected folder from this computer to the forensic server…");
+-      await uploadClientFiles(folder.fileBlobs);
+-      return;
+-    }
+-
++    // The folder originated from the forensic server/office HostDrive source.
++    // Never silently convert that source into a browser upload: doing so duplicates
++    // E01/EWF segments on the server and violates zero-copy evidence residency.
+     const msg =
+-      "Could not register that folder. Choose the image folder on this computer so the browser can send the files to the forensic server.";
++      "The forensic server can see this evidence source, but the selected folder could not be resolved inside Docker. Refresh server drive mounts and retry. Server-side evidence is never copied through the browser.";
+     onRegisterError?.(msg);
+     toastRef.current.error(msg);
+   }
+@@ -2059,7 +2056,7 @@
+             onClick={() => void openNativeFolderPicker()}
+           >
+             <FolderOpen className="mr-1 h-3.5 w-3.5" />
+-            {remounting ? "Mounting drives…" : "Browse folder…"}
++            {remounting ? "Mounting drives…" : "Upload from client computer…"}
+           </Button>
+         </div>
+       </div>
+--- /mnt/data/polaron2_v29_4_baseline/polaron2_v29_3_server_hdd/frontend/src/lib/api.ts	2026-09-25 15:09:09.000000000 +0000
++++ /mnt/data/polaron2_v29_4_agentfix/polaron2_v29_3_server_hdd/frontend/src/lib/api.ts	2026-09-26 06:53:23.185601472 +0000
+@@ -115,9 +115,7 @@
+       throw new ApiError(
+         0,
+         "timeout",
+-        API_BASE
+-          ? "Request timed out. Ensure the API gateway is running on port 8080."
+-          : "Request timed out. Ensure docker compose is up (API + frontend) and try again."
++        "Request timed out while contacting the product API through the Enterprise Console. Check the gateway and the selected product backend, then try again."
+       );
+     }
+     const target = API_BASE || "the Vite dev proxy (/api -> localhost:8080)";
+--- /dev/null	2026-09-26 06:44:36.297680501 +0000
++++ /mnt/data/polaron2_v29_4_agentfix/polaron2_v29_3_server_hdd/backend/tests/test_disk_agent_modal_isolation_v29_4.py	2026-09-26 06:53:23.185725108 +0000
+@@ -0,0 +1,44 @@
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[2]
++
++
++def _read(rel: str) -> str:
++    return (ROOT / rel).read_text(encoding="utf-8")
++
++
++def test_disk_modal_uses_product_specific_steps_not_mobile_fixed_indexes() -> None:
++    modal = _read("frontend/src/lib/pipelineStepModal.ts")
++    tracker = _read("frontend/src/hooks/usePipelineStepTracker.ts")
++    component = _read("frontend/src/components/forensic/PipelineStepModal.tsx")
++    assert "pipelineStepDefsForJob" in modal
++    assert "agentOrderForJob(job).map(agentStepDef)" in modal
++    assert 'stepIndexForAgent(job, "list_folder_agent")' in modal
++    assert 'stepIndexForAgent(job, "segments_agent")' in modal
++    assert "if (opts?.listingFolder) return 0" not in modal
++    assert "if (registering) return 1" not in modal
++    assert "pipelineStepDefsForJob(job)" in tracker
++    assert "steps: stepDefs" in tracker
++    assert "visibleSteps.slice(0, -1)" in component
++
++
++def test_server_office_evidence_never_falls_back_to_client_upload() -> None:
++    panel = _read("frontend/src/components/forensic/HostEvidencePanel.tsx")
++    # One legitimate use remains: the explicit browser/client intake branch.
++    assert panel.count("await uploadClientFiles(folder.fileBlobs)") == 1
++    assert "Server-side evidence is never copied through the browser" in panel
++    assert "Upload from client computer…" in panel
++
++
++def test_disk_retry_uses_step_identity_not_numeric_android_index() -> None:
++    page = _read("frontend/src/pages/forensic/JobDetailPage.tsx")
++    assert 'evidenceStepId === "download_agent"' in page
++    assert '"drive_mount_agent", "list_folder_agent", "segments_agent"' in page
++    assert "setPipelineErrorStep(1)" not in page
++    assert "steps={pipelineSteps.steps}" in page
++
++
++def test_timeout_copy_does_not_tell_unified_console_to_start_legacy_root_stack() -> None:
++    api = _read("frontend/src/lib/api.ts")
++    assert "Ensure docker compose is up (API + frontend)" not in api
++    assert "selected product backend" in api
+--- /dev/null	2026-09-26 06:44:36.297680501 +0000
++++ /mnt/data/polaron2_v29_4_agentfix/polaron2_v29_3_server_hdd/SERVER_HDD_AGENT_GATE_FIX_V29_4_20260926.md	2026-09-26 06:54:22.703695730 +0000
+@@ -0,0 +1,48 @@
++# Polaron V29.4 - Disk server-HDD agent-gate isolation fix
++
++## Symptom
++On a Disk Forensics job, the modal could show `iOS Agent` / `Android Agent` and a timeout such as `Download Agent gate could not be opened safely`, even though the evidence HDD/SSD/USB was attached to the forensic server and visible in the zero-copy server evidence browser.
++
++## Root causes
++1. The pipeline modal used the global agent array and hard-coded step indexes 0/1. Because iOS and Android are the first global entries, Disk registration errors were displayed as phone-agent failures.
++2. A folder selected through the office/server HostDrive path could, after a resolution/mount miss, silently fall back to browser upload when browser File objects happened to be present. That violated the zero-copy server-evidence rule and opened the Download Agent gate.
++3. The generic timeout message still told the user to start the legacy root `docker compose` API/frontend stack, which is misleading for the current gateway + isolated product backends.
++
++## V29.4 behavior
++
++### Disk pipeline modal
++Disk jobs now use a product-specific visible step list. They never display iOS/Android Agent cards.
++
++Disk registration order begins with:
++- Drive mount
++- Download (only for explicit client upload)
++- List folder
++- Get segments
++- Virtual disk
++- Extraction
++- Materialize
++- OCR enrich
++- Parse forensic files
++- RAG / graph / inventory stages
++
++Mobile jobs still use their platform owner and remain isolated from Disk.
++
++### Server evidence is fail-closed zero-copy
++If a selection originated from the forensic server / office HostDrive source, a mount or path-resolution failure now stops with a server-drive error. It never falls back to `uploadClientFiles()` and never opens `begin-client-upload`.
++
++The examiner must refresh server drive mounts and retry. This prevents duplicate E01/EWF/RAW source files on the server.
++
++### Client evidence remains explicit
++Only the explicit `Upload from client computer...` path may invoke Download Agent. The V27 complete-manifest hold still applies: no extraction/parse/OCR/RAG/report until every client segment is staged and verified.
++
++### Retry behavior
++Retry is now based on the actual step ID rather than numeric indexes. A Download failure reopens client selection. Drive/List/Get-segments failures retry the server evidence path. Processing failures resume the processing pipeline.
++
++### Timeout copy
++Timeouts now say to check the Enterprise Console gateway and selected product backend rather than instructing the user to start the legacy root stack.
++
++## Validation
++- 93 relevant Disk/Mobile/HostDrive/platform isolation tests passed.
++- 15 focused V29.4 + V27 residency tests passed.
++- All six changed TS/TSX files passed TypeScript 5.8.3 ES2020 syntax transpilation.
++- Full npm dependency installation/typecheck could not be executed in this sandbox because the npm cache does not contain all project dependencies and outbound package installation is unavailable.

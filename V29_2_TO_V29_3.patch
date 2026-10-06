@@ -1,0 +1,557 @@
+--- /dev/null
++++ b/SERVER_HDD_ZERO_COPY_DETECTION_V29_3_20260926.md
+@@ -0,0 +1,64 @@
++# Polaron V29.3 — Server HDD zero-copy detection fix
++
++## Problem reproduced
++On Disk Job Detail, `HostEvidencePanel` was rendered with both `embedded` and `autoProcess` enabled. The component entered its compact `fullyAutomated` branch and returned before rendering the server evidence browser. The only visible action was the client/browser folder picker, which uploads evidence to the server.
++
++A second issue prevented automatic discovery from healing newly attached server disks: server drive synchronization was gated by the browser computer's localhost HostDrive helper cache, and explicit refresh did not request `sync_attached=true`. Thus Docker could keep older C:/D:/... mounts while a newly attached HDD/SSD/USB letter remained absent.
++
++## V29.3 behavior
++
++### Server / network / removable evidence
++- Disk Job Detail always shows the **Server evidence browser — zero-copy** for Disk jobs, even when embedded auto-processing is enabled.
++- Server-side drive discovery is obtained from `/api/hostdrive` first and is not gated by a remote examiner browser's localhost helper.
++- Newly attached Windows drive letters are synchronized using `sync_attached=true`.
++- The selected server evidence path is mounted read-only and registered in place.
++- E01/E02/... segments are not uploaded, copied to staging, or duplicated in MinIO before extraction.
++- The client-upload cleanup path never deletes the server source.
++
++### Client evidence
++- The client folder picker remains available as a separate path.
++- Client evidence is uploaded to staging and remains subject to the V27 full-manifest hold gate.
++
++### Dynamic drive workers
++The Windows refresh job now includes `worker-parse` in the forensic remount service set, so extraction and parse workers see the same read-only server evidence path after a removable drive refresh.
++
++## UI changes
++Disk Job Detail now presents a server-first prompt:
++
++`Server / network / removable HDD, SSD or USB — process in place`
++
++with a **Detect server drives** action. The client upload panel is explicitly labeled as the fallback for evidence that is not attached to the forensic server.
++
++## Automatic detection flow
++1. Query the office/server HostDrive API.
++2. Merge actual server letters and volume metadata into the evidence browser.
++3. If Windows sees a letter that the forensic container cannot read, request a read-only dynamic remount with `sync_attached=true`.
++4. Reload the browser after the remount.
++5. Poll every 30 seconds for newly attached server drives while the job is waiting for evidence.
++
++A failed volume does not trigger endless container restarts: each unchanged drive inventory gets one automatic remount attempt; the examiner can explicitly press **Refresh drive mounts** to retry.
++
++## Server diagnostic command
++From the project root on the forensic Windows server:
++
++```powershell
++powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-server-evidence-drives.ps1
++```
++
++If the HostDrive helper is offline:
++
++```powershell
++powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\ensure-host-drive-helper.ps1
++powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\hostdrive-agent.ps1 -RefreshNow -Once
++```
++
++To validate an exact path, for example `G:\Case01`:
++
++```powershell
++powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-dynamic-drive-mounts.ps1 -RequiredPath "G:\Case01"
++```
++
++## Validation
++- 58 targeted server-drive / V27 residency / drive-mount / HostDrive / path tests passed.
++- The two changed TSX files passed TypeScript 5.8.3 syntax checking against ES2020.
++- Full `npm ci` / Vite build could not be completed in the sandbox because package installation timed out; no TypeScript syntax errors were found in the changed files.
+--- a/backend/tests/test_disk_source_residency_v27.py
++++ b/backend/tests/test_disk_source_residency_v27.py
+@@ -101,3 +101,24 @@
+ def test_upload_activity_visibly_marks_full_pipeline_hold():
+     panel = read("frontend/src/components/forensic/JobActivityPanel.tsx")
+     assert "Pipeline hold · extract / parse / OCR / RAG / report paused" in panel
++
++
++def test_embedded_disk_job_still_exposes_server_zero_copy_browser():
++    panel = read("frontend/src/components/forensic/HostEvidencePanel.tsx")
++    assert "const fullyAutomated = embedded && autoProcess && isLiveMobileSource" in panel
++    assert "Server / network / removable HDD, SSD or USB — process in place" in panel
++    assert "Detect server drives" in panel
++    assert "await syncDriveMountsIfNeeded();" in panel
++    # Office/server inventory must not depend on the remote browser's localhost helper.
++    root_browse = panel.split("if (isBrowseRoot(opts))", 1)[1].split("if (", 1)[0]
++    assert "hostDriveHelperHealth" not in root_browse
++    assert "listHostDriveLetters" in root_browse
++
++
++def test_new_server_hdd_uses_sync_attached_remount_and_parse_worker_mounts():
++    panel = read("frontend/src/components/forensic/HostEvidencePanel.tsx")
++    dialog = read("frontend/src/components/forensic/BrowseFolderDialog.tsx")
++    refresh = read("scripts/refresh-drive-mounts-job.ps1")
++    assert "{ syncAttached: !opts?.requiredPath }" in panel
++    assert "runHostDriveAgentRefresh(undefined, { syncAttached: true })" in dialog
++    assert "worker-parse" in refresh
+--- /dev/null
++++ b/backend/tests/test_server_hdd_detection_v29_3.py
+@@ -0,0 +1,43 @@
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[2]
++
++
++def read(path: str) -> str:
++    return (ROOT / path).read_text(encoding="utf-8")
++
++
++def test_job_detail_disk_does_not_hide_server_browser_in_auto_process_mode():
++    panel = read("frontend/src/components/forensic/HostEvidencePanel.tsx")
++    assert "const fullyAutomated = embedded && autoProcess && isLiveMobileSource" in panel
++    assert "Server evidence browser — zero-copy" in panel
++    assert "Detect server drives" in panel
++
++
++def test_server_drive_inventory_is_not_gated_by_client_localhost_helper():
++    panel = read("frontend/src/components/forensic/HostEvidencePanel.tsx")
++    root = panel.split("if (isBrowseRoot(opts))", 1)[1].split("applyBrowse", 1)[0]
++    assert "listHostDriveLetters" in root
++    assert "hostDriveHelperHealth" not in root
++
++
++def test_new_attached_server_drive_triggers_sync_attached_mount():
++    panel = read("frontend/src/components/forensic/HostEvidencePanel.tsx")
++    dialog = read("frontend/src/components/forensic/BrowseFolderDialog.tsx")
++    assert "syncAttached: !opts?.requiredPath" in panel
++    assert "syncAttached: true" in dialog
++    assert "Server drive(s)" in panel and "mounting read-only" in panel
++
++
++def test_server_drive_poll_does_not_require_browser_helper_cache():
++    panel = read("frontend/src/components/forensic/HostEvidencePanel.tsx")
++    block = panel.split("const pollExternalDrives", 1)[1].split("const id =", 1)[0]
++    assert "getCachedHelperOnline" not in block
++    assert "syncDriveMountsIfNeeded" in block
++
++
++def test_parse_worker_is_part_of_dynamic_remount_target():
++    refresh = read("scripts/refresh-drive-mounts-job.ps1")
++    generator = read("scripts/generate-drive-mounts.ps1")
++    assert "@('api', 'worker-disk', 'worker-parse', 'worker-report', 'worker-agent')" in refresh
++    assert "@('api', 'worker-disk', 'worker-parse', 'worker-mobile', 'worker-report', 'worker-agent')" in generator
+--- a/frontend/src/components/forensic/BrowseFolderDialog.tsx
++++ b/frontend/src/components/forensic/BrowseFolderDialog.tsx
+@@ -167,10 +167,30 @@
+     setDrivesLoading(true);
+     setAgentLetters(recommendedLetters.map((x) => x.replace(/:$/, "").toUpperCase()));
+     void (async () => {
+-      const host = await listOfficeServerDriveLetters(12000);
++      let host = await listOfficeServerDriveLetters(12000);
++      if (cancelled) return;
++
++      let volumes = (host?.volumes || []).filter((v) => v.drive_type !== "cdrom");
++      const hasUnMounted = volumes.some((v) => v.mounted === false);
++      // Newly attached server evidence disks are visible to the Windows helper
++      // before Docker can read them. Ask the server-side Drive Mount Agent to
++      // synchronize all attached letters, then re-read the inventory.
++      if (!volumes.length || hasUnMounted) {
++        const refreshed = await runHostDriveAgentRefresh(undefined, { syncAttached: true });
++        if (!cancelled && refreshed.ok) {
++          host = await listOfficeServerDriveLetters(12000);
++          volumes = (host?.volumes || []).filter((v) => v.drive_type !== "cdrom");
++        } else if (!cancelled && !refreshed.ok && !volumes.length) {
++          setBrowseError(
++            refreshed.error ||
++              host?.message ||
++              "The forensic server cannot see attached drive letters. Start the HostDrive agent on the forensic server."
++          );
++        }
++      }
++
+       if (cancelled) return;
+       setDrivesLoading(false);
+-      const volumes = (host?.volumes || []).filter((v) => v.drive_type !== "cdrom");
+       if (volumes.length) {
+         setWindowsVolumes(volumes);
+         return;
+@@ -178,6 +198,11 @@
+       const letters = host?.drives || [];
+       if (letters.length) {
+         setWindowsVolumes(letters.map((letter) => ({ letter, drive_type: "fixed" as const })));
++      } else if (!browseError) {
++        setBrowseError(
++          host?.message ||
++            "No server drives were returned. Run scripts\ensure-host-drive-helper.ps1 on the forensic server and refresh."
++        );
+       }
+     })();
+     return () => {
+@@ -357,9 +382,21 @@
+         ) : null}
+ 
+         {!drivesLoading && !windowsVolumes.length && browseError ? (
+-          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+-            {browseError}
+-          </p>
++          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
++            <p>{browseError}</p>
++            <p className="mt-1 text-amber-800">
++              On the forensic server run: <code className="rounded bg-white px-1">powershell -ExecutionPolicy Bypass -File scripts\ensure-host-drive-helper.ps1</code>
++            </p>
++            {onRefreshMounts ? (
++              <Button
++                variant="outline"
++                className="mt-2 h-7 border-amber-300 bg-white text-xs text-amber-900"
++                onClick={onRefreshMounts}
++              >
++                Refresh server drives
++              </Button>
++            ) : null}
++          </div>
+         ) : null}
+ 
+         {windowsVolumes.length ? (
+--- a/frontend/src/components/forensic/HostEvidencePanel.tsx
++++ b/frontend/src/components/forensic/HostEvidencePanel.tsx
+@@ -408,6 +408,7 @@
+   }>({ open: false, message: "", segmentCount: 0 });
+ 
+   const lastHostDrivesRef = useRef("");
++  const lastAutoRemountRef = useRef("");
+   const lastDriveMountErrorRef = useRef<string | null>(null);
+   const syncInFlightRef = useRef(false);
+   const pendingResolveRef = useRef<{
+@@ -478,11 +479,21 @@
+           return null;
+         }
+         if (isBrowseRoot(opts)) {
+-          const health = await hostDriveHelperHealth();
+-          const host = health?.ok ? await listHostDriveLetters() : null;
++          // Server-attached HDD/SSD/USB/network drives are discovered through
++          // /api/hostdrive first. Do not gate this on the browser PC's localhost
++          // helper: a remote LAN browser usually has no helper, while the office
++          // forensic server still does.
++          const host = await listHostDriveLetters();
+           if (host?.drives?.length) {
+             res = mergeHostDrivesIntoBrowse(res, host.drives, host.volumes ?? []);
+-            lastHostDrivesRef.current = host.drives.join(",");
++          } else {
++            // The container-side catalog has placeholders for A:..Z:. Without
++            // the server helper inventory, show only letters that are actually
++            // readable instead of 26 false drives.
++            res = {
++              ...res,
++              entries: res.entries.filter((entry) => entry.kind !== "drive" || entry.mounted !== false),
++            };
+           }
+         }
+         if (
+@@ -555,7 +566,10 @@
+         toastRef.current.info(
+           "HostDrive agent: detecting drives and refreshing Docker mounts…"
+         );
+-        const result = await runHostDriveAgentRefresh(opts?.requiredPath);
++        const result = await runHostDriveAgentRefresh(
++          opts?.requiredPath,
++          { syncAttached: !opts?.requiredPath }
++        );
+         if (!result.ok) {
+           lastDriveMountErrorRef.current = result.error ?? "Drive mount refresh failed";
+           // The helper can be healthy while Docker Desktop refuses a particular drive.
+@@ -606,8 +620,9 @@
+     if (syncInFlightRef.current || remounting || disabled) return false;
+     const host = await listHostDriveLetters();
+     if (!host?.drives?.length) return false;
+-    const hostKey = host.drives.join(",");
+-    if (hostKey === lastHostDrivesRef.current) return false;
++    const hostKey = (host.volumes?.length
++      ? host.volumes.map((v) => `${String(v.letter || "").toUpperCase()}:${v.mounted === false ? "0" : "1"}`).join(",")
++      : host.drives.join(","));
+ 
+     const snapshot = await fetchBrowse({ drive: "", path: "" });
+     const mounted = new Set(
+@@ -620,23 +635,32 @@
+     );
+     if (!missing.length) {
+       lastHostDrivesRef.current = hostKey;
++      lastAutoRemountRef.current = "";
+       return false;
+     }
+ 
++    // Avoid restarting the forensic containers on every poll when Docker
++    // Desktop refuses one specific removable volume. A newly changed drive
++    // inventory gets one automatic remount attempt; the Refresh button remains
++    // available for an explicit retry.
++    if (lastAutoRemountRef.current === hostKey) return false;
++    lastAutoRemountRef.current = hostKey;
++
+     syncInFlightRef.current = true;
+     try {
+       toastRef.current.info(
+-        `New drive(s) on this PC (${missing.join(", ")}) — refreshing Docker mounts…`
++        `Server drive(s) ${missing.join(", ")} detected — mounting read-only into forensic workers…`
+       );
+       const ok = await refreshDriveMountsOnHost();
+       if (ok) {
+-        lastHostDrivesRef.current = hostKey;
++        const refreshed = await loadBrowse({ drive: "", path: "", silent: true });
++        if (refreshed) lastHostDrivesRef.current = hostKey;
+       }
+       return ok;
+     } finally {
+       syncInFlightRef.current = false;
+     }
+-  }, [disabled, fetchBrowse, refreshDriveMountsOnHost, remounting]);
++  }, [disabled, fetchBrowse, loadBrowse, refreshDriveMountsOnHost, remounting]);
+ 
+   const prepareForFolderSelect = useCallback(async (opts?: { force?: boolean }) => {
+     const health = await ensureHostDriveHelper(
+@@ -707,7 +731,10 @@
+   }, [isLiveMobileSource, disabled, jobId, refreshMobileDevices]);
+ 
+   useEffect(() => {
+-    if (embedded && autoProcess) return;
++    // Only live phone acquisition can use the compact auto-process view. Disk
++    // and backup evidence must still expose the forensic server's HDD/SSD/USB
++    // browser even when JobDetail embeds this panel with autoProcess enabled.
++    if (embedded && autoProcess && isLiveMobileSource) return;
+     void (async () => {
+       const health = await hostDriveHelperHealth(1200);
+       const online = Boolean(health?.ok);
+@@ -717,9 +744,10 @@
+         // drives through /api/hostdrive. It must be available even when this UI
+         // is opened from another workstation on the server-side LAN.
+         await loadBrowse({ drive: "", path: "", silent: true });
++        await syncDriveMountsIfNeeded();
+       }
+     })();
+-  }, [jobId, sourceType, loadBrowse, embedded, autoProcess, isLiveMobileSource]);
++  }, [jobId, sourceType, loadBrowse, embedded, autoProcess, isLiveMobileSource, syncDriveMountsIfNeeded]);
+ 
+   useEffect(() => {
+     let cancelled = false;
+@@ -754,18 +782,20 @@
+   }, [jobId]);
+ 
+   useEffect(() => {
+-    if (disabled || (embedded && autoProcess)) return;
++    if (disabled || isLiveMobileSource) return;
+     let cancelled = false;
+     const pollExternalDrives = async () => {
+-      if (cancelled || getCachedHelperOnline() !== true) return;
++      if (cancelled) return;
++      // listHostDriveLetters() checks the office/server API before localhost, so
++      // remote examiner browsers can detect a newly attached server HDD too.
+       await syncDriveMountsIfNeeded();
+     };
+-    const id = window.setInterval(() => void pollExternalDrives(), 45_000);
++    const id = window.setInterval(() => void pollExternalDrives(), 30_000);
+     return () => {
+       cancelled = true;
+       window.clearInterval(id);
+     };
+-  }, [disabled, syncDriveMountsIfNeeded, embedded, autoProcess]);
++  }, [disabled, syncDriveMountsIfNeeded, isLiveMobileSource]);
+ 
+   const scrollToBrowser = useCallback(() => {
+     browserRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+@@ -1755,7 +1785,7 @@
+     void loadBrowse({ drive: currentDrive, path: pathParts.slice(0, index + 1).join("/") });
+   }
+ 
+-  const fullyAutomated = embedded && autoProcess;
++  const fullyAutomated = embedded && autoProcess && isLiveMobileSource;
+ 
+   if (fullyAutomated) {
+     return (
+@@ -1955,11 +1985,41 @@
+         </div>
+       ) : null}
+ 
++      {!isLiveMobileSource ? (
++        <div className="mb-3 rounded-lg border-2 border-brand-300 bg-brand-50/70 px-3 py-3 text-xs text-brand-950">
++          <div className="flex flex-wrap items-start justify-between gap-3">
++            <div className="min-w-0 flex-1">
++              <p className="font-semibold">Server / network / removable HDD, SSD or USB — process in place</p>
++              <p className="mt-1 text-brand-900">
++                If the evidence disk is physically attached to this forensic server, use the server evidence browser below.
++                The .E01/.E02/... segments stay on that disk: no browser upload, no duplicate source copy, and the original is never auto-deleted.
++              </p>
++            </div>
++            <Button
++              variant="brand"
++              className="shrink-0"
++              disabled={busy || disabled}
++              loading={loading || remounting}
++              onClick={() => {
++                void (async () => {
++                  await loadBrowse({ drive: "", path: "", silent: true });
++                  await syncDriveMountsIfNeeded();
++                  scrollToBrowser();
++                })();
++              }}
++            >
++              <HardDrive className="mr-1 h-3.5 w-3.5" />
++              Detect server drives
++            </Button>
++          </div>
++        </div>
++      ) : null}
++
+       <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50/80 px-3 py-2.5 text-xs text-emerald-900">
+         <p className="font-semibold">
+           {isMobileEvidenceSource
+-            ? "Upload a mobile extraction from this computer"
+-            : "Upload disk images from this computer"}
++            ? "Client computer upload — mobile extraction"
++            : "Client computer upload — only when evidence is not attached to the server"}
+         </p>
+         <p className="mt-1 text-emerald-800">
+           {isMobileEvidenceSource ? (
+@@ -1969,9 +2029,8 @@
+             </>
+           ) : (
+             <>
+-              Choose any evidence folder on <strong>this computer</strong> (.E01, .001, .pas, .ufd, .zip, …).
+-              The browser uploads those files to the forensic server. Processing runs there — no office disk
+-              mount of this PC.
++              Choose evidence on the <strong>client/browser computer</strong> only when the forensic server cannot read that disk itself.
++              The browser uploads the complete segment set to server staging; processing stays held until every segment is verified.
+             </>
+           )}
+         </p>
+@@ -2008,8 +2067,7 @@
+       <p className="mb-3 text-xs text-ink-500">
+         {embedded ? (
+           <>
+-            Choose any evidence folder on this computer. Files upload to the forensic server, then click{" "}
+-            <strong>Process</strong> if extract does not start automatically.
++            Server-attached drives are processed in place from the server evidence browser. Use the client folder picker only for evidence that exists on this browser computer.
+           </>
+         ) : (
+           <>
+@@ -2123,7 +2181,7 @@
+         </div>
+       )}
+ 
+-      {!helperOnline ? (
++      {!helperOnline && isLiveMobileSource ? (
+         <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+           <p className="font-semibold">Local HostDrive helper is offline (port 9876)</p>
+           <p className="mt-1">
+--- /dev/null
++++ b/scripts/check-server-evidence-drives.ps1
+@@ -0,0 +1,85 @@
++<#
++.SYNOPSIS
++  Diagnose Windows/server-side HDD/SSD/USB evidence visibility end-to-end.
++
++.EXAMPLE
++  powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-server-evidence-drives.ps1
++#>
++param(
++    [string]$RequiredPath = ""
++)
++
++$ErrorActionPreference = "Continue"
++$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
++
++function Write-Section([string]$Title) {
++    Write-Host ""
++    Write-Host ("=== {0} ===" -f $Title) -ForegroundColor Cyan
++}
++
++Write-Section "Windows drive inventory"
++$volumes = @()
++try {
++    $volumes = @(Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -in @(2,3,4) } | Sort-Object DeviceID)
++    foreach ($v in $volumes) {
++        $kind = switch ([int]$v.DriveType) { 2 { 'removable' } 3 { 'fixed' } 4 { 'network' } default { 'other' } }
++        Write-Host ("{0}  {1,-10}  {2}" -f $v.DeviceID, $kind, $v.VolumeName)
++    }
++} catch {
++    Write-Warning $_.Exception.Message
++}
++
++Write-Section "HostDrive helper"
++$helper = $null
++try {
++    $helper = Invoke-RestMethod -Uri 'http://127.0.0.1:9876/drives' -TimeoutSec 8
++    Write-Host ("Helper online. Drives: {0}" -f (($helper.drives | ForEach-Object { "$_" }) -join ', ')) -ForegroundColor Green
++} catch {
++    Write-Warning "HostDrive helper is offline on port 9876."
++    Write-Host "Start it with:"
++    Write-Host "  powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\ensure-host-drive-helper.ps1" -ForegroundColor Yellow
++}
++
++Write-Section "Forensic API container"
++$apiId = ""
++try {
++    $candidates = @(docker ps --filter 'label=com.docker.compose.service=api' --format '{{.ID}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.project.working_dir"}}')
++    foreach ($row in $candidates) {
++        $parts = "$row" -split '\|', 3
++        if ($parts.Count -lt 2) { continue }
++        if ($parts[1] -eq 'aetheris-forensic') { $apiId = $parts[0]; break }
++        if (-not $apiId -and $parts.Count -ge 3 -and $parts[2] -like "$root*") { $apiId = $parts[0] }
++    }
++} catch { }
++
++if (-not $apiId) {
++    Write-Warning "No running forensic api container found. Start the forensic stack first."
++} else {
++    Write-Host "API container: $apiId"
++    foreach ($v in $volumes) {
++        $letter = ($v.DeviceID -replace ':','').ToLower()
++        if (-not $letter) { continue }
++        $probe = "/host/$letter"
++        $out = docker exec $apiId sh -lc "test -d '$probe' && ls -A '$probe' 2>/dev/null | head -n 1" 2>$null
++        if ($LASTEXITCODE -eq 0 -and $out) {
++            Write-Host ("{0}: -> {1}  READABLE" -f $letter.ToUpper(), $probe) -ForegroundColor Green
++        } else {
++            Write-Host ("{0}: -> {1}  NOT MOUNTED/EMPTY" -f $letter.ToUpper(), $probe) -ForegroundColor Yellow
++        }
++    }
++}
++
++if ($RequiredPath) {
++    Write-Section "Required evidence path"
++    Write-Host $RequiredPath
++}
++
++Write-Section "Recommended repair"
++Write-Host "1. Ensure helper:"
++Write-Host "   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\ensure-host-drive-helper.ps1"
++Write-Host "2. Refresh newly attached drives:"
++Write-Host "   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\hostdrive-agent.ps1 -RefreshNow -Once"
++if ($RequiredPath) {
++    Write-Host "3. Validate exact path:"
++    Write-Host ("   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-dynamic-drive-mounts.ps1 -RequiredPath `"{0}`"" -f $RequiredPath)
++}
+--- a/scripts/refresh-drive-mounts-job.ps1
++++ b/scripts/refresh-drive-mounts-job.ps1
+@@ -119,7 +119,7 @@
+ $script:ComposeWorkingDir = $Root
+ $script:ComposeConfigLabel = ""
+ $script:ComposeDrivesFile = $composeDrives
+-$script:RemountServices = @('api', 'worker-disk', 'worker-mobile', 'worker-report')
++$script:RemountServices = @('api', 'worker-disk', 'worker-parse', 'worker-mobile', 'worker-report')
+ 
+ function Test-IsDriveOverrideFile {
+     param([string]$Path)
+@@ -132,7 +132,7 @@
+     $name = ("$Project").Trim()
+     if ($name -eq 'aetheris-forensic') {
+         $script:ComposeDrivesFile = Join-Path $Root "docker-compose.drives.forensic.yml"
+-        $script:RemountServices = @('api', 'worker-disk', 'worker-report', 'worker-agent')
++        $script:RemountServices = @('api', 'worker-disk', 'worker-parse', 'worker-report', 'worker-agent')
+         return
+     }
+     if ($name -eq 'aetheris-mobile-extract') {
+@@ -141,7 +141,7 @@
+         return
+     }
+     $script:ComposeDrivesFile = $composeDrives
+-    $script:RemountServices = @('api', 'worker-disk', 'worker-mobile', 'worker-report')
++    $script:RemountServices = @('api', 'worker-disk', 'worker-parse', 'worker-mobile', 'worker-report')
+ }
+ 
+ function Test-ComposeProgressLine {

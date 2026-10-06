@@ -1,0 +1,3 @@
+postgres:5432:*:forensic:forensic
+postgres:5432:*:android_forensic:android_forensic
+postgres:5432:*:ios_forensic:ios_forensic

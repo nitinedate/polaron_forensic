@@ -1,0 +1,45 @@
+{
+  "name": "iam-platform-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --mode unified",
+    "dev:unified": "vite --mode unified",
+    "dev:forensic": "vite --mode forensic",
+    "dev:mobile-extract": "vite --mode mobile-extract",
+    "dev:vuln": "vite --mode vuln",
+    "build": "tsc -b && vite build --mode unified",
+    "build:unified": "tsc -b && vite build --mode unified",
+    "build:forensic": "tsc -b && vite build --mode forensic",
+    "build:mobile-extract": "tsc -b && vite build --mode mobile-extract",
+    "build:vuln": "tsc -b && vite build --mode vuln",
+    "preview": "vite preview",
+    "lint": "tsc --noEmit",
+    "dev:mobile-android": "vite --mode mobile-android",
+    "dev:mobile-ios": "vite --mode mobile-ios",
+    "build:mobile-android": "tsc -b && vite build --mode mobile-android",
+    "build:mobile-ios": "tsc -b && vite build --mode mobile-ios"
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "^3.13.12",
+    "bootstrap": "^5.3.8",
+    "clsx": "^2.1.1",
+    "html2canvas": "^1.4.1",
+    "lucide-react": "^0.454.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2",
+    "recharts": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
+  }
+}

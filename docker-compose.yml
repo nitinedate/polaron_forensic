@@ -1,0 +1,1058 @@
+# Disk forensics product only. Android/iOS are independent products.
+# Android: services/mobile-android/docker-compose.yml
+# iOS:     services/mobile-ios/docker-compose.yml
+# Legacy mobile migration only: services/mobile-extract/docker-compose.yml
+# Vulnerabilities:   services/vuln/docker-compose.yml
+# Dynamic Windows drive mounts are a Compose OVERRIDE, not an `include`.
+# Windows startup/refresh scripts merge it with: -f docker-compose.drives.generated.yml
+
+# Job files, models, and object storage live under AETHERIS_BACKUP_DIR
+# (default ./backup). That folder is ordinary host storage, so it can be
+# moved to another disk: stop the stack, move the folder, update the env path.
+x-forensic-volumes: &forensic-volumes
+  - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+  - type: bind
+    source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/job-data
+    target: /app/data
+
+# Shared GPU reservation (NVIDIA Container Toolkit / Docker Desktop GPU)
+x-gpu: &gpu
+  driver: nvidia
+  count: 1
+  capabilities: [gpu]
+
+# Join the shared Postgres / Redis / MinIO / MailHog network.
+x-common-net: &common-net
+  networks:
+    - default
+    - aetheris-common
+
+# V45.3 container lifecycle. Celery runs as PID 1 (entrypoint execvp); without an init
+# process signals are not forwarded/reaped, and compose's default 10 s grace then
+# SIGKILLs the worker mid-task. A child blocked in uninterruptible I/O (9p/gRPC-FUSE
+# bind mount of G:\ evidence) or inside a CUDA call cannot be killed, the PID
+# namespace never tears down and Docker reports
+#   "cannot stop container: tried to kill container, but did not receive an exit event".
+# tini + a real grace period + Celery cold shutdown (REMAP_SIGTERM) make stops
+# deterministic; acks_late tasks are redelivered after restart.
+x-worker-lifecycle: &worker-lifecycle
+  init: true
+  stop_signal: SIGTERM
+  stop_grace_period: 120s
+
+# Probe host room (CPU/RAM/GPU/thermal) then exec celery — see scripts/dynamic_perf_entrypoint.py
+x-dynamic-entrypoint: &dynamic-entrypoint
+  - python
+  - /scripts/dynamic_perf_entrypoint.py
+
+x-worker-env: &worker-env
+  DATABASE_URL: postgresql+psycopg2://forensic:forensic@postgres:5432/forensic
+  REDIS_URL: redis://redis:6379/0
+  # V45.3: SIGTERM => cold shutdown (stop consuming, terminate children, exit) instead of
+  # warm shutdown that waits for an hours-long extraction and then gets SIGKILLed.
+  REMAP_SIGTERM: ${CELERY_REMAP_SIGTERM:-SIGQUIT}
+  CELERY_SHUTDOWN_RELEASE_GPU: ${CELERY_SHUTDOWN_RELEASE_GPU:-true}
+  RESOURCE_GOVERNOR_ENABLED: ${RESOURCE_GOVERNOR_ENABLED:-true}
+  RESOURCE_GOVERNOR_REDIS_URL: ${RESOURCE_GOVERNOR_REDIS_URL:-redis://redis:6379/15}
+  RESOURCE_GOVERNOR_GROUP: ${RESOURCE_GOVERNOR_GROUP:-aetheris-host}
+  RESOURCE_GOVERNOR_FAIL_OPEN_ON_UNAVAILABLE: ${RESOURCE_GOVERNOR_FAIL_OPEN_ON_UNAVAILABLE:-true}
+  RESOURCE_GOVERNOR_CPU_MAX_SLOTS: ${RESOURCE_GOVERNOR_CPU_MAX_SLOTS:-10}
+  RESOURCE_GOVERNOR_GPU_MAX_SLOTS: ${RESOURCE_GOVERNOR_GPU_MAX_SLOTS:-4}
+  GPU_RELEASE_MODEL_AFTER_TASK: ${GPU_RELEASE_MODEL_AFTER_TASK:-true}
+  # V45: one extraction task runs main + flusher + stop-poller + heartbeat sessions.
+  # The old 2+2 pool was fully consumed by those four, so the first shard thread that
+  # needed a connection died with "QueuePool limit of size 2 overflow 2 reached".
+  # Shard threads are now DB-free (extract_shard_v45); 4+8 leaves headroom for
+  # phase-3 hand-offs. Budget: worker-disk 8 x 12 + worker-parse 6 x 12 < max_connections=200.
+  DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-4}
+  DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-8}
+  DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-90}
+  MINIO_ENDPOINT: minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+  MINIO_BUCKET: ${MINIO_BUCKET:-forensic}
+  HOST_EVIDENCE_ENABLED: ${HOST_EVIDENCE_ENABLED:-true}
+  HOST_EVIDENCE_ROOT: ${HOST_EVIDENCE_ROOT:-}
+  HOST_DRIVE_MAP: ${HOST_DRIVE_MAP:-}
+  HOST_PATH_MAPPINGS: ${HOST_PATH_MAPPINGS:-}
+  # Examiner PC USB bridge for Device Wizard (adb / libimobiledevice on host)
+  HOST_DRIVE_HELPER_URL: ${HOST_DRIVE_HELPER_URL:-http://host.docker.internal:9876}
+  DATA_ROOT: /app/data
+  # Scratch files follow the job-data bind mount instead of the container layer
+  # inside DockerDesktopWSL.
+  TMPDIR: /app/data/tmp
+  TMP: /app/data/tmp
+  TEMP: /app/data/tmp
+  # Disk/OCR/RAG workers hold DB sessions across long I/O — do not kill idle-in-tx.
+  AETHERIS_WORKER: "1"
+  IDLE_IN_TRANSACTION_SESSION_TIMEOUT: "0"
+  # Dynamic performance: retune concurrency/batch/thermal from live CPU/RAM/GPU room
+  DYNAMIC_PERF_ENABLED: ${DYNAMIC_PERF_ENABLED:-true}
+  DYNAMIC_PERF_FORCE: ${DYNAMIC_PERF_FORCE:-true}
+  DYNAMIC_PERF_LOCK: ${DYNAMIC_PERF_LOCK:-PARSE_WORKERS,PARSE_PARALLEL_ENABLED,PARSE_DRAIN_BATCH_LIMIT,PARSE_DRAIN_MAX_ROUNDS,PARSE_DRAIN_INTERLEAVE_RAG}
+  # E01: parallel readers on disjoint inode shards. Keep 2-4 so the host stays usable.
+  # Values below are baselines; host_capacity overrides when DYNAMIC_PERF_FORCE=true.
+  EXTRACT_DISK_WORKERS: ${EXTRACT_DISK_WORKERS:-8}
+  EXTRACT_SHARD_COUNT: ${EXTRACT_SHARD_COUNT:-12}
+  EXTRACT_UPLOAD_CONCURRENCY: ${EXTRACT_UPLOAD_CONCURRENCY:-8}
+  EXTRACT_ZSTD_LEVEL: ${EXTRACT_ZSTD_LEVEL:-1}
+  EXTRACT_MODE: ${EXTRACT_MODE:-defensible}
+  BROWSER_URL_PARSE_LIMIT: ${BROWSER_URL_PARSE_LIMIT:-500}
+  EXTRACT_UNCERTAIN_MAX_BYTES: ${EXTRACT_UNCERTAIN_MAX_BYTES:-16777216}
+  EXTRACT_MAX_FILE_BYTES: ${EXTRACT_MAX_FILE_BYTES:-100000000}
+  EXTRACT_HASH_FILES: ${EXTRACT_HASH_FILES:-false}
+  EXTRACT_PROGRESS_STEP: ${EXTRACT_PROGRESS_STEP:-10000}
+  EXTRACT_STOP_CHECK_INTERVAL: ${EXTRACT_STOP_CHECK_INTERVAL:-1000}
+  EXTRACT_TAR_BUFSIZE: ${EXTRACT_TAR_BUFSIZE:-2097152}
+  EXTRACT_PROGRESS_FLUSH_SEC: ${EXTRACT_PROGRESS_FLUSH_SEC:-10}
+  EXTRACT_PROGRESS_LOG_SEC: ${EXTRACT_PROGRESS_LOG_SEC:-20}
+  EXTRACT_SKIP_SYSTEM_PATHS: ${EXTRACT_SKIP_SYSTEM_PATHS:-false}
+  EXTRACT_REPLAN_ON_RESUME: ${EXTRACT_REPLAN_ON_RESUME:-false}
+  MAX_CONCURRENT_DISK_BUILDS: ${MAX_CONCURRENT_DISK_BUILDS:-4}
+  AETHERIS_SHARE_HOST: ${AETHERIS_SHARE_HOST:-true}
+  LONG_JOB_TIMEOUT_SEC: ${LONG_JOB_TIMEOUT_SEC:-0}
+  PARSE_DRAIN_MAX_ROUNDS: ${PARSE_DRAIN_MAX_ROUNDS:-25}
+  PARSE_DRAIN_BATCH_LIMIT: ${PARSE_DRAIN_BATCH_LIMIT:-1200}
+  PARSE_BATCH_LIMIT: ${PARSE_BATCH_LIMIT:-8000}
+  PARSE_WORKERS: ${PARSE_WORKERS:-4}
+  PARSE_PARALLEL_ENABLED: ${PARSE_PARALLEL_ENABLED:-true}
+  PARSE_DB_COMMIT_BATCH: ${PARSE_DB_COMMIT_BATCH:-75}
+  PARSE_PARALLEL_BUCKETS: ${PARSE_PARALLEL_BUCKETS:-2}
+  PARSE_BUCKET_MIN_PENDING: ${PARSE_BUCKET_MIN_PENDING:-2000}
+  AXIOM_INVENTORY_WORKERS: ${AXIOM_INVENTORY_WORKERS:-8}
+  AXIOM_INVENTORY_BATCH_SIZE: ${AXIOM_INVENTORY_BATCH_SIZE:-100}
+  PHASE1_ARTIFACT_FILTER: ${PHASE1_ARTIFACT_FILTER:-true}
+  # Default forensic flow: extract once, finalize the evidence manifest, then start downstream agents
+  EXTRACT_THEN_PROCESS: ${EXTRACT_THEN_PROCESS:-true}
+  PHASE3_STREAM_DURING_EXTRACT: ${PHASE3_STREAM_DURING_EXTRACT:-false}
+  PHASE3_STREAM_RAG_DURING_EXTRACT: ${PHASE3_STREAM_RAG_DURING_EXTRACT:-false}
+  PHASE3_STREAM_OCR_DURING_EXTRACT: ${PHASE3_STREAM_OCR_DURING_EXTRACT:-false}
+  RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-BAAI/bge-m3}
+  RAG_IMAGE_EMBED_MODEL: ${RAG_IMAGE_EMBED_MODEL:-clip-ViT-B-32}
+  HF_PULL_MODELS: ${HF_PULL_MODELS:-BAAI/bge-m3,zai-org/GLM-OCR,sentence-transformers/clip-ViT-B-32,cross-encoder/ms-marco-MiniLM-L-6-v2}
+  RAG_EMBEDDING_DEVICE: ${RAG_EMBEDDING_DEVICE:-cuda}
+  RAG_BATCH_SIZE: ${RAG_BATCH_SIZE:-24}
+  RAG_BATCH_SIZE_CAP: ${RAG_BATCH_SIZE_CAP:-48}
+  RAG_CUDA_MEMORY_FRACTION: ${RAG_CUDA_MEMORY_FRACTION:-0.55}
+  # Laptop: fast when cool; pause/abort stay below OEM shutdown (~95-100C GPU / ~100C CPU).
+  GPU_THERMAL_ENABLED: ${GPU_THERMAL_ENABLED:-true}
+  GPU_THERMAL_START_MAX_C: ${GPU_THERMAL_START_MAX_C:-90}
+  GPU_THERMAL_THROTTLE_C: ${GPU_THERMAL_THROTTLE_C:-87}
+  GPU_THERMAL_PAUSE_C: ${GPU_THERMAL_PAUSE_C:-92}
+  GPU_THERMAL_RESUME_C: ${GPU_THERMAL_RESUME_C:-84}
+  GPU_THERMAL_HONOR_ENV: ${GPU_THERMAL_HONOR_ENV:-true}
+  GPU_THERMAL_POLL_SEC: ${GPU_THERMAL_POLL_SEC:-2}
+  GPU_THERMAL_HOT_BATCH_SLEEP_SEC: ${GPU_THERMAL_HOT_BATCH_SLEEP_SEC:-5}
+  GPU_THERMAL_EMBED_REST_SEC: ${GPU_THERMAL_EMBED_REST_SEC:-0.6}
+  GPU_THERMAL_DUTY_CYCLE_BATCHES: ${GPU_THERMAL_DUTY_CYCLE_BATCHES:-4}
+  GPU_THERMAL_DUTY_CYCLE_REST_SEC: ${GPU_THERMAL_DUTY_CYCLE_REST_SEC:-3}
+  GPU_THERMAL_ADAPTIVE_BATCH: ${GPU_THERMAL_ADAPTIVE_BATCH:-true}
+  GPU_THERMAL_COOL_BOOST_C: ${GPU_THERMAL_COOL_BOOST_C:-58}
+  GPU_THERMAL_COOL_BATCH_MULTIPLIER: ${GPU_THERMAL_COOL_BATCH_MULTIPLIER:-1.25}
+  GPU_THERMAL_FALLBACK_DUTY: ${GPU_THERMAL_FALLBACK_DUTY:-true}
+  GPU_THERMAL_RISE_DELTA_C: ${GPU_THERMAL_RISE_DELTA_C:-5}
+  GPU_THERMAL_RISE_WINDOW_SEC: ${GPU_THERMAL_RISE_WINDOW_SEC:-12}
+  GPU_THERMAL_POWER_LIMIT_W: ${GPU_THERMAL_POWER_LIMIT_W:-70}
+  GPU_THERMAL_ABORT_C: ${GPU_THERMAL_ABORT_C:-94}
+  GPU_HEAVY_MAX_CONCURRENT: ${GPU_HEAVY_MAX_CONCURRENT:-2}
+  GPU_HEAVY_LOCK_WAIT_SEC: ${GPU_HEAVY_LOCK_WAIT_SEC:-0}
+  GPU_HEAVY_LOCK_TTL_SEC: ${GPU_HEAVY_LOCK_TTL_SEC:-600}
+  CPU_THERMAL_THROTTLE_C: ${CPU_THERMAL_THROTTLE_C:-86}
+  CPU_THERMAL_PAUSE_C: ${CPU_THERMAL_PAUSE_C:-94}
+  PIPELINE_SUPERVISOR_ENABLED: ${PIPELINE_SUPERVISOR_ENABLED:-true}
+  PIPELINE_STALE_SEC: ${PIPELINE_STALE_SEC:-180}
+  PIPELINE_SUPERVISOR_INTERVAL_SEC: ${PIPELINE_SUPERVISOR_INTERVAL_SEC:-60}
+  PIPELINE_SEQUENTIAL_AGENTS: ${PIPELINE_SEQUENTIAL_AGENTS:-false}
+  PARSE_DRAIN_INTERLEAVE_RAG: ${PARSE_DRAIN_INTERLEAVE_RAG:-false}
+  RAG_AUTO_AFTER_DISK: ${RAG_AUTO_AFTER_DISK:-false}
+  RAG_EMBEDDING_ENABLED: ${RAG_EMBEDDING_ENABLED:-false}
+  RAG_BACKGROUND_AFTER_BASELINE: ${RAG_BACKGROUND_AFTER_BASELINE:-false}
+  PHASE3_AUTO_AFTER_DISK: ${PHASE3_AUTO_AFTER_DISK:-true}
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+  NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
+  NEO4J_USER: ${NEO4J_USER:-neo4j}
+  NEO4J_PASSWORD: ${NEO4J_PASSWORD:-forensic123}
+  OPENSEARCH_URL: ${OPENSEARCH_URL:-http://opensearch:9200}
+  # Laptop-safe LLM sizes (avoid 32b/70b thermal shutdown)
+  LLM_PRIMARY_MODEL: ${LLM_PRIMARY_MODEL:-qwen2.5:14b}
+  LLM_REVIEW_MODEL: ${LLM_REVIEW_MODEL:-deepseek-r1:14b}
+  LLM_REVIEW_MODEL_LARGE: ${LLM_REVIEW_MODEL_LARGE:-deepseek-r1:14b}
+  LLM_FAST_MODEL: ${LLM_FAST_MODEL:-qwen3.5:9b}
+  # All models required by the stack — pulled by ollama-init on compose up
+  OLLAMA_PULL_MODELS: ${OLLAMA_PULL_MODELS:-qwen2.5:14b,qwen2.5:7b,deepseek-r1:14b,llama3.1:8b,gemma4:12b,qwen3.5:9b,nomic-embed-text}
+  RAG_EMBEDDING_FALLBACK: ${RAG_EMBEDDING_FALLBACK:-nomic-embed-text}
+  OCR_ENABLED: ${OCR_ENABLED:-true}
+  OCR_ENGINE: ${OCR_ENGINE:-glm-ocr}
+  OCR_MODEL: ${OCR_MODEL:-zai-org/GLM-OCR}
+  OCR_DEVICE: ${OCR_DEVICE:-cuda}
+  OCR_GPU_ONLY: ${OCR_GPU_ONLY:-true}
+  OCR_PARALLEL_BUCKETS: ${OCR_PARALLEL_BUCKETS:-0}
+  OCR_MAX_PAGES: ${OCR_MAX_PAGES:-10}
+  OCR_MAX_NEW_TOKENS: ${OCR_MAX_NEW_TOKENS:-512}
+  OCR_CPU_WORKERS: ${OCR_CPU_WORKERS:-6}
+  GAP_REPORT_LLM_ENABLED: ${GAP_REPORT_LLM_ENABLED:-true}
+  GAP_REPORT_LLM_MODEL: ${GAP_REPORT_LLM_MODEL:-qwen2.5:7b}
+  MOBILE_REPORT_LLM_ENABLED: ${MOBILE_REPORT_LLM_ENABLED:-true}
+  MOBILE_REPORT_LLM_MODEL: ${MOBILE_REPORT_LLM_MODEL:-qwen2.5:14b}
+  MOBILE_REPORT_LLM_FALLBACK_MODEL: ${MOBILE_REPORT_LLM_FALLBACK_MODEL:-llama3.1:8b}
+  MOBILE_REPORT_LLM_MODELS: ${MOBILE_REPORT_LLM_MODELS:-qwen2.5:14b,gemma4:12b,qwen3.5:9b,llama3.1:8b,qwen2.5:7b}
+  NVIDIA_VISIBLE_DEVICES: all
+  NVIDIA_DRIVER_CAPABILITIES: compute,utility
+  PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+  AETHERIS_SERVICE: forensic
+  VULN_MODULE_ENABLED: "false"
+  AGENT_MODULE_ENABLED: ${AGENT_MODULE_ENABLED:-true}
+  AGENT_MAX_STEPS: ${AGENT_MAX_STEPS:-6}
+  AGENT_MODEL: ${AGENT_MODEL:-qwen3.5:9b}
+  NESSUS_API_TIMEOUT_SEC: ${NESSUS_API_TIMEOUT_SEC:-0}
+  NESSUS_VERIFY_SSL: ${NESSUS_VERIFY_SSL:-true}
+  NESSUS_DEFAULT_URL: ${NESSUS_DEFAULT_URL:-}
+  NESSUS_ACCESS_KEY: ${NESSUS_ACCESS_KEY:-}
+  NESSUS_SECRET_KEY: ${NESSUS_SECRET_KEY:-}
+  GVM_HOST: ${GVM_HOST:-gvmd}
+  GVM_PORT: ${GVM_PORT:-9390}
+  GVM_URL: ${GVM_URL:-unix:///run/gvmd/gvmd.sock}
+  GVM_SOCKET_PATH: ${GVM_SOCKET_PATH:-/run/gvmd/gvmd.sock}
+  GVM_USERNAME: ${GVM_USERNAME:-admin}
+  GVM_PASSWORD: ${GVM_PASSWORD:-}
+  GVM_ADMIN_PASSWORD: ${GVM_ADMIN_PASSWORD:-admin}
+  GVM_VERIFY_TLS: ${GVM_VERIFY_TLS:-false}
+  GVM_LIVE_ENABLED: ${GVM_LIVE_ENABLED:-false}
+  GVM_SCAN_POLL_INTERVAL_SEC: ${GVM_SCAN_POLL_INTERVAL_SEC:-5}
+  GVM_SCAN_TIMEOUT_SEC: ${GVM_SCAN_TIMEOUT_SEC:-240}
+  GVM_SCAN_NEAR_COMPLETE_GRACE_SEC: ${GVM_SCAN_NEAR_COMPLETE_GRACE_SEC:-0}
+  GVM_SCAN_NEAR_COMPLETE_PROGRESS_PCT: ${GVM_SCAN_NEAR_COMPLETE_PROGRESS_PCT:-85}
+  GVM_SCAN_STALL_PROGRESS_PCT: ${GVM_SCAN_STALL_PROGRESS_PCT:-80}
+  GVM_SCAN_STALL_SEC: ${GVM_SCAN_STALL_SEC:-90}
+  GVM_SCAN_CONFIG: ${GVM_SCAN_CONFIG:-Full and fast}
+  GVM_FEED_READY_TIMEOUT_SEC: ${GVM_FEED_READY_TIMEOUT_SEC:-0}
+  GVM_FEED_READY_POLL_INTERVAL_SEC: ${GVM_FEED_READY_POLL_INTERVAL_SEC:-15}
+  GVM_PORT_PROFILE: ${GVM_PORT_PROFILE:-full}
+  GVM_TARGET_PORT_RANGE: ${GVM_TARGET_PORT_RANGE:-}
+  GVM_MAX_CHECKS: ${GVM_MAX_CHECKS:-20}
+  GVM_MAX_HOSTS: ${GVM_MAX_HOSTS:-8}
+  GVM_OPTIMIZE_TEST: ${GVM_OPTIMIZE_TEST:-false}
+  GVM_SAFE_CHECKS: ${GVM_SAFE_CHECKS:-true}
+  GVM_CHECKS_READ_TIMEOUT: ${GVM_CHECKS_READ_TIMEOUT:-10}
+  GVM_TIMEOUT_RETRY: ${GVM_TIMEOUT_RETRY:-3}
+  GVM_OPEN_SOCK_MAX_ATTEMPTS: ${GVM_OPEN_SOCK_MAX_ATTEMPTS:-5}
+  GVM_EXPAND_VHOSTS: ${GVM_EXPAND_VHOSTS:-true}
+  GVM_TEST_EMPTY_VHOST: ${GVM_TEST_EMPTY_VHOST:-true}
+  GVM_ALLOW_BARE_TASK_FALLBACK: ${GVM_ALLOW_BARE_TASK_FALLBACK:-false}
+  GVM_REPORT_MIN_QOD: ${GVM_REPORT_MIN_QOD:-0}
+  GVM_MIN_NVT_COUNT: ${GVM_MIN_NVT_COUNT:-10000}
+  GVM_PLUGINS_TIMEOUT_SEC: ${GVM_PLUGINS_TIMEOUT_SEC:-0}
+  GVM_SCANNER_PLUGINS_TIMEOUT_SEC: ${GVM_SCANNER_PLUGINS_TIMEOUT_SEC:-0}
+  VULN_ORCH_OVERLAP_ENABLED: ${VULN_ORCH_OVERLAP_ENABLED:-true}
+  VULN_ORCHESTRATION_ENABLED: ${VULN_ORCHESTRATION_ENABLED:-true}
+  VULN_ALLOW_STUB_FINDINGS: ${VULN_ALLOW_STUB_FINDINGS:-false}
+  ZAP_API_URL: ${ZAP_API_URL:-http://zap:8080}
+  ZAP_API_KEY: ${ZAP_API_KEY:-changeme}
+  ZAP_SCAN_TIMEOUT_SEC: ${ZAP_SCAN_TIMEOUT_SEC:-180}
+  VULN_TARGET_WORKERS: ${VULN_TARGET_WORKERS:-4}
+  WAZUH_API_URL: ${WAZUH_API_URL:-https://wazuh-manager:55000}
+  WAZUH_API_USER: ${WAZUH_API_USER:-wazuh-wui}
+  WAZUH_API_PASSWORD: ${WAZUH_API_PASSWORD:-MyS3cr37P450r.*-}
+  WAZUH_VERIFY_TLS: ${WAZUH_VERIFY_TLS:-false}
+  TRIVY_SERVER_URL: ${TRIVY_SERVER_URL:-http://trivy:4954}
+  ASV_MODULE_ENABLED: ${ASV_MODULE_ENABLED:-true}
+  PENTEST_MODULE_ENABLED: ${PENTEST_MODULE_ENABLED:-true}
+  EDR_INVENTORY_ENABLED: ${EDR_INVENTORY_ENABLED:-true}
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/ollama
+        target: /root/.ollama
+    environment:
+      # Unload idle models so embedder can reclaim VRAM
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+        limits:
+          memory: 16G
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  # One-shot: pull ALL required Ollama models via compose (no manual ollama pull)
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_PULL_MODELS: ${OLLAMA_PULL_MODELS:-qwen2.5:14b,qwen2.5:7b,deepseek-r1:14b,llama3.1:8b,gemma4:12b,qwen3.5:9b,nomic-embed-text}
+      OLLAMA_PULL_ACCURACY: ${OLLAMA_PULL_ACCURACY:-true}
+      OLLAMA_PULL_IGNORE_GPU: ${OLLAMA_PULL_IGNORE_GPU:-false}
+      LLM_PRIMARY_MODEL: ${LLM_PRIMARY_MODEL:-qwen2.5:14b}
+      LLM_REVIEW_MODEL: ${LLM_REVIEW_MODEL:-deepseek-r1:14b}
+      LLM_REVIEW_MODEL_LARGE: ${LLM_REVIEW_MODEL_LARGE:-deepseek-r1:14b}
+      LLM_FAST_MODEL: ${LLM_FAST_MODEL:-qwen3.5:9b}
+      RAG_EMBEDDING_FALLBACK: ${RAG_EMBEDDING_FALLBACK:-nomic-embed-text}
+      AGENT_MODEL: ${AGENT_MODEL:-qwen3.5:9b}
+      GAP_REPORT_LLM_MODEL: ${GAP_REPORT_LLM_MODEL:-qwen2.5:7b}
+      MOBILE_REPORT_LLM_MODEL: ${MOBILE_REPORT_LLM_MODEL:-qwen2.5:14b}
+      MOBILE_REPORT_LLM_FALLBACK_MODEL: ${MOBILE_REPORT_LLM_FALLBACK_MODEL:-llama3.1:8b}
+    volumes:
+      - ./scripts/ollama_ensure_models.sh:/ensure.sh:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        sed 's/\r$$//' /ensure.sh > /tmp/ensure.sh
+        exec /bin/sh /tmp/ensure.sh
+    restart: "no"
+    gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+
+  # NVIDIA CUDA runtime — stays up so GPU passthrough is live for OCR/RAG workers.
+  nvidia-cuda:
+    image: nvidia/cuda:12.6.3-base-ubuntu24.04
+    container_name: rag_new2-nvidia-cuda
+    command: ["sh", "-c", "nvidia-smi -L && echo CUDA_OK && exec sleep infinity"]
+    gpus: all
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+    restart: unless-stopped
+
+  # GPU smoke test: docker compose --profile gpu-test run --rm nvidia-smi
+  nvidia-smi:
+    image: nvidia/cuda:12.6.3-base-ubuntu24.04
+    command: nvidia-smi
+    gpus: all
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+    profiles:
+      - gpu-test
+
+  neo4j:
+    image: neo4j:5
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-forensic123}
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  opensearch:
+    image: opensearchproject/opensearch:2
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD:-ForensicDev1!Change}
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+
+  api:
+    <<: *common-net
+    init: true
+    stop_grace_period: 30s
+    image: rag_new2-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu130}
+      pull: false
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+      DB_POOL_SIZE: ${API_DB_POOL_SIZE:-10}
+      DB_MAX_OVERFLOW: ${API_DB_MAX_OVERFLOW:-10}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-superadmin@admin.com}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-admin@123456789}
+    ports:
+      # Loopback only — LAN OpenVAS must not treat FastAPI as a customer web app.
+      # Host :8080 is often taken by unrelated stacks (e.g. htw-web); use 8083.
+      - "127.0.0.1:8083:8080"
+    # GPU visible so /api/health/capacity and thermal probes see the host NVIDIA device
+    gpus: all
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+      neo4j:
+        condition: service_started
+      opensearch:
+        condition: service_started
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts
+      - ./migrations:/migrations
+      - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+      - evidence_staging:/host/${EVIDENCE_STAGING_LETTER:-z}
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data
+        target: /app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+        limits:
+          memory: 4G
+    command: >
+      sh -c "mkdir -p /app/data/tmp && alembic upgrade head 2>/dev/null || true &&
+             python /scripts/ensure_sql_functions.py || true &&
+             python /scripts/bootstrap_platform_admin.py || true &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8080"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 180s
+
+  # Disk extract/parse — forensic product only (vuln scans live in services/vuln).
+  worker-disk:
+    <<: [*common-net, *worker-lifecycle]
+    image: rag_new2-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+    # CUDA device is visible; adaptive governor controls heavy GPU admission.
+    gpus: all
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+      - evidence_staging:/host/${EVIDENCE_STAGING_LETTER:-z}
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/job-data
+        target: /app/data
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/uploads
+        target: /app/data/uploads
+      # V45: scratch for shard spool/parts. Point EXTRACT_SCRATCH_HOST_DIR at an NVMe/SSD
+      # folder when the evidence drive is a USB HDD so reads and temp writes never share spindles.
+      - type: bind
+        source: ${EXTRACT_SCRATCH_HOST_DIR:-${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/scratch}
+        target: /scratch
+    depends_on:
+      api:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 14G
+          cpus: "12.0"
+    entrypoint: *dynamic-entrypoint
+    command:
+      - celery
+      - -A
+      - app.celery_app.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=8
+      - --prefetch-multiplier=1
+      - -Q
+      # V45.2: inventory has its own lane; the disk pool is idle after extraction.
+      - disk-build,disk-inventory
+
+  # Dedicated parse pool so parse bursts cannot occupy every disk-build process.
+  worker-parse:
+    <<: [*common-net, *worker-lifecycle]
+    image: rag_new2-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+    gpus: all
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+      - evidence_staging:/host/${EVIDENCE_STAGING_LETTER:-z}
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/job-data
+        target: /app/data
+    depends_on:
+      api:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: "8.0"
+    entrypoint: *dynamic-entrypoint
+    command:
+      - celery
+      - -A
+      - app.celery_app.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=${PARSE_CELERY_CONCURRENCY:-6}
+      - --prefetch-multiplier=1
+      - -Q
+      - disk-parse,disk-inventory
+
+  # GPU embeddings on rag-index. OCR runs on worker-ocr-gpu so both can overlap.
+  worker-rag-gpu:
+    <<: [*common-net, *worker-lifecycle]
+    image: rag_new2-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        # RTX 50-series needs a CUDA wheel. Other backend services stay on CPU torch.
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu130}
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+      RAG_EMBEDDING_DEVICE: ${RAG_EMBEDDING_DEVICE:-cuda}
+      RAG_BATCH_SIZE: ${RAG_BATCH_SIZE:-24}
+      RAG_BATCH_SIZE_CAP: ${RAG_BATCH_SIZE_CAP:-48}
+      RAG_CUDA_MEMORY_FRACTION: ${RAG_CUDA_MEMORY_FRACTION:-0.40}
+      OCR_ENABLED: ${OCR_ENABLED:-true}
+      OCR_DEVICE: ${OCR_DEVICE:-cuda}
+      OCR_CPU_WORKERS: ${OCR_CPU_WORKERS:-8}
+      # Exclusive OCR may raise above RAG's tight cap after embedder unload.
+      OCR_CUDA_MEMORY_FRACTION: ${OCR_CUDA_MEMORY_FRACTION:-0.62}
+      GPU_THERMAL_THROTTLE_C: ${GPU_THERMAL_THROTTLE_C:-87}
+      GPU_THERMAL_PAUSE_C: ${GPU_THERMAL_PAUSE_C:-92}
+      GPU_THERMAL_ABORT_C: ${GPU_THERMAL_ABORT_C:-94}
+      GPU_THERMAL_POWER_LIMIT_W: ${GPU_THERMAL_POWER_LIMIT_W:-70}
+    gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+        limits:
+          memory: 8G
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data
+        target: /app/data
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/huggingface
+        target: /root/.cache/huggingface
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+      neo4j:
+        condition: service_started
+      opensearch:
+        condition: service_started
+      api:
+        condition: service_healthy
+    entrypoint: *dynamic-entrypoint
+    command:
+      - celery
+      - -A
+      - app.celery_app.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=1
+      - --pool=solo
+      - -Q
+      - rag-index
+      - --prefetch-multiplier=1
+
+  # Dedicated OCR GPU worker — independent of RAG embeddings (two GPU slots).
+  worker-ocr-gpu:
+    <<: [*common-net, *worker-lifecycle]
+    image: rag_new2-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu130}
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+      OCR_ENABLED: "true"
+      OCR_DEVICE: cuda
+      OCR_GPU_ONLY: "true"
+      OCR_PARALLEL_BUCKETS: "0"
+      OCR_CPU_WORKERS: ${OCR_CPU_WORKERS:-8}
+      OCR_CELERY_CONCURRENCY: "1"
+      OCR_BATCH_LIMIT: ${OCR_BATCH_LIMIT:-32}
+      OCR_CUDA_MEMORY_FRACTION: ${OCR_CUDA_MEMORY_FRACTION:-0.62}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      GPU_THERMAL_THROTTLE_C: ${GPU_THERMAL_THROTTLE_C:-87}
+      GPU_THERMAL_PAUSE_C: ${GPU_THERMAL_PAUSE_C:-92}
+      GPU_THERMAL_ABORT_C: ${GPU_THERMAL_ABORT_C:-94}
+      GPU_THERMAL_POWER_LIMIT_W: ${GPU_THERMAL_POWER_LIMIT_W:-70}
+    gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+        limits:
+          memory: 6G
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data
+        target: /app/data
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/huggingface
+        target: /root/.cache/huggingface
+    depends_on:
+      api:
+        condition: service_healthy
+    entrypoint: *dynamic-entrypoint
+    command:
+      - celery
+      - -A
+      - app.celery_app.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=1
+      - --pool=solo
+      - --prefetch-multiplier=1
+      - -Q
+      - ocr
+
+  worker-report:
+    <<: [*common-net, *worker-lifecycle]
+    image: rag_new2-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+    # CUDA device is visible; adaptive governor controls heavy GPU admission.
+    gpus: all
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data
+        target: /app/data
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    entrypoint: *dynamic-entrypoint
+    command:
+      - celery
+      - -A
+      - app.celery_app.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=3
+      - -Q
+      - report-gen
+
+  # Forensic Agentic AI — isolated from disk-build / rag-index
+  worker-agent:
+    <<: [*common-net, *worker-lifecycle]
+    image: rag_new2-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+    # GPU visible for capacity/thermal probes (nvidia-smi) — no heavy CUDA work here.
+    gpus: all
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data
+        target: /app/data
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+        limits:
+          memory: 4G
+    entrypoint: *dynamic-entrypoint
+    command:
+      - celery
+      - -A
+      - app.celery_app.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=2
+      - --prefetch-multiplier=1
+      - -Q
+      - agent-orchestration
+
+  worker-progress:
+    init: true
+    stop_signal: SIGTERM
+    stop_grace_period: 120s
+    networks:
+    - default
+    - aetheris-common
+    image: rag_new2-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+    - .env
+    environment:
+      CUDA_VISIBLE_DEVICES: ""
+      DATABASE_URL: postgresql+psycopg2://forensic:forensic@postgres:5432/forensic
+      REDIS_URL: redis://redis:6379/0
+      REMAP_SIGTERM: ${CELERY_REMAP_SIGTERM:-SIGQUIT}
+      CELERY_SHUTDOWN_RELEASE_GPU: ${CELERY_SHUTDOWN_RELEASE_GPU:-true}
+      RESOURCE_GOVERNOR_ENABLED: ${RESOURCE_GOVERNOR_ENABLED:-true}
+      RESOURCE_GOVERNOR_REDIS_URL: ${RESOURCE_GOVERNOR_REDIS_URL:-redis://redis:6379/15}
+      RESOURCE_GOVERNOR_GROUP: ${RESOURCE_GOVERNOR_GROUP:-aetheris-host}
+      RESOURCE_GOVERNOR_FAIL_OPEN_ON_UNAVAILABLE: ${RESOURCE_GOVERNOR_FAIL_OPEN_ON_UNAVAILABLE:-true}
+      RESOURCE_GOVERNOR_CPU_MAX_SLOTS: ${RESOURCE_GOVERNOR_CPU_MAX_SLOTS:-10}
+      RESOURCE_GOVERNOR_GPU_MAX_SLOTS: ${RESOURCE_GOVERNOR_GPU_MAX_SLOTS:-4}
+      GPU_RELEASE_MODEL_AFTER_TASK: ${GPU_RELEASE_MODEL_AFTER_TASK:-true}
+      DB_POOL_SIZE: '2'
+      DB_MAX_OVERFLOW: '1'
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-90}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-forensic}
+      HOST_EVIDENCE_ENABLED: ${HOST_EVIDENCE_ENABLED:-true}
+      HOST_EVIDENCE_ROOT: ${HOST_EVIDENCE_ROOT:-}
+      HOST_DRIVE_MAP: ${HOST_DRIVE_MAP:-}
+      HOST_PATH_MAPPINGS: ${HOST_PATH_MAPPINGS:-}
+      HOST_DRIVE_HELPER_URL: ${HOST_DRIVE_HELPER_URL:-http://host.docker.internal:9876}
+      DATA_ROOT: /app/data
+      TMPDIR: /app/data/tmp
+      TMP: /app/data/tmp
+      TEMP: /app/data/tmp
+      AETHERIS_WORKER: '1'
+      IDLE_IN_TRANSACTION_SESSION_TIMEOUT: '0'
+      DYNAMIC_PERF_ENABLED: ${DYNAMIC_PERF_ENABLED:-true}
+      DYNAMIC_PERF_FORCE: ${DYNAMIC_PERF_FORCE:-true}
+      DYNAMIC_PERF_LOCK: ${DYNAMIC_PERF_LOCK:-PARSE_WORKERS,PARSE_PARALLEL_ENABLED,PARSE_DRAIN_BATCH_LIMIT,PARSE_DRAIN_MAX_ROUNDS,PARSE_DRAIN_INTERLEAVE_RAG}
+      EXTRACT_DISK_WORKERS: ${EXTRACT_DISK_WORKERS:-8}
+      EXTRACT_SHARD_COUNT: ${EXTRACT_SHARD_COUNT:-12}
+      EXTRACT_UPLOAD_CONCURRENCY: ${EXTRACT_UPLOAD_CONCURRENCY:-8}
+      EXTRACT_ZSTD_LEVEL: ${EXTRACT_ZSTD_LEVEL:-1}
+      EXTRACT_MODE: ${EXTRACT_MODE:-defensible}
+      BROWSER_URL_PARSE_LIMIT: ${BROWSER_URL_PARSE_LIMIT:-500}
+      EXTRACT_UNCERTAIN_MAX_BYTES: ${EXTRACT_UNCERTAIN_MAX_BYTES:-16777216}
+      EXTRACT_MAX_FILE_BYTES: ${EXTRACT_MAX_FILE_BYTES:-100000000}
+      EXTRACT_HASH_FILES: ${EXTRACT_HASH_FILES:-false}
+      EXTRACT_PROGRESS_STEP: ${EXTRACT_PROGRESS_STEP:-10000}
+      EXTRACT_STOP_CHECK_INTERVAL: ${EXTRACT_STOP_CHECK_INTERVAL:-1000}
+      EXTRACT_TAR_BUFSIZE: ${EXTRACT_TAR_BUFSIZE:-2097152}
+      EXTRACT_PROGRESS_FLUSH_SEC: ${EXTRACT_PROGRESS_FLUSH_SEC:-10}
+      EXTRACT_PROGRESS_LOG_SEC: ${EXTRACT_PROGRESS_LOG_SEC:-20}
+      EXTRACT_SKIP_SYSTEM_PATHS: ${EXTRACT_SKIP_SYSTEM_PATHS:-false}
+      EXTRACT_REPLAN_ON_RESUME: ${EXTRACT_REPLAN_ON_RESUME:-false}
+      MAX_CONCURRENT_DISK_BUILDS: ${MAX_CONCURRENT_DISK_BUILDS:-4}
+      AETHERIS_SHARE_HOST: ${AETHERIS_SHARE_HOST:-true}
+      LONG_JOB_TIMEOUT_SEC: ${LONG_JOB_TIMEOUT_SEC:-0}
+      PARSE_DRAIN_MAX_ROUNDS: ${PARSE_DRAIN_MAX_ROUNDS:-25}
+      PARSE_DRAIN_BATCH_LIMIT: ${PARSE_DRAIN_BATCH_LIMIT:-1200}
+      PARSE_BATCH_LIMIT: ${PARSE_BATCH_LIMIT:-8000}
+      PARSE_WORKERS: ${PARSE_WORKERS:-4}
+      PARSE_PARALLEL_ENABLED: ${PARSE_PARALLEL_ENABLED:-true}
+      PARSE_DB_COMMIT_BATCH: ${PARSE_DB_COMMIT_BATCH:-75}
+      PARSE_PARALLEL_BUCKETS: ${PARSE_PARALLEL_BUCKETS:-2}
+      PARSE_BUCKET_MIN_PENDING: ${PARSE_BUCKET_MIN_PENDING:-2000}
+      AXIOM_INVENTORY_WORKERS: ${AXIOM_INVENTORY_WORKERS:-8}
+      AXIOM_INVENTORY_BATCH_SIZE: ${AXIOM_INVENTORY_BATCH_SIZE:-100}
+      PHASE1_ARTIFACT_FILTER: ${PHASE1_ARTIFACT_FILTER:-true}
+      EXTRACT_THEN_PROCESS: ${EXTRACT_THEN_PROCESS:-true}
+      PHASE3_STREAM_DURING_EXTRACT: ${PHASE3_STREAM_DURING_EXTRACT:-false}
+      PHASE3_STREAM_RAG_DURING_EXTRACT: ${PHASE3_STREAM_RAG_DURING_EXTRACT:-false}
+      PHASE3_STREAM_OCR_DURING_EXTRACT: ${PHASE3_STREAM_OCR_DURING_EXTRACT:-false}
+      RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-BAAI/bge-m3}
+      RAG_IMAGE_EMBED_MODEL: ${RAG_IMAGE_EMBED_MODEL:-clip-ViT-B-32}
+      HF_PULL_MODELS: ${HF_PULL_MODELS:-BAAI/bge-m3,zai-org/GLM-OCR,sentence-transformers/clip-ViT-B-32,cross-encoder/ms-marco-MiniLM-L-6-v2}
+      RAG_EMBEDDING_DEVICE: ${RAG_EMBEDDING_DEVICE:-cuda}
+      RAG_BATCH_SIZE: ${RAG_BATCH_SIZE:-24}
+      RAG_BATCH_SIZE_CAP: ${RAG_BATCH_SIZE_CAP:-48}
+      RAG_CUDA_MEMORY_FRACTION: ${RAG_CUDA_MEMORY_FRACTION:-0.55}
+      GPU_THERMAL_ENABLED: ${GPU_THERMAL_ENABLED:-true}
+      GPU_THERMAL_START_MAX_C: ${GPU_THERMAL_START_MAX_C:-90}
+      GPU_THERMAL_THROTTLE_C: ${GPU_THERMAL_THROTTLE_C:-87}
+      GPU_THERMAL_PAUSE_C: ${GPU_THERMAL_PAUSE_C:-92}
+      GPU_THERMAL_RESUME_C: ${GPU_THERMAL_RESUME_C:-84}
+      GPU_THERMAL_HONOR_ENV: ${GPU_THERMAL_HONOR_ENV:-true}
+      GPU_THERMAL_POLL_SEC: ${GPU_THERMAL_POLL_SEC:-2}
+      GPU_THERMAL_HOT_BATCH_SLEEP_SEC: ${GPU_THERMAL_HOT_BATCH_SLEEP_SEC:-5}
+      GPU_THERMAL_EMBED_REST_SEC: ${GPU_THERMAL_EMBED_REST_SEC:-0.6}
+      GPU_THERMAL_DUTY_CYCLE_BATCHES: ${GPU_THERMAL_DUTY_CYCLE_BATCHES:-4}
+      GPU_THERMAL_DUTY_CYCLE_REST_SEC: ${GPU_THERMAL_DUTY_CYCLE_REST_SEC:-3}
+      GPU_THERMAL_ADAPTIVE_BATCH: ${GPU_THERMAL_ADAPTIVE_BATCH:-true}
+      GPU_THERMAL_COOL_BOOST_C: ${GPU_THERMAL_COOL_BOOST_C:-58}
+      GPU_THERMAL_COOL_BATCH_MULTIPLIER: ${GPU_THERMAL_COOL_BATCH_MULTIPLIER:-1.25}
+      GPU_THERMAL_FALLBACK_DUTY: ${GPU_THERMAL_FALLBACK_DUTY:-true}
+      GPU_THERMAL_RISE_DELTA_C: ${GPU_THERMAL_RISE_DELTA_C:-5}
+      GPU_THERMAL_RISE_WINDOW_SEC: ${GPU_THERMAL_RISE_WINDOW_SEC:-12}
+      GPU_THERMAL_POWER_LIMIT_W: ${GPU_THERMAL_POWER_LIMIT_W:-70}
+      GPU_THERMAL_ABORT_C: ${GPU_THERMAL_ABORT_C:-94}
+      GPU_HEAVY_MAX_CONCURRENT: ${GPU_HEAVY_MAX_CONCURRENT:-2}
+      GPU_HEAVY_LOCK_WAIT_SEC: ${GPU_HEAVY_LOCK_WAIT_SEC:-0}
+      GPU_HEAVY_LOCK_TTL_SEC: ${GPU_HEAVY_LOCK_TTL_SEC:-600}
+      CPU_THERMAL_THROTTLE_C: ${CPU_THERMAL_THROTTLE_C:-86}
+      CPU_THERMAL_PAUSE_C: ${CPU_THERMAL_PAUSE_C:-94}
+      PIPELINE_SUPERVISOR_ENABLED: ${PIPELINE_SUPERVISOR_ENABLED:-true}
+      PIPELINE_STALE_SEC: ${PIPELINE_STALE_SEC:-180}
+      PIPELINE_SUPERVISOR_INTERVAL_SEC: ${PIPELINE_SUPERVISOR_INTERVAL_SEC:-60}
+      PIPELINE_SEQUENTIAL_AGENTS: ${PIPELINE_SEQUENTIAL_AGENTS:-false}
+      PARSE_DRAIN_INTERLEAVE_RAG: ${PARSE_DRAIN_INTERLEAVE_RAG:-false}
+      RAG_AUTO_AFTER_DISK: ${RAG_AUTO_AFTER_DISK:-false}
+      RAG_EMBEDDING_ENABLED: ${RAG_EMBEDDING_ENABLED:-false}
+      RAG_BACKGROUND_AFTER_BASELINE: ${RAG_BACKGROUND_AFTER_BASELINE:-false}
+      PHASE3_AUTO_AFTER_DISK: ${PHASE3_AUTO_AFTER_DISK:-true}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-forensic123}
+      OPENSEARCH_URL: ${OPENSEARCH_URL:-http://opensearch:9200}
+      LLM_PRIMARY_MODEL: ${LLM_PRIMARY_MODEL:-qwen2.5:14b}
+      LLM_REVIEW_MODEL: ${LLM_REVIEW_MODEL:-deepseek-r1:14b}
+      LLM_REVIEW_MODEL_LARGE: ${LLM_REVIEW_MODEL_LARGE:-deepseek-r1:14b}
+      LLM_FAST_MODEL: ${LLM_FAST_MODEL:-qwen3.5:9b}
+      OLLAMA_PULL_MODELS: ${OLLAMA_PULL_MODELS:-qwen2.5:14b,qwen2.5:7b,deepseek-r1:14b,llama3.1:8b,gemma4:12b,qwen3.5:9b,nomic-embed-text}
+      RAG_EMBEDDING_FALLBACK: ${RAG_EMBEDDING_FALLBACK:-nomic-embed-text}
+      OCR_ENABLED: ${OCR_ENABLED:-true}
+      OCR_ENGINE: ${OCR_ENGINE:-glm-ocr}
+      OCR_MODEL: ${OCR_MODEL:-zai-org/GLM-OCR}
+      OCR_DEVICE: ${OCR_DEVICE:-cuda}
+      OCR_GPU_ONLY: ${OCR_GPU_ONLY:-true}
+      OCR_PARALLEL_BUCKETS: ${OCR_PARALLEL_BUCKETS:-0}
+      OCR_MAX_PAGES: ${OCR_MAX_PAGES:-10}
+      OCR_MAX_NEW_TOKENS: ${OCR_MAX_NEW_TOKENS:-512}
+      OCR_CPU_WORKERS: ${OCR_CPU_WORKERS:-6}
+      GAP_REPORT_LLM_ENABLED: ${GAP_REPORT_LLM_ENABLED:-true}
+      GAP_REPORT_LLM_MODEL: ${GAP_REPORT_LLM_MODEL:-qwen2.5:7b}
+      MOBILE_REPORT_LLM_ENABLED: ${MOBILE_REPORT_LLM_ENABLED:-true}
+      MOBILE_REPORT_LLM_MODEL: ${MOBILE_REPORT_LLM_MODEL:-qwen2.5:14b}
+      MOBILE_REPORT_LLM_FALLBACK_MODEL: ${MOBILE_REPORT_LLM_FALLBACK_MODEL:-llama3.1:8b}
+      MOBILE_REPORT_LLM_MODELS: ${MOBILE_REPORT_LLM_MODELS:-qwen2.5:14b,gemma4:12b,qwen3.5:9b,llama3.1:8b,qwen2.5:7b}
+      NVIDIA_VISIBLE_DEVICES: none
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+      AETHERIS_SERVICE: forensic
+      VULN_MODULE_ENABLED: 'false'
+      AGENT_MODULE_ENABLED: ${AGENT_MODULE_ENABLED:-true}
+      AGENT_MAX_STEPS: ${AGENT_MAX_STEPS:-6}
+      AGENT_MODEL: ${AGENT_MODEL:-qwen3.5:9b}
+      NESSUS_API_TIMEOUT_SEC: ${NESSUS_API_TIMEOUT_SEC:-0}
+      NESSUS_VERIFY_SSL: ${NESSUS_VERIFY_SSL:-true}
+      NESSUS_DEFAULT_URL: ${NESSUS_DEFAULT_URL:-}
+      NESSUS_ACCESS_KEY: ${NESSUS_ACCESS_KEY:-}
+      NESSUS_SECRET_KEY: ${NESSUS_SECRET_KEY:-}
+      GVM_HOST: ${GVM_HOST:-gvmd}
+      GVM_PORT: ${GVM_PORT:-9390}
+      GVM_URL: ${GVM_URL:-unix:///run/gvmd/gvmd.sock}
+      GVM_SOCKET_PATH: ${GVM_SOCKET_PATH:-/run/gvmd/gvmd.sock}
+      GVM_USERNAME: ${GVM_USERNAME:-admin}
+      GVM_PASSWORD: ${GVM_PASSWORD:-}
+      GVM_ADMIN_PASSWORD: ${GVM_ADMIN_PASSWORD:-admin}
+      GVM_VERIFY_TLS: ${GVM_VERIFY_TLS:-false}
+      GVM_LIVE_ENABLED: ${GVM_LIVE_ENABLED:-false}
+      GVM_SCAN_POLL_INTERVAL_SEC: ${GVM_SCAN_POLL_INTERVAL_SEC:-5}
+      GVM_SCAN_TIMEOUT_SEC: ${GVM_SCAN_TIMEOUT_SEC:-240}
+      GVM_SCAN_NEAR_COMPLETE_GRACE_SEC: ${GVM_SCAN_NEAR_COMPLETE_GRACE_SEC:-0}
+      GVM_SCAN_NEAR_COMPLETE_PROGRESS_PCT: ${GVM_SCAN_NEAR_COMPLETE_PROGRESS_PCT:-85}
+      GVM_SCAN_STALL_PROGRESS_PCT: ${GVM_SCAN_STALL_PROGRESS_PCT:-80}
+      GVM_SCAN_STALL_SEC: ${GVM_SCAN_STALL_SEC:-90}
+      GVM_SCAN_CONFIG: ${GVM_SCAN_CONFIG:-Full and fast}
+      GVM_FEED_READY_TIMEOUT_SEC: ${GVM_FEED_READY_TIMEOUT_SEC:-0}
+      GVM_FEED_READY_POLL_INTERVAL_SEC: ${GVM_FEED_READY_POLL_INTERVAL_SEC:-15}
+      GVM_PORT_PROFILE: ${GVM_PORT_PROFILE:-full}
+      GVM_TARGET_PORT_RANGE: ${GVM_TARGET_PORT_RANGE:-}
+      GVM_MAX_CHECKS: ${GVM_MAX_CHECKS:-20}
+      GVM_MAX_HOSTS: ${GVM_MAX_HOSTS:-8}
+      GVM_OPTIMIZE_TEST: ${GVM_OPTIMIZE_TEST:-false}
+      GVM_SAFE_CHECKS: ${GVM_SAFE_CHECKS:-true}
+      GVM_CHECKS_READ_TIMEOUT: ${GVM_CHECKS_READ_TIMEOUT:-10}
+      GVM_TIMEOUT_RETRY: ${GVM_TIMEOUT_RETRY:-3}
+      GVM_OPEN_SOCK_MAX_ATTEMPTS: ${GVM_OPEN_SOCK_MAX_ATTEMPTS:-5}
+      GVM_EXPAND_VHOSTS: ${GVM_EXPAND_VHOSTS:-true}
+      GVM_TEST_EMPTY_VHOST: ${GVM_TEST_EMPTY_VHOST:-true}
+      GVM_ALLOW_BARE_TASK_FALLBACK: ${GVM_ALLOW_BARE_TASK_FALLBACK:-false}
+      GVM_REPORT_MIN_QOD: ${GVM_REPORT_MIN_QOD:-0}
+      GVM_MIN_NVT_COUNT: ${GVM_MIN_NVT_COUNT:-10000}
+      GVM_PLUGINS_TIMEOUT_SEC: ${GVM_PLUGINS_TIMEOUT_SEC:-0}
+      GVM_SCANNER_PLUGINS_TIMEOUT_SEC: ${GVM_SCANNER_PLUGINS_TIMEOUT_SEC:-0}
+      VULN_ORCH_OVERLAP_ENABLED: ${VULN_ORCH_OVERLAP_ENABLED:-true}
+      VULN_ORCHESTRATION_ENABLED: ${VULN_ORCHESTRATION_ENABLED:-true}
+      VULN_ALLOW_STUB_FINDINGS: ${VULN_ALLOW_STUB_FINDINGS:-false}
+      ZAP_API_URL: ${ZAP_API_URL:-http://zap:8080}
+      ZAP_API_KEY: ${ZAP_API_KEY:-changeme}
+      ZAP_SCAN_TIMEOUT_SEC: ${ZAP_SCAN_TIMEOUT_SEC:-180}
+      VULN_TARGET_WORKERS: ${VULN_TARGET_WORKERS:-4}
+      WAZUH_API_URL: ${WAZUH_API_URL:-https://wazuh-manager:55000}
+      WAZUH_API_USER: ${WAZUH_API_USER:-wazuh-wui}
+      WAZUH_API_PASSWORD: ${WAZUH_API_PASSWORD:-MyS3cr37P450r.*-}
+      WAZUH_VERIFY_TLS: ${WAZUH_VERIFY_TLS:-false}
+      TRIVY_SERVER_URL: ${TRIVY_SERVER_URL:-http://trivy:4954}
+      ASV_MODULE_ENABLED: ${ASV_MODULE_ENABLED:-true}
+      PENTEST_MODULE_ENABLED: ${PENTEST_MODULE_ENABLED:-true}
+      EDR_INVENTORY_ENABLED: ${EDR_INVENTORY_ENABLED:-true}
+      WORKER_ROLE: progress
+    volumes:
+    - ./backend:/app
+    - ./scripts:/scripts:ro
+    - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+    - type: bind
+      source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data
+      target: /app/data
+    depends_on:
+      api:
+        condition: service_healthy
+    entrypoint:
+    - python
+    - /scripts/dynamic_perf_entrypoint.py
+    command:
+    - celery
+    - -A
+    - app.celery_forensic.celery
+    - worker
+    - --loglevel=info
+    - --concurrency=1
+    - --prefetch-multiplier=1
+    - -Q
+    - disk-progress
+
+  worker-beat:
+    <<: [*common-net, *worker-lifecycle]
+    image: rag_new2-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+    # CUDA device is visible; adaptive governor controls heavy GPU admission.
+    gpus: all
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    entrypoint: *dynamic-entrypoint
+    command:
+      - celery
+      - -A
+      - app.celery_app.celery
+      - beat
+      - --loglevel=info
+      - --schedule
+      - /tmp/celerybeat-schedule-forensic
+
+  # UI is the gateway on :3000 / :3001. This leftover frontend is not started
+  # unless profile legacy-ui is enabled (would conflict with the gateway).
+  frontend:
+    profiles: ["legacy-ui"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_AETHERIS_SERVICE: forensic
+        VITE_VULN_MODULE_ENABLED: "false"
+    ports:
+      - "3001:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  # V45.3: evidence staged into the docker-desktop VM (ext4). Reads are native —
+  # no Windows file-sharing layer, so no 2-3 MB/s ceiling and no unkillable
+  # D-state worker. Appears in the UI as drive ${EVIDENCE_STAGING_LETTER:-Z}:.
+  # Fill it with Stage-Evidence.cmd <source folder> <case name>.
+  evidence_staging:
+  neo4j_data:
+  opensearch_data:
+
+networks:
+  aetheris-common:
+    external: true
+    name: aetheris-common

@@ -1,0 +1,1309 @@
+{
+  "policy_version": "aetheris-services-2.1",
+  "source_guide": "Aetheris_Scanner_Service_Implementation_Guide(1).pdf / v2.0 / 06 October 2026",
+  "service_count": 52,
+  "services": [
+    {
+      "id": 1,
+      "key": "SVC-01",
+      "name": "SMB / CIFS",
+      "meaning": "Server Message Block / Common Internet File System",
+      "tcp_hints": [
+        139,
+        445
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "smb",
+        "cifs"
+      ],
+      "product_patterns": [
+        "smb",
+        "cifs"
+      ],
+      "remote_checks": "SMBv1; signing; shares and permissions",
+      "credentialed_checks": "supplied-user share permissions",
+      "engine_family": "smb",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 2,
+      "key": "SVC-02",
+      "name": "RPC",
+      "meaning": "Remote Procedure Call",
+      "tcp_hints": [
+        135
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "msrpc",
+        "dcerpc"
+      ],
+      "product_patterns": [
+        "microsoft rpc",
+        "dce rpc"
+      ],
+      "remote_checks": "Endpoint mapping; dynamic RPC services; build checks",
+      "credentialed_checks": "authenticated Windows inventory",
+      "engine_family": "windows",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 3,
+      "key": "SVC-03",
+      "name": "WMI",
+      "meaning": "Windows Management Instrumentation",
+      "tcp_hints": [
+        135
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "wmi"
+      ],
+      "product_patterns": [
+        "windows management instrumentation",
+        "wmi"
+      ],
+      "remote_checks": "Route Windows RPC evidence",
+      "credentialed_checks": "patch/configuration inventory",
+      "engine_family": "windows",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 4,
+      "key": "SVC-04",
+      "name": "WinRM",
+      "meaning": "Windows Remote Management",
+      "tcp_hints": [
+        5985,
+        5986
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "winrm",
+        "wsman"
+      ],
+      "product_patterns": [
+        "winrm",
+        "ws-man"
+      ],
+      "remote_checks": "Authentication and endpoint TLS",
+      "credentialed_checks": "Windows configuration/inventory",
+      "engine_family": "windows",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 5,
+      "key": "SVC-05",
+      "name": "RDP",
+      "meaning": "Remote Desktop Protocol",
+      "tcp_hints": [
+        3389
+      ],
+      "udp_hints": [
+        3389
+      ],
+      "protocols": [
+        "rdp",
+        "ms-wbt-server"
+      ],
+      "product_patterns": [
+        "remote desktop",
+        "rdp"
+      ],
+      "remote_checks": "Security negotiation; TLS; NLA; version",
+      "credentialed_checks": "host patch/configuration",
+      "engine_family": "windows",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 6,
+      "key": "SVC-06",
+      "name": "SSH: OpenSSH / Dropbear",
+      "meaning": "Secure Shell server products",
+      "tcp_hints": [
+        22
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "ssh"
+      ],
+      "product_patterns": [
+        "openssh",
+        "dropbear"
+      ],
+      "remote_checks": "Product/algorithms; exact vendor advisory checks",
+      "credentialed_checks": "package/backport and SSH configuration",
+      "engine_family": "ssh",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 7,
+      "key": "SVC-07",
+      "name": "FTP / FTPS",
+      "meaning": "File Transfer Protocol / FTP secured with TLS",
+      "tcp_hints": [
+        20,
+        21,
+        990
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "ftp",
+        "ftps"
+      ],
+      "product_patterns": [
+        "ftp",
+        "ftps"
+      ],
+      "remote_checks": "Banner; bounded anonymous access; explicit/implicit TLS",
+      "credentialed_checks": "server configuration/access policy",
+      "engine_family": "ftp",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 8,
+      "key": "SVC-08",
+      "name": "SFTP",
+      "meaning": "SSH File Transfer Protocol",
+      "tcp_hints": [
+        22
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "sftp"
+      ],
+      "product_patterns": [
+        "sftp"
+      ],
+      "remote_checks": "Reuse SSH transport evidence",
+      "credentialed_checks": "SFTP permissions/configuration",
+      "engine_family": "ssh",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 9,
+      "key": "SVC-09",
+      "name": "HTTP",
+      "meaning": "Hypertext Transfer Protocol",
+      "tcp_hints": [
+        80,
+        8000,
+        8080
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "http"
+      ],
+      "product_patterns": [],
+      "remote_checks": "Web server/app identity; headers/exposure; route product checks",
+      "credentialed_checks": "authenticated application checks",
+      "engine_family": "web",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 10,
+      "key": "SVC-10",
+      "name": "HTTPS / TLS",
+      "meaning": "Hypertext Transfer Protocol Secure / Transport Layer Security",
+      "tcp_hints": [
+        443,
+        8443
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "https",
+        "tls",
+        "ssl"
+      ],
+      "product_patterns": [
+        "tls",
+        "ssl",
+        "sweet32",
+        "certificate",
+        "cipher"
+      ],
+      "remote_checks": "Certificates; protocol/cipher acceptance; STARTTLS",
+      "credentialed_checks": "configuration context where supplied",
+      "engine_family": "tls",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 11,
+      "key": "SVC-11",
+      "name": "SMTP / SMTPS",
+      "meaning": "Simple Mail Transfer Protocol / SMTP secured with TLS",
+      "tcp_hints": [
+        25,
+        465,
+        587
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "smtp",
+        "smtps"
+      ],
+      "product_patterns": [
+        "smtp",
+        "smtps"
+      ],
+      "remote_checks": "Banner; authentication; relay policy; STARTTLS",
+      "credentialed_checks": "mail configuration/access policy",
+      "engine_family": "mail",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 12,
+      "key": "SVC-12",
+      "name": "POP3 / POP3S",
+      "meaning": "Post Office Protocol v3 / POP3 secured with TLS",
+      "tcp_hints": [
+        110,
+        995
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "pop3",
+        "pop3s"
+      ],
+      "product_patterns": [
+        "pop3"
+      ],
+      "remote_checks": "Product; cleartext authentication; STARTTLS",
+      "credentialed_checks": "mail configuration/access policy",
+      "engine_family": "mail",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 13,
+      "key": "SVC-13",
+      "name": "IMAP / IMAPS",
+      "meaning": "Internet Message Access Protocol / IMAP secured with TLS",
+      "tcp_hints": [
+        143,
+        993
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "imap",
+        "imaps"
+      ],
+      "product_patterns": [
+        "imap"
+      ],
+      "remote_checks": "Product; authentication; STARTTLS",
+      "credentialed_checks": "mail configuration/access policy",
+      "engine_family": "mail",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 14,
+      "key": "SVC-14",
+      "name": "DNS",
+      "meaning": "Domain Name System",
+      "tcp_hints": [
+        53
+      ],
+      "udp_hints": [
+        53
+      ],
+      "protocols": [
+        "dns",
+        "domain"
+      ],
+      "product_patterns": [
+        "dns",
+        "domain name"
+      ],
+      "remote_checks": "Protocol; recursion/transfer policy; server identity",
+      "credentialed_checks": "server configuration",
+      "engine_family": "network",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 15,
+      "key": "SVC-15",
+      "name": "SNMP",
+      "meaning": "Simple Network Management Protocol",
+      "tcp_hints": [],
+      "udp_hints": [
+        161
+      ],
+      "protocols": [
+        "snmp"
+      ],
+      "product_patterns": [
+        "snmp"
+      ],
+      "remote_checks": "Version; configured community/access; firmware",
+      "credentialed_checks": "approved device/community inventory",
+      "engine_family": "network",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 16,
+      "key": "SVC-16",
+      "name": "Telnet",
+      "meaning": "Remote terminal protocol",
+      "tcp_hints": [
+        23
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "telnet"
+      ],
+      "product_patterns": [
+        "telnet"
+      ],
+      "remote_checks": "Protocol/product; cleartext remote access",
+      "credentialed_checks": "device access configuration",
+      "engine_family": "network",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 17,
+      "key": "SVC-17",
+      "name": "TFTP",
+      "meaning": "Trivial File Transfer Protocol",
+      "tcp_hints": [],
+      "udp_hints": [
+        69
+      ],
+      "protocols": [
+        "tftp"
+      ],
+      "product_patterns": [
+        "tftp"
+      ],
+      "remote_checks": "Protocol; approved-file read policy",
+      "credentialed_checks": "approved filename/access context",
+      "engine_family": "network",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 18,
+      "key": "SVC-18",
+      "name": "LDAP",
+      "meaning": "Lightweight Directory Access Protocol",
+      "tcp_hints": [
+        389
+      ],
+      "udp_hints": [
+        389
+      ],
+      "protocols": [
+        "ldap",
+        "cldap"
+      ],
+      "product_patterns": [
+        "ldap"
+      ],
+      "remote_checks": "Bind policy; anonymous access; STARTTLS",
+      "credentialed_checks": "directory configuration",
+      "engine_family": "directory",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 19,
+      "key": "SVC-19",
+      "name": "LDAPS",
+      "meaning": "LDAP secured with TLS",
+      "tcp_hints": [
+        636
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "ldaps"
+      ],
+      "product_patterns": [
+        "ldaps"
+      ],
+      "remote_checks": "TLS and directory bind/access",
+      "credentialed_checks": "directory configuration",
+      "engine_family": "directory",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 20,
+      "key": "SVC-20",
+      "name": "Kerberos",
+      "meaning": "Network authentication protocol",
+      "tcp_hints": [
+        88
+      ],
+      "udp_hints": [
+        88
+      ],
+      "protocols": [
+        "kerberos"
+      ],
+      "product_patterns": [
+        "kerberos"
+      ],
+      "remote_checks": "Protocol/realm identity",
+      "credentialed_checks": "credentialed AD policy",
+      "engine_family": "directory",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 21,
+      "key": "SVC-21",
+      "name": "AD Global Catalog",
+      "meaning": "Active Directory Global Catalog",
+      "tcp_hints": [
+        3268,
+        3269
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "ldap-gc",
+        "global-catalog"
+      ],
+      "product_patterns": [
+        "global catalog"
+      ],
+      "remote_checks": "Directory exposure/bind; secure endpoint TLS",
+      "credentialed_checks": "directory configuration",
+      "engine_family": "directory",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 22,
+      "key": "SVC-22",
+      "name": "Microsoft SQL Server",
+      "meaning": "Structured Query Language database",
+      "tcp_hints": [
+        1433
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "mssql",
+        "ms-sql-s",
+        "tds"
+      ],
+      "product_patterns": [
+        "microsoft sql",
+        "mssql",
+        "ms sql"
+      ],
+      "remote_checks": "TDS; build/version; encryption/access",
+      "credentialed_checks": "patch/configuration/permissions",
+      "engine_family": "database",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 23,
+      "key": "SVC-23",
+      "name": "MySQL / MariaDB",
+      "meaning": "Database server products",
+      "tcp_hints": [
+        3306
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "mysql",
+        "mariadb"
+      ],
+      "product_patterns": [
+        "mysql",
+        "mariadb"
+      ],
+      "remote_checks": "Handshake; authentication/access; TLS; advisories",
+      "credentialed_checks": "packages/settings/permissions",
+      "engine_family": "database",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 24,
+      "key": "SVC-24",
+      "name": "PostgreSQL",
+      "meaning": "Database server product",
+      "tcp_hints": [
+        5432
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "postgresql",
+        "postgres"
+      ],
+      "product_patterns": [
+        "postgresql",
+        "postgres"
+      ],
+      "remote_checks": "Protocol; SSL negotiation; authentication/patch context",
+      "credentialed_checks": "packages/settings/permissions",
+      "engine_family": "database",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 25,
+      "key": "SVC-25",
+      "name": "Oracle Database",
+      "meaning": "Oracle relational database",
+      "tcp_hints": [
+        1521
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "oracle",
+        "oracle-tns",
+        "tns"
+      ],
+      "product_patterns": [
+        "oracle database",
+        "oracle tns"
+      ],
+      "remote_checks": "Listener/service identification; access/encryption",
+      "credentialed_checks": "database/listener patch inventory",
+      "engine_family": "database",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 26,
+      "key": "SVC-26",
+      "name": "MongoDB",
+      "meaning": "Document database",
+      "tcp_hints": [
+        27017
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "mongodb"
+      ],
+      "product_patterns": [
+        "mongodb"
+      ],
+      "remote_checks": "Authentication/authorization; TLS; version/exposure",
+      "credentialed_checks": "server configuration/roles",
+      "engine_family": "database",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 27,
+      "key": "SVC-27",
+      "name": "Redis",
+      "meaning": "Remote Dictionary Server",
+      "tcp_hints": [
+        6379
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "redis"
+      ],
+      "product_patterns": [
+        "redis"
+      ],
+      "remote_checks": "Authentication/ACL; TLS; exposure/version",
+      "credentialed_checks": "read-only config/inventory",
+      "engine_family": "database",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 28,
+      "key": "SVC-28",
+      "name": "Elasticsearch",
+      "meaning": "Search and analytics product",
+      "tcp_hints": [
+        9200,
+        9300
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "elasticsearch"
+      ],
+      "product_patterns": [
+        "elasticsearch"
+      ],
+      "remote_checks": "HTTP/transport identity; authentication; TLS",
+      "credentialed_checks": "security/build/patch context",
+      "engine_family": "database",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 29,
+      "key": "SVC-29",
+      "name": "VNC",
+      "meaning": "Virtual Network Computing",
+      "tcp_hints": [
+        5900
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "vnc",
+        "rfb"
+      ],
+      "product_patterns": [
+        "vnc",
+        "rfb"
+      ],
+      "remote_checks": "RFB; authentication/encryption; product advisories",
+      "credentialed_checks": "configured endpoint policy",
+      "engine_family": "network",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 30,
+      "key": "SVC-30",
+      "name": "VMware ESXi / vCenter",
+      "meaning": "Hypervisor and management products",
+      "tcp_hints": [
+        443,
+        902
+      ],
+      "udp_hints": [
+        902
+      ],
+      "protocols": [
+        "vmware"
+      ],
+      "product_patterns": [
+        "vmware",
+        "esxi",
+        "vcenter"
+      ],
+      "remote_checks": "Management/API identity; access; TLS; advisories",
+      "credentialed_checks": "vendor patch/inventory",
+      "engine_family": "platform",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 31,
+      "key": "SVC-31",
+      "name": "Docker API",
+      "meaning": "Docker Application Programming Interface",
+      "tcp_hints": [
+        2375,
+        2376
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "docker"
+      ],
+      "product_patterns": [
+        "docker"
+      ],
+      "remote_checks": "API exposure; auth/client certificates; version",
+      "credentialed_checks": "daemon configuration",
+      "engine_family": "platform",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 32,
+      "key": "SVC-32",
+      "name": "Kubernetes API",
+      "meaning": "Kubernetes Application Programming Interface",
+      "tcp_hints": [
+        6443
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "kubernetes",
+        "kube-apiserver"
+      ],
+      "product_patterns": [
+        "kubernetes",
+        "kube-apiserver"
+      ],
+      "remote_checks": "API identity; anonymous access; TLS",
+      "credentialed_checks": "RBAC and authenticated context",
+      "engine_family": "platform",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 33,
+      "key": "SVC-33",
+      "name": "kubelet",
+      "meaning": "Kubernetes node agent",
+      "tcp_hints": [
+        10250
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "kubelet"
+      ],
+      "product_patterns": [
+        "kubelet"
+      ],
+      "remote_checks": "Node API exposure; authorization; TLS",
+      "credentialed_checks": "node configuration",
+      "engine_family": "platform",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 34,
+      "key": "SVC-34",
+      "name": "Jenkins",
+      "meaning": "Automation server",
+      "tcp_hints": [
+        8080
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "jenkins"
+      ],
+      "product_patterns": [
+        "jenkins"
+      ],
+      "remote_checks": "Core/plugin identity; admin exposure; advisories",
+      "credentialed_checks": "plugin/configuration inventory",
+      "engine_family": "web",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 35,
+      "key": "SVC-35",
+      "name": "GitLab / Git",
+      "meaning": "Development platform / version control",
+      "tcp_hints": [
+        22,
+        80,
+        443,
+        9418
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "gitlab",
+        "git"
+      ],
+      "product_patterns": [
+        "gitlab",
+        "git protocol"
+      ],
+      "remote_checks": "GitLab identity/access/advisories; Git exposure; reuse SSH/TLS",
+      "credentialed_checks": "platform configuration",
+      "engine_family": "web",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 36,
+      "key": "SVC-36",
+      "name": "RabbitMQ",
+      "meaning": "Message broker",
+      "tcp_hints": [
+        5672,
+        15672
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "rabbitmq",
+        "amqp"
+      ],
+      "product_patterns": [
+        "rabbitmq",
+        "amqp"
+      ],
+      "remote_checks": "AMQP/management; access; TLS; version",
+      "credentialed_checks": "permissions/broker settings",
+      "engine_family": "messaging",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 37,
+      "key": "SVC-37",
+      "name": "Apache Kafka",
+      "meaning": "Event streaming product",
+      "tcp_hints": [
+        9092
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "kafka"
+      ],
+      "product_patterns": [
+        "kafka"
+      ],
+      "remote_checks": "Broker identity; auth/ACLs; listener TLS",
+      "credentialed_checks": "broker configuration",
+      "engine_family": "messaging",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 38,
+      "key": "SVC-38",
+      "name": "Memcached",
+      "meaning": "Memory caching service",
+      "tcp_hints": [
+        11211
+      ],
+      "udp_hints": [
+        11211
+      ],
+      "protocols": [
+        "memcached"
+      ],
+      "product_patterns": [
+        "memcached"
+      ],
+      "remote_checks": "TCP/UDP identity; exposure; version",
+      "credentialed_checks": "transport/access policy",
+      "engine_family": "database",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 39,
+      "key": "SVC-39",
+      "name": "Apache Tomcat",
+      "meaning": "Java application server",
+      "tcp_hints": [
+        8080,
+        8443
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "tomcat"
+      ],
+      "product_patterns": [
+        "tomcat"
+      ],
+      "remote_checks": "Product/advisories; manager exposure; TLS",
+      "credentialed_checks": "server/component patch context",
+      "engine_family": "web",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 40,
+      "key": "SVC-40",
+      "name": "JBoss / WildFly",
+      "meaning": "Java application servers",
+      "tcp_hints": [
+        8080,
+        9990
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "jboss",
+        "wildfly"
+      ],
+      "product_patterns": [
+        "jboss",
+        "wildfly"
+      ],
+      "remote_checks": "Application/admin identity; access; advisories",
+      "credentialed_checks": "server/component patch context",
+      "engine_family": "web",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 41,
+      "key": "SVC-41",
+      "name": "IIS",
+      "meaning": "Internet Information Services",
+      "tcp_hints": [
+        80,
+        443
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "iis"
+      ],
+      "product_patterns": [
+        "microsoft iis",
+        "internet information services"
+      ],
+      "remote_checks": "HTTP/TLS identity and exposure",
+      "credentialed_checks": "Windows features/patches",
+      "engine_family": "windows",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 42,
+      "key": "SVC-42",
+      "name": "Apache HTTPD",
+      "meaning": "Apache HTTP Server daemon",
+      "tcp_hints": [
+        80,
+        443
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "apache",
+        "httpd"
+      ],
+      "product_patterns": [
+        "apache http",
+        "httpd"
+      ],
+      "remote_checks": "Version/modules; configuration/exposure; vendor patches",
+      "credentialed_checks": "package/backport context",
+      "engine_family": "web",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 43,
+      "key": "SVC-43",
+      "name": "nginx",
+      "meaning": "Web server product",
+      "tcp_hints": [
+        80,
+        443
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "nginx"
+      ],
+      "product_patterns": [
+        "nginx"
+      ],
+      "remote_checks": "Version/build; configuration/exposure; vendor patches",
+      "credentialed_checks": "package/backport context",
+      "engine_family": "web",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 44,
+      "key": "SVC-44",
+      "name": "Oracle WebLogic",
+      "meaning": "Oracle WebLogic Server",
+      "tcp_hints": [
+        7001,
+        7002
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "weblogic"
+      ],
+      "product_patterns": [
+        "weblogic"
+      ],
+      "remote_checks": "Version/patch; console exposure; auth/TLS",
+      "credentialed_checks": "server patch/configuration",
+      "engine_family": "web",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 45,
+      "key": "SVC-45",
+      "name": "IBM WebSphere",
+      "meaning": "IBM WebSphere Application Server",
+      "tcp_hints": [],
+      "udp_hints": [],
+      "protocols": [
+        "websphere"
+      ],
+      "product_patterns": [
+        "websphere"
+      ],
+      "remote_checks": "Configured app/admin identity; version; auth/TLS",
+      "credentialed_checks": "server patch/configuration",
+      "engine_family": "web",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 46,
+      "key": "SVC-46",
+      "name": "IPsec / IKE",
+      "meaning": "Internet Protocol Security / Internet Key Exchange",
+      "tcp_hints": [],
+      "udp_hints": [
+        500,
+        4500
+      ],
+      "protocols": [
+        "ike",
+        "isakmp",
+        "ipsec"
+      ],
+      "product_patterns": [
+        "ike",
+        "isakmp",
+        "ipsec"
+      ],
+      "remote_checks": "Negotiation; device identity; vendor/configuration",
+      "credentialed_checks": "device configuration",
+      "engine_family": "network",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 47,
+      "key": "SVC-47",
+      "name": "NTP",
+      "meaning": "Network Time Protocol",
+      "tcp_hints": [],
+      "udp_hints": [
+        123
+      ],
+      "protocols": [
+        "ntp"
+      ],
+      "product_patterns": [
+        "ntp",
+        "network time"
+      ],
+      "remote_checks": "Protocol/version; permitted query policy",
+      "credentialed_checks": "device configuration",
+      "engine_family": "network",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 48,
+      "key": "SVC-48",
+      "name": "DHCP",
+      "meaning": "Dynamic Host Configuration Protocol",
+      "tcp_hints": [],
+      "udp_hints": [
+        67,
+        68
+      ],
+      "protocols": [
+        "dhcp"
+      ],
+      "product_patterns": [
+        "dhcp"
+      ],
+      "remote_checks": "Network-scoped server identity",
+      "credentialed_checks": "network broadcast/relay collector",
+      "engine_family": "network",
+      "scope": "network",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 49,
+      "key": "SVC-49",
+      "name": "IPP",
+      "meaning": "Internet Printing Protocol",
+      "tcp_hints": [
+        631
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "ipp"
+      ],
+      "product_patterns": [
+        "ipp",
+        "internet printing"
+      ],
+      "remote_checks": "Printer identity/access; supported TLS",
+      "credentialed_checks": "device/firmware inventory",
+      "engine_family": "printer",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 50,
+      "key": "SVC-50",
+      "name": "JetDirect",
+      "meaning": "HP network printing technology",
+      "tcp_hints": [
+        9100
+      ],
+      "udp_hints": [],
+      "protocols": [
+        "jetdirect",
+        "pdl-datastream"
+      ],
+      "product_patterns": [
+        "jetdirect"
+      ],
+      "remote_checks": "Device identity/exposure; no arbitrary raw print payload",
+      "credentialed_checks": "device/firmware inventory",
+      "engine_family": "printer",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 51,
+      "key": "SVC-51",
+      "name": "NFS",
+      "meaning": "Network File System",
+      "tcp_hints": [
+        2049
+      ],
+      "udp_hints": [
+        2049
+      ],
+      "protocols": [
+        "nfs"
+      ],
+      "product_patterns": [
+        "nfs",
+        "network file system"
+      ],
+      "remote_checks": "RPC discovery; export/access policy; version",
+      "credentialed_checks": "approved export permission context",
+      "engine_family": "rpc",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    },
+    {
+      "id": 52,
+      "key": "SVC-52",
+      "name": "rpcbind",
+      "meaning": "Remote Procedure Call binding service",
+      "tcp_hints": [
+        111
+      ],
+      "udp_hints": [
+        111
+      ],
+      "protocols": [
+        "rpcbind",
+        "sunrpc",
+        "portmapper"
+      ],
+      "product_patterns": [
+        "rpcbind",
+        "portmapper"
+      ],
+      "remote_checks": "RPC program enumeration; auxiliary endpoints",
+      "credentialed_checks": "host/RPC configuration",
+      "engine_family": "rpc",
+      "scope": "endpoint",
+      "implementation": "native_openvas_feed_dependent",
+      "credentialed_path": "local_gmp_credential_reference_or_not_tested"
+    }
+  ],
+  "udp_baseline": [
+    53,
+    67,
+    68,
+    69,
+    123,
+    137,
+    161,
+    162,
+    500,
+    514,
+    520,
+    623,
+    1434,
+    1900,
+    4500,
+    5353,
+    11211
+  ],
+  "udp_extensions": [
+    88,
+    111,
+    389,
+    902,
+    2049,
+    3389
+  ],
+  "configuration_families": [
+    {
+      "key": "CFG-IP-FORWARDING",
+      "name": "IP forwarding",
+      "tcp_hints": [],
+      "udp_hints": [],
+      "requires": "authenticated IPv4/IPv6 configuration and device-role policy, or supported native network evidence"
+    }
+  ],
+  "network_appliance_vendors": [
+    "Cisco",
+    "Fortinet",
+    "Palo Alto",
+    "Juniper",
+    "Aruba",
+    "HP/HPE",
+    "Dell",
+    "MikroTik",
+    "VMware",
+    "TP-Link"
+  ],
+  "network_scoped_families": [
+    "DHCP",
+    "SSDP",
+    "mDNS"
+  ],
+  "raw_printer_payload_exclusions": [
+    9100
+  ]
+}

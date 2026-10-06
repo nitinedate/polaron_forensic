@@ -1,0 +1,274 @@
+--- a/laptop-scanner/scanner-agent/agent/gmp_local.py	2026-10-04 13:39:31.423393167 +0000
++++ b/laptop-scanner/scanner-agent/agent/gmp_local.py	2026-10-04 13:39:31.438779568 +0000
+@@ -1199,19 +1199,29 @@
+         self.udp_profile = (os.environ.get("UDP_PROFILE") or "priority").strip().lower()
+         plugins_raw = int(os.environ.get("PLUGINS_TIMEOUT_SEC") or 0)
+         scanner_raw = int(os.environ.get("SCANNER_PLUGINS_TIMEOUT_SEC") or 0)
+-        # 0 used to mean 30 days. A single SMB connect loop (TCP 445) then
+-        # pinned the host at 94-97% until that day count expired.
++        # V45 (Nessus parity). The previous 60 s / 90 s floors were added to stop
++        # an SMB connect loop from pinning a host at 94-97 %, but
++        # ``scanner_plugins_timeout`` is the budget for the *port-scanner* NVTs
++        # (Nmap / find_service). A full T:1-65535 sweep needs minutes, so at 90 s
++        # the scanner was killed, no services were discovered and every host
++        # finished with only 3 informational results (plugin_errors=1).
++        #
++        # Use Greenbone's defaults (NVT 320 s, scanner NVTs 36 000 s). Hung
++        # hosts are bounded by the agent-side watchdog instead
++        # (MAX_SCAN_RUNTIME_SEC / STALL_SEC), which cancels the task and keeps
++        # partial results rather than silently degrading coverage.
+         if plugins_raw <= 0:
+-            plugins_raw = 60
++            plugins_raw = 320
+         if scanner_raw <= 0:
+-            scanner_raw = 90
+-        self.plugins_timeout = max(30, plugins_raw)
++            scanner_raw = 36000
++        self.plugins_timeout = max(60, plugins_raw)
+         self.scanner_plugins_timeout = max(self.plugins_timeout, scanner_raw)
+-        configured_checks = max(1, int(os.environ.get("GVM_MAX_CHECKS") or 16))
++        # V45: honour the configured per-host check concurrency. The old
++        # ``max(configured, 16)`` silently overrode GVM_MAX_CHECKS=8, so eight
++        # concurrent IP tasks became 128 NVT processes on a laptop.
++        configured_checks = max(1, int(os.environ.get("GVM_MAX_CHECKS") or 8))
+         self.max_hosts = max(1, int(os.environ.get("GVM_MAX_HOSTS") or 1))
+-        if self.max_hosts <= 1:
+-            configured_checks = max(configured_checks, 16)
+-        self.max_checks = configured_checks
++        self.max_checks = min(configured_checks, 16)
+         full_defaults = self.port_profile == "full"
+         read_raw = max(1, int(os.environ.get("GVM_CHECKS_READ_TIMEOUT") or (10 if full_defaults else 5)))
+         retry_raw = max(0, int(os.environ.get("GVM_TIMEOUT_RETRY") or (3 if full_defaults else 1)))
+--- a/laptop-scanner/docker-compose.yml	2026-10-04 13:39:31.423569673 +0000
++++ b/laptop-scanner/docker-compose.yml	2026-10-04 13:39:31.439000552 +0000
+@@ -140,6 +140,8 @@
+       GVM_CHECKS_READ_TIMEOUT: ${GVM_CHECKS_READ_TIMEOUT:-10}
+       GVM_TIMEOUT_RETRY: ${GVM_TIMEOUT_RETRY:-3}
+       GVM_OPEN_SOCK_MAX_ATTEMPTS: ${GVM_OPEN_SOCK_MAX_ATTEMPTS:-5}
++      PLUGINS_TIMEOUT_SEC: ${PLUGINS_TIMEOUT_SEC:-320}
++      SCANNER_PLUGINS_TIMEOUT_SEC: ${SCANNER_PLUGINS_TIMEOUT_SEC:-36000}
+     volumes:
+       - gvm_openvas_data:/mnt
+       - gvm_openvas_log:/var/log/openvas
+@@ -147,7 +149,9 @@
+       - /bin/sh
+       - -c
+       - |
+-        printf "table_driven_lsc = yes\nopenvasd_server = http://openvasd:80\nmax_hosts = %s\nmax_checks = %s\noptimize_test = %s\nplugins_timeout = 60\nscanner_plugins_timeout = 90\nchecks_read_timeout = 5\ntimeout_retry = 1\nopen_sock_max_attempts = 2\n" "$${GVM_MAX_HOSTS}" "$${GVM_MAX_CHECKS}" "$${GVM_OPTIMIZE_TEST}" > /mnt/openvas.conf
++        # V45: Nessus-parity scanner defaults. plugins_timeout/scanner_plugins_timeout
++        # were 60/90 s, which killed the full-port Nmap NVT before it finished.
++        printf "table_driven_lsc = yes\nopenvasd_server = http://openvasd:80\nmax_hosts = %s\nmax_checks = %s\noptimize_test = %s\nplugins_timeout = %s\nscanner_plugins_timeout = %s\nchecks_read_timeout = %s\ntimeout_retry = %s\nopen_sock_max_attempts = %s\nsafe_checks = yes\nreport_host_details = yes\nexpand_vhosts = yes\ntest_empty_vhost = yes\n" "$${GVM_MAX_HOSTS}" "$${GVM_MAX_CHECKS}" "$${GVM_OPTIMIZE_TEST}" "$${PLUGINS_TIMEOUT_SEC}" "$${SCANNER_PLUGINS_TIMEOUT_SEC}" "$${GVM_CHECKS_READ_TIMEOUT}" "$${GVM_TIMEOUT_RETRY}" "$${GVM_OPEN_SOCK_MAX_ATTEMPTS}" > /mnt/openvas.conf
+         sed "s/127/128/" /etc/openvas/openvas_log.conf | sed 's/gvm/openvas/' > /mnt/openvas_log.conf
+         chmod 644 /mnt/openvas.conf /mnt/openvas_log.conf
+         touch /var/log/openvas/openvas.log
+@@ -279,7 +283,7 @@
+       QUEUE_POLL_INTERVAL_SEC: ${QUEUE_POLL_INTERVAL_SEC:-3}
+       MAX_CONCURRENT_SCAN_JOBS: ${MAX_CONCURRENT_SCAN_JOBS:-1}
+       SCAN_IP_PARALLELISM: ${SCAN_IP_PARALLELISM:-auto}
+-      SCAN_IP_MAX_PARALLELISM: ${SCAN_IP_MAX_PARALLELISM:-6}
++      SCAN_IP_MAX_PARALLELISM: ${SCAN_IP_MAX_PARALLELISM:-8}
+       SCAN_SLO_MIN_HOSTS_PER_HOUR: ${SCAN_SLO_MIN_HOSTS_PER_HOUR:-15}
+       SCAN_SLO_HOSTS_PER_HOUR: ${SCAN_SLO_HOSTS_PER_HOUR:-18}
+       SCAN_EXPECTED_HOST_MINUTES: ${SCAN_EXPECTED_HOST_MINUTES:-20}
+@@ -290,8 +294,8 @@
+       REACHABILITY_TIMEOUT_SEC: ${REACHABILITY_TIMEOUT_SEC:-0.5}
+       REACHABILITY_WORKERS: ${REACHABILITY_WORKERS:-10}
+       IP_SCAN_LOG_DIR: ${IP_SCAN_LOG_DIR:-/app/logs/ip}
+-      SCANNER_PLUGINS_TIMEOUT_SEC: ${SCANNER_PLUGINS_TIMEOUT_SEC:-0}
+-      PLUGINS_TIMEOUT_SEC: ${PLUGINS_TIMEOUT_SEC:-0}
++      SCANNER_PLUGINS_TIMEOUT_SEC: ${SCANNER_PLUGINS_TIMEOUT_SEC:-36000}
++      PLUGINS_TIMEOUT_SEC: ${PLUGINS_TIMEOUT_SEC:-320}
+       GVM_OPEN_SOCK_MAX_ATTEMPTS: ${GVM_OPEN_SOCK_MAX_ATTEMPTS:-5}
+       GVM_TIMEOUT_RETRY: ${GVM_TIMEOUT_RETRY:-3}
+       GVM_CHECKS_READ_TIMEOUT: ${GVM_CHECKS_READ_TIMEOUT:-10}
+--- a/laptop-scanner/.env	2026-10-04 13:39:45.163153564 +0000
++++ b/laptop-scanner/.env	2026-10-04 13:39:45.178646277 +0000
+@@ -1,90 +1,98 @@
+-# Aetheris Laptop Scanner v1.4.8 final
+-# Production central endpoint using the trusted IP-address certificate.
+-CENTRAL_API_URL=https://future-softtech.co.in
+-#CENTRAL_API_PORT=8082
+-
+-# Organization / tenant used by the Aetheris login token.
+-TENANT_SLUG=a
+-
+-# Filled automatically by Start-Laptop.cmd after successful emailed-token binding.
+-# Do not paste the emailed access token here.
+-AGENT_TOKEN=ath1.a.ndate1976@gmail.com.cda24bb7d67ebfa2172df21e48474ae577850056f7fad60ef224b5ceada5071b
+-AGENT_RECOVERY_TOKEN=
+-AGENT_TOKEN_FILE=/run/aetheris-agent/agent-token
+-AGENT_INSTANCE_FILE=/run/aetheris-agent/agent-instance-id
+-FIRM_EMAIL=
+-FIRM_PASSWORD=
+-# Optional fixed scanner binding. Usually leave empty.
+-# SCANNER_NAME=Laptop-MYPC
+-# SCANNER_ID=
+-
+-# Local Greenbone / OpenVAS
+-GVM_USERNAME=admin
+-GVM_PASSWORD=admin
+-GVM_SOCKET_PATH=/run/gvmd/gvmd.sock
+-AUTO_REPAIR_GREENBONE=true
+-GREENBONE_INITIAL_WAIT_MIN=10
+-GREENBONE_RECOVERY_WAIT_MIN=20
+-# First VT import is intentionally allowed to finish without restarting OSPd.
+-GVM_FEED_LOAD_WAIT_MIN=5
+-
+-# Control plane security
+-VERIFY_TLS=true
+-BOOTSTRAP_TRANSPORT=docker
+-CENTRAL_API_TIMEOUT_SEC=0
+-AGENT_VERSION=1.5.1
+-
+-# persistent_edge | portable
+-SCANNER_ROLE=portable
+-
+-# Agent timing
+-POLL_INTERVAL_SEC=15
+-HEARTBEAT_INTERVAL_SEC=60
+-QUEUE_POLL_INTERVAL_SEC=3
+-STALL_PROGRESS_PCT=95
+-STALL_SEC=0
+-
+-# 15-18 IP/hour target profile
+-MAX_CONCURRENT_SCAN_JOBS=1
+-SCAN_IP_PARALLELISM=auto
+-SCAN_IP_MAX_PARALLELISM=6
+-SCAN_SLO_MIN_HOSTS_PER_HOUR=15
+-SCAN_SLO_HOSTS_PER_HOUR=18
+-SCAN_EXPECTED_HOST_MINUTES=20
+-SCAN_CPU_THROTTLE_C=84
+-SCAN_CPU_PAUSE_C=92
+-SKIP_UNREACHABLE_TARGETS=false
+-REACHABILITY_TIMEOUT_SEC=0.5
+-REACHABILITY_WORKERS=10
+-HIGH_PROGRESS_WARN_SEC=300
+-MAX_SCAN_RUNTIME_SEC=0
+-
+-# Site VA profile (Fundfox-style): SSH, TLS/SSL, SMB and the other common
+-# service ports. Discovery probes those ports first and OpenVAS tests only
+-# the ones that answer. Full 1-65535 TCP and all-UDP are what made scans sit
+-# for hours; safe_checks stays on so destructive tests are not run.
+-PORT_PROFILE=fast
+-UDP_PROFILE=off
+-UDP_PORT_RANGE=U:53,U:67-69,U:123,U:137-138,U:161-162,U:500,U:514,U:520,U:623,U:1434,U:1701,U:1812-1813,U:1900,U:4500,U:4789,U:5004,U:5060,U:5353,U:11211
+-PORT_DISCOVERY_ENABLED=true
+-PORT_DISCOVERY_TIMEOUT_SEC=0.25
+-PORT_DISCOVERY_WORKERS=32
+-PORT_DISCOVERY_RANGE=T:21-23,T:25,T:53,T:80,T:81,T:88,T:110,T:111,T:135,T:139,T:143,T:389,T:443,T:445,T:465,T:587,T:631,T:993,T:995,T:1433,T:1521,T:1723,T:2049,T:3000,T:3306,T:3389,T:5432,T:5672,T:5900,T:5985,T:6379,T:6443,T:8080,T:8443,T:9000,T:9418,T:27017
+-
+-# Greenbone task / report fidelity
+-GVM_MAX_HOSTS=1
+-GVM_MAX_CHECKS=8
+-GVM_REPORT_MIN_QOD=0
+-GVM_MIN_NVT_COUNT=10000
+-GVM_ALLOW_BARE_TASK_FALLBACK=false
+-GVM_OPTIMIZE_TEST=yes
+-GVM_SAFE_CHECKS=yes
+-GVM_EXPAND_VHOSTS=yes
+-GVM_TEST_EMPTY_VHOST=yes
+-GVM_CHECKS_READ_TIMEOUT=10
+-GVM_TIMEOUT_RETRY=3
+-GVM_OPEN_SOCK_MAX_ATTEMPTS=5
+-
+-# Durable per-IP logs
+-IP_SCAN_LOG_DIR=/app/logs/ip
+-SCANNER_ID=83f70358-8fb2-4b6c-879b-f7e50650a3d8
++# Aetheris Laptop Scanner v1.4.8 final
++# Production central endpoint using the trusted IP-address certificate.
++CENTRAL_API_URL=https://future-softtech.co.in
++#CENTRAL_API_PORT=8082
++
++# Organization / tenant used by the Aetheris login token.
++TENANT_SLUG=a
++
++# Filled automatically by Start-Laptop.cmd after successful emailed-token binding.
++# Do not paste the emailed access token here.
++AGENT_TOKEN=ath1.a.ndate1976@gmail.com.cda24bb7d67ebfa2172df21e48474ae577850056f7fad60ef224b5ceada5071b
++AGENT_RECOVERY_TOKEN=
++AGENT_TOKEN_FILE=/run/aetheris-agent/agent-token
++AGENT_INSTANCE_FILE=/run/aetheris-agent/agent-instance-id
++FIRM_EMAIL=
++FIRM_PASSWORD=
++# Optional fixed scanner binding. Usually leave empty.
++# SCANNER_NAME=Laptop-MYPC
++# SCANNER_ID=
++
++# Local Greenbone / OpenVAS
++GVM_USERNAME=admin
++GVM_PASSWORD=admin
++GVM_SOCKET_PATH=/run/gvmd/gvmd.sock
++AUTO_REPAIR_GREENBONE=true
++GREENBONE_INITIAL_WAIT_MIN=10
++GREENBONE_RECOVERY_WAIT_MIN=20
++# First VT import is intentionally allowed to finish without restarting OSPd.
++GVM_FEED_LOAD_WAIT_MIN=5
++
++# Control plane security
++VERIFY_TLS=true
++BOOTSTRAP_TRANSPORT=docker
++CENTRAL_API_TIMEOUT_SEC=0
++AGENT_VERSION=1.5.1
++
++# persistent_edge | portable
++SCANNER_ROLE=portable
++
++# Agent timing
++POLL_INTERVAL_SEC=15
++HEARTBEAT_INTERVAL_SEC=60
++QUEUE_POLL_INTERVAL_SEC=3
++STALL_PROGRESS_PCT=95
++STALL_SEC=1500
++
++# 15-18 IP/hour target profile
++MAX_CONCURRENT_SCAN_JOBS=1
++SCAN_IP_PARALLELISM=auto
++SCAN_IP_MAX_PARALLELISM=8
++SCAN_SLO_MIN_HOSTS_PER_HOUR=8
++SCAN_SLO_HOSTS_PER_HOUR=12
++SCAN_EXPECTED_HOST_MINUTES=35
++SCAN_CPU_THROTTLE_C=84
++SCAN_CPU_PAUSE_C=92
++SKIP_UNREACHABLE_TARGETS=false
++REACHABILITY_TIMEOUT_SEC=0.5
++REACHABILITY_WORKERS=10
++HIGH_PROGRESS_WARN_SEC=300
++MAX_SCAN_RUNTIME_SEC=5400
++
++# Site VA profile (Fundfox-style): SSH, TLS/SSL, SMB and the other common
++# service ports. Discovery probes those ports first and OpenVAS tests only
++# the ones that answer. Full 1-65535 TCP and all-UDP are what made scans sit
++# for hours; safe_checks stays on so destructive tests are not run.
++PORT_PROFILE=full
++UDP_PROFILE=priority
++UDP_PORT_RANGE=U:53,U:67-69,U:123,U:137-138,U:161-162,U:500,U:514,U:520,U:623,U:1434,U:1701,U:1812-1813,U:1900,U:4500,U:4789,U:5004,U:5060,U:5353,U:11211
++PORT_DISCOVERY_ENABLED=true
++PORT_DISCOVERY_TIMEOUT_SEC=0.25
++PORT_DISCOVERY_WORKERS=32
++PORT_DISCOVERY_RANGE=T:21-23,T:25,T:53,T:80,T:81,T:88,T:110,T:111,T:135,T:139,T:143,T:389,T:443,T:445,T:465,T:587,T:631,T:993,T:995,T:1433,T:1521,T:1723,T:2049,T:3000,T:3306,T:3389,T:5432,T:5672,T:5900,T:5985,T:6379,T:6443,T:8080,T:8443,T:9000,T:9418,T:27017
++
++# Greenbone task / report fidelity
++GVM_MAX_HOSTS=1
++GVM_MAX_CHECKS=8
++GVM_REPORT_MIN_QOD=0
++GVM_MIN_NVT_COUNT=10000
++GVM_ALLOW_BARE_TASK_FALLBACK=false
++GVM_OPTIMIZE_TEST=no
++GVM_SAFE_CHECKS=yes
++GVM_EXPAND_VHOSTS=yes
++GVM_TEST_EMPTY_VHOST=yes
++GVM_CHECKS_READ_TIMEOUT=10
++GVM_TIMEOUT_RETRY=3
++GVM_OPEN_SOCK_MAX_ATTEMPTS=5
++
++# V45 Nessus-parity: Greenbone default NVT budgets (the agent forced 60/90 s before)
++PLUGINS_TIMEOUT_SEC=320
++SCANNER_PLUGINS_TIMEOUT_SEC=36000
++# Nessus "Advanced Scan" parity: safe checks on (DoS off), all TCP + priority UDP,
++# web-app NVTs via "Full and fast"; credentialed SMB/SSH via central scanner_credentials.
++GVM_SCAN_CONFIG=Full and fast
++GVM_ALIVE_TEST=Consider Alive
++
++# Durable per-IP logs
++IP_SCAN_LOG_DIR=/app/logs/ip
++SCANNER_ID=83f70358-8fb2-4b6c-879b-f7e50650a3d8

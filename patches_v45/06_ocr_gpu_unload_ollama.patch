@@ -1,0 +1,23 @@
+--- a/backend/app/services/ocr_gpu.py	2026-10-04 13:41:04.317026785 +0000
++++ b/backend/app/services/ocr_gpu.py	2026-10-04 13:41:04.329973186 +0000
+@@ -49,6 +49,20 @@
+         unload_embedder()
+     except Exception as exc:
+         log.debug("embedder unload before OCR load: %s", exc)
++    # V45: on a single 12 GB card a resident 14B Ollama model (~9 GB) leaves no
++    # room for GLM-OCR at OCR_CUDA_MEMORY_FRACTION. RAG already evicts Ollama
++    # (GPU_THERMAL_UNLOAD_OLLAMA_BEFORE_RAG); OCR must do the same.
++    try:
++        import os as _os
++
++        if (_os.environ.get("GPU_THERMAL_UNLOAD_OLLAMA_BEFORE_OCR") or "true").strip().lower() in {"1", "true", "yes", "on"}:
++            from app.services.model_router import ollama_unload_all_models
++
++            unloaded = ollama_unload_all_models()
++            if unloaded:
++                log.info("Unloaded Ollama models before GLM-OCR load: %s", unloaded)
++    except Exception as exc:
++        log.debug("ollama unload before OCR load skipped: %s", exc)
+     try:
+         import gc
+         import os

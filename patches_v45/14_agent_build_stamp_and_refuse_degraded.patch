@@ -1,0 +1,482 @@
+--- a/backend/app/services/scanner_agent_jobs.py	2026-10-03 18:34:40.000000000 +0000
++++ b/backend/app/services/scanner_agent_jobs.py	2026-10-04 17:15:49.277346466 +0000
+@@ -1185,6 +1185,7 @@
+     alive_test: str | None = None,
+     report_read_error: str | None = None,
+     agent_instance_id: str | None = None,
++    host_coverage: dict[str, Any] | None = None,
+ ) -> dict[str, Any]:
+     """Ingest an edge-agent result and persist host-assessment evidence.
+ 
+@@ -1390,6 +1391,61 @@
+     orch["report_id"] = effective_report_id
+     orch["skipped_hosts"] = skipped_details
+     orch["assessed_hosts"] = assessed_list
++    # V45.4: per-IP coverage from the agent. A host whose port scanner was killed
++    # is shown as "incomplete" with the reason, never as a green "completed".
++    host_cov = host_coverage if isinstance(host_coverage, dict) else None
++    # V45.4 central guard: an agent that predates the coverage verdict uploads no
++    # host_coverage at all. Recognise the truncated-scan signature anyway
++    # (scanner errors present and <= 3 results per assessed host, all info) and
++    # mark every assessed host incomplete rather than green.
++    if not host_cov and int(plugin_errors or 0) > 0:
++        per_host = int(result_count or 0) / float(max(int(assessed or 0), 1))
++        non_info = 0
++        for v in vulnerabilities or []:
++            sev = str((v or {}).get("severity") or (v or {}).get("threat") or "").strip().lower()
++            if sev and sev not in {"info", "log", "none", "informational", "0", "0.0"}:
++                non_info += 1
++        if per_host <= 3.0 and non_info == 0:
++            reason = (
++                f"legacy agent (no coverage data): {int(result_count or 0)} informational result(s) over "
++                f"{int(assessed or 0)} host(s) with {int(plugin_errors or 0)} scanner error(s) - port scan did not finish"
++            )
++            host_cov = {
++                str(h): {"verdict": "degraded_legacy_signature", "reason": reason, "open_tcp_ports": [], "nvts_launched": 0}
++                for h in assessed_list
++            }
++    if isinstance(host_cov, dict) and host_cov:
++        tp = dict(orch.get("target_progress") or {}) if isinstance(orch.get("target_progress"), dict) else {}
++        degraded_now: list[str] = []
++        for cov_host, cov in host_cov.items():
++            if not isinstance(cov, dict):
++                continue
++            verdict = str(cov.get("verdict") or "full")
++            entry = dict(tp.get(cov_host) or {})
++            if verdict.startswith("degraded"):
++                degraded_now.append(str(cov_host))
++                entry["status"] = "incomplete"
++                entry["activity"] = f"Incomplete — {str(cov.get('reason') or verdict)[:160]}"
++            else:
++                entry["status"] = "completed"
++                entry["activity"] = "Completed"
++            entry["coverage"] = {
++                "verdict": verdict,
++                "open_tcp_ports": len(cov.get("open_tcp_ports") or []),
++                "nvts_launched": int(cov.get("nvts_launched") or 0),
++            }
++            tp[str(cov_host)] = entry
++        orch["target_progress"] = tp
++        orch["host_coverage"] = host_cov
++        orch["degraded_hosts"] = degraded_now
++        if degraded_now:
++            orch["completed_with_warnings"] = True
++            orch["clean_eligible"] = False
++            orch["partial"] = True
++            orch["partial_reason"] = (
++                f"{len(degraded_now)} host(s) incomplete — port scan did not finish: {', '.join(degraded_now[:5])}"
++            )[:500]
++            orch["edge_progress"] = {"pct": 100.0, "message": orch["partial_reason"]}
+     orch["reachable_target_count"] = required_count
+     orch["plugin_error_count"] = plugin_errors
+     orch["result_payload_ok"] = result_payload_ok
+--- a/laptop-scanner/scanner-agent/agent/main.py	2026-10-03 02:23:13.000000000 +0000
++++ b/laptop-scanner/scanner-agent/agent/main.py	2026-10-04 17:15:31.192667428 +0000
+@@ -60,6 +60,15 @@
+     return (os.environ.get("AGENT_TOKEN") or "").strip()
+ 
+ 
++def _agent_build() -> str:
++    try:
++        from agent import AGENT_BUILD
++
++        return str(AGENT_BUILD)
++    except Exception:
++        return "unknown"
++
++
+ def _read_agent_version() -> str:
+     version_file = Path(os.environ.get("AGENT_VERSION_FILE") or "/app/.agent-version")
+     try:
+@@ -69,7 +78,9 @@
+                 return value
+     except OSError:
+         log.warning("Unable to read AGENT_VERSION_FILE=%s; falling back to environment", version_file)
+-    return (os.environ.get("AGENT_VERSION") or "1.5.0").strip() or "1.5.0"
++    base = (os.environ.get("AGENT_VERSION") or "1.5.0").strip() or "1.5.0"
++    build = _agent_build()
++    return base if build == "unknown" or base.endswith(build.split("-", 1)[-1]) else f"{base}+{build.split('-', 1)[-1]}"
+ 
+ 
+ def _cfg() -> dict[str, Any]:
+@@ -252,6 +263,8 @@
+         "report_result_count": int(evidence.get("report_result_count") or 0),
+         "plugin_error_count": int(evidence.get("plugin_error_count") or 0),
+         "plugin_error_details": evidence.get("plugin_error_details") or [],
++        "host_coverage": evidence.get("host_coverage") or {},
++        "degraded_hosts": evidence.get("degraded_hosts") or [],
+         "scan_start": evidence.get("scan_start"),
+         "scan_end": evidence.get("scan_end"),
+         "assessment_complete": bool(evidence.get("assessment_complete")),
+@@ -305,6 +318,7 @@
+     seen_report_ids: set[str] = set()
+     assessed: set[str] = set()
+     plugin_errors: list[Any] = []
++    host_coverage: dict[str, dict[str, Any]] = {}
+     report_ids: list[str] = []
+     gmp_statuses: list[str] = []
+     statuses: list[str] = []
+@@ -356,6 +370,9 @@
+             assessed.add(str(h).strip())
+         result_count += int(ev.get("report_result_count") or 0)
+         plugin_errors.extend(ev.get("plugin_error_details") or [])
++        for cov_host, cov in (ev.get("host_coverage") or {}).items():
++            if isinstance(cov, dict):
++                host_coverage[str(cov_host)] = cov
+         if ev.get("report_id"):
+             report_ids.append(str(ev["report_id"]))
+         raw_task = str(ev.get("task_status") or details.get("gmp_status") or "").strip().lower()
+@@ -464,6 +481,10 @@
+             "report_result_count": result_count,
+             "plugin_error_count": len(plugin_errors),
+             "plugin_error_details": plugin_errors[:50],
++            "host_coverage": host_coverage,
++            "degraded_hosts": sorted(
++                h for h, c in host_coverage.items() if str((c or {}).get("verdict") or "").startswith("degraded")
++            ),
+             "scan_start": min(scan_starts) if scan_starts else (now_iso if assessment_complete and skipped else None),
+             "scan_end": max(scan_ends) if scan_ends else (now_iso if assessment_complete and skipped else None),
+             "assessment_complete": assessment_complete,
+@@ -714,6 +735,10 @@
+     task_ids: list[str | None] = [None] * len(chunks)
+     done_details: dict[int, dict[str, Any]] = {}
+     pending: list[int] = list(range(len(chunks)))
++    # V45.4: one automatic re-run per chunk when the report proves the port
++    # scanner never finished (truncated scan reported as Done).
++    degraded_retries: dict[int, int] = {}
++    degraded_retry_budget = max(0, int(os.environ.get("SCAN_DEGRADED_RETRY") or 1))
+     in_flight: dict[int, str] = {}
+     ip_started_mono: dict[int, float] = {}
+     ip_last_state: dict[int, tuple[str, int]] = {}
+@@ -1040,10 +1065,38 @@
+                     else:
+                         poll_results[idx] = details
+                         if st == "completed":
++                            cov = ((details.get("evidence") or {}).get("host_coverage") or {}).get(host) or {}
++                            cov_verdict = str(cov.get("verdict") or "full")
++                            if cov_verdict.startswith("degraded") and degraded_retries.get(idx, 0) < degraded_retry_budget:
++                                degraded_retries[idx] = degraded_retries.get(idx, 0) + 1
++                                log.warning(
++                                    "Job %s IP %s: scan DEGRADED (%s) — %s; re-running once",
++                                    job_id, host, cov_verdict, cov.get("reason"),
++                                )
++                                emit_ip_event(
++                                    job_id, host, "coverage_retry", task_id=tid, verdict=cov_verdict,
++                                    reason=cov.get("reason"), attempt=degraded_retries[idx], chunk_index=idx,
++                                )
++                                task_ids[idx] = None
++                                poll_results.pop(idx, None)
++                                in_flight.pop(idx, None)
++                                slot_sem.release()
++                                pending.append(idx)
++                                continue
++                            if cov_verdict.startswith("degraded"):
++                                log.error(
++                                    "Job %s IP %s: scan INCOMPLETE after retry (%s) — %s",
++                                    job_id, host, cov_verdict, cov.get("reason"),
++                                )
++                                emit_ip_event(
++                                    job_id, host, "coverage_incomplete", task_id=tid, verdict=cov_verdict,
++                                    reason=cov.get("reason"), chunk_index=idx,
++                                )
+                             done_details[idx] = details
+                             finished_idxs.append(idx)
+                             emit_ip_event(
+                                 job_id, host, "completed", task_id=tid, progress=100,
++                                coverage=cov_verdict, agent_build=_agent_build(),
+                                 vulnerabilities=len(details.get("vulnerabilities") or []),
+                                 report_id=(details.get("evidence") or {}).get("report_id"),
+                                 report_results=(details.get("evidence") or {}).get("report_result_count"),
+@@ -1282,6 +1335,39 @@
+         cfg["high_progress_warn_sec"],
+         cfg["max_scan_runtime_sec"],
+     )
++    # V45.4: unmistakable build + effective scan profile, then a hard self-check.
++    # A truncating profile (port scanner killed before it finishes) produces 3
++    # info results per host with plugin_errors=1 and looks "completed". Never run
++    # that silently: refuse to claim jobs until the config is fixed.
++    try:
++        from agent import AGENT_BUILD
++    except Exception:
++        AGENT_BUILD = "unknown"
++    degraded_retry = int(os.environ.get("SCAN_DEGRADED_RETRY") or 1)
++    log.info(
++        "AGENT BUILD %s | port_profile=%s udp_profile=%s plugins_timeout=%ss scanner_plugins_timeout=%ss "
++        "optimize_test=%s max_checks=%s coverage_guard=on degraded_retry=%d",
++        AGENT_BUILD,
++        getattr(openvas, "port_profile", "?"),
++        getattr(openvas, "udp_profile", "?"),
++        getattr(openvas, "plugins_timeout", "?"),
++        getattr(openvas, "scanner_plugins_timeout", "?"),
++        getattr(openvas, "optimize_test", "?"),
++        getattr(openvas, "max_checks", "?"),
++        degraded_retry,
++    )
++    allow_degraded = (os.environ.get("ALLOW_DEGRADED_SCAN") or "false").strip().lower() in {"1", "true", "yes", "on"}
++    spt = int(getattr(openvas, "scanner_plugins_timeout", 0) or 0)
++    pt = int(getattr(openvas, "plugins_timeout", 0) or 0)
++    while (spt < 1800 or pt < 120) and not allow_degraded:
++        log.error(
++            "DEGRADED SCAN CONFIG - scanner_plugins_timeout=%ss plugins_timeout=%ss would kill the port-scanner "
++            "NVT before a full-port sweep finishes (hosts finish with ~3 informational results). "
++            "Set SCANNER_PLUGINS_TIMEOUT_SEC=36000 and PLUGINS_TIMEOUT_SEC=320 in laptop-scanner/.env and "
++            "recreate scanner-agent (Deploy-V45-Laptop.cmd). Not claiming jobs. Override: ALLOW_DEGRADED_SCAN=true",
++            spt, pt,
++        )
++        time.sleep(60)
+     log.info(
+         "Capacity policy: jobs=%d (configured=%d) ip_workers=%d chunk_size=%d "
+         "thermal=%s cpu_temp=%sC load_ratio=%.2f SCAN_IP_PARALLELISM=%s; queue-poll=%ss; "
+--- a/laptop-scanner/scanner-agent/agent/__init__.py	2026-10-02 14:51:43.000000000 +0000
++++ b/laptop-scanner/scanner-agent/agent/__init__.py	2026-10-04 17:15:31.195896222 +0000
+@@ -1 +1,5 @@
+-"""On-site scanner agent: poll central API, run local OpenVAS, upload findings."""
++"""Aetheris laptop scanner agent."""
++
++# V45.4 build stamp. Logged at startup, sent in heartbeats and in every per-IP
++# event so the central log proves which code produced a scan.
++AGENT_BUILD = "1.5.1-v45.4"
+--- a/laptop-scanner/.env	2026-10-03 02:03:48.000000000 +0000
++++ b/laptop-scanner/.env	2026-10-04 17:15:31.198355039 +0000
+@@ -1,90 +1,102 @@
+-# Aetheris Laptop Scanner v1.4.8 final
+-# Production central endpoint using the trusted IP-address certificate.
+-CENTRAL_API_URL=https://future-softtech.co.in
+-#CENTRAL_API_PORT=8082
+-
+-# Organization / tenant used by the Aetheris login token.
+-TENANT_SLUG=a
+-
+-# Filled automatically by Start-Laptop.cmd after successful emailed-token binding.
+-# Do not paste the emailed access token here.
+-AGENT_TOKEN=ath1.a.ndate1976@gmail.com.cda24bb7d67ebfa2172df21e48474ae577850056f7fad60ef224b5ceada5071b
+-AGENT_RECOVERY_TOKEN=
+-AGENT_TOKEN_FILE=/run/aetheris-agent/agent-token
+-AGENT_INSTANCE_FILE=/run/aetheris-agent/agent-instance-id
+-FIRM_EMAIL=
+-FIRM_PASSWORD=
+-# Optional fixed scanner binding. Usually leave empty.
+-# SCANNER_NAME=Laptop-MYPC
+-# SCANNER_ID=
+-
+-# Local Greenbone / OpenVAS
+-GVM_USERNAME=admin
+-GVM_PASSWORD=admin
+-GVM_SOCKET_PATH=/run/gvmd/gvmd.sock
+-AUTO_REPAIR_GREENBONE=true
+-GREENBONE_INITIAL_WAIT_MIN=10
+-GREENBONE_RECOVERY_WAIT_MIN=20
+-# First VT import is intentionally allowed to finish without restarting OSPd.
+-GVM_FEED_LOAD_WAIT_MIN=5
+-
+-# Control plane security
+-VERIFY_TLS=true
+-BOOTSTRAP_TRANSPORT=docker
+-CENTRAL_API_TIMEOUT_SEC=0
+-AGENT_VERSION=1.5.1
+-
+-# persistent_edge | portable
+-SCANNER_ROLE=portable
+-
+-# Agent timing
+-POLL_INTERVAL_SEC=15
+-HEARTBEAT_INTERVAL_SEC=60
+-QUEUE_POLL_INTERVAL_SEC=3
+-STALL_PROGRESS_PCT=95
+-STALL_SEC=0
+-
+-# 15-18 IP/hour target profile
+-MAX_CONCURRENT_SCAN_JOBS=1
+-SCAN_IP_PARALLELISM=auto
+-SCAN_IP_MAX_PARALLELISM=6
+-SCAN_SLO_MIN_HOSTS_PER_HOUR=15
+-SCAN_SLO_HOSTS_PER_HOUR=18
+-SCAN_EXPECTED_HOST_MINUTES=20
+-SCAN_CPU_THROTTLE_C=84
+-SCAN_CPU_PAUSE_C=92
+-SKIP_UNREACHABLE_TARGETS=false
+-REACHABILITY_TIMEOUT_SEC=0.5
+-REACHABILITY_WORKERS=10
+-HIGH_PROGRESS_WARN_SEC=300
+-MAX_SCAN_RUNTIME_SEC=0
+-
+-# Site VA profile (Fundfox-style): SSH, TLS/SSL, SMB and the other common
+-# service ports. Discovery probes those ports first and OpenVAS tests only
+-# the ones that answer. Full 1-65535 TCP and all-UDP are what made scans sit
+-# for hours; safe_checks stays on so destructive tests are not run.
+-PORT_PROFILE=fast
+-UDP_PROFILE=off
+-UDP_PORT_RANGE=U:53,U:67-69,U:123,U:137-138,U:161-162,U:500,U:514,U:520,U:623,U:1434,U:1701,U:1812-1813,U:1900,U:4500,U:4789,U:5004,U:5060,U:5353,U:11211
+-PORT_DISCOVERY_ENABLED=true
+-PORT_DISCOVERY_TIMEOUT_SEC=0.25
+-PORT_DISCOVERY_WORKERS=32
+-PORT_DISCOVERY_RANGE=T:21-23,T:25,T:53,T:80,T:81,T:88,T:110,T:111,T:135,T:139,T:143,T:389,T:443,T:445,T:465,T:587,T:631,T:993,T:995,T:1433,T:1521,T:1723,T:2049,T:3000,T:3306,T:3389,T:5432,T:5672,T:5900,T:5985,T:6379,T:6443,T:8080,T:8443,T:9000,T:9418,T:27017
+-
+-# Greenbone task / report fidelity
+-GVM_MAX_HOSTS=1
+-GVM_MAX_CHECKS=8
+-GVM_REPORT_MIN_QOD=0
+-GVM_MIN_NVT_COUNT=10000
+-GVM_ALLOW_BARE_TASK_FALLBACK=false
+-GVM_OPTIMIZE_TEST=yes
+-GVM_SAFE_CHECKS=yes
+-GVM_EXPAND_VHOSTS=yes
+-GVM_TEST_EMPTY_VHOST=yes
+-GVM_CHECKS_READ_TIMEOUT=10
+-GVM_TIMEOUT_RETRY=3
+-GVM_OPEN_SOCK_MAX_ATTEMPTS=5
+-
+-# Durable per-IP logs
+-IP_SCAN_LOG_DIR=/app/logs/ip
+-SCANNER_ID=83f70358-8fb2-4b6c-879b-f7e50650a3d8
++# Aetheris Laptop Scanner v1.4.8 final
++# Production central endpoint using the trusted IP-address certificate.
++CENTRAL_API_URL=https://future-softtech.co.in
++#CENTRAL_API_PORT=8082
++
++# Organization / tenant used by the Aetheris login token.
++TENANT_SLUG=a
++
++# Filled automatically by Start-Laptop.cmd after successful emailed-token binding.
++# Do not paste the emailed access token here.
++AGENT_TOKEN=ath1.a.ndate1976@gmail.com.cda24bb7d67ebfa2172df21e48474ae577850056f7fad60ef224b5ceada5071b
++AGENT_RECOVERY_TOKEN=
++AGENT_TOKEN_FILE=/run/aetheris-agent/agent-token
++AGENT_INSTANCE_FILE=/run/aetheris-agent/agent-instance-id
++FIRM_EMAIL=
++FIRM_PASSWORD=
++# Optional fixed scanner binding. Usually leave empty.
++# SCANNER_NAME=Laptop-MYPC
++# SCANNER_ID=
++
++# Local Greenbone / OpenVAS
++GVM_USERNAME=admin
++GVM_PASSWORD=admin
++GVM_SOCKET_PATH=/run/gvmd/gvmd.sock
++AUTO_REPAIR_GREENBONE=true
++GREENBONE_INITIAL_WAIT_MIN=10
++GREENBONE_RECOVERY_WAIT_MIN=20
++# First VT import is intentionally allowed to finish without restarting OSPd.
++GVM_FEED_LOAD_WAIT_MIN=5
++
++# Control plane security
++VERIFY_TLS=true
++BOOTSTRAP_TRANSPORT=docker
++CENTRAL_API_TIMEOUT_SEC=0
++AGENT_VERSION=1.5.1
++
++# persistent_edge | portable
++SCANNER_ROLE=portable
++
++# Agent timing
++POLL_INTERVAL_SEC=15
++HEARTBEAT_INTERVAL_SEC=60
++QUEUE_POLL_INTERVAL_SEC=3
++STALL_PROGRESS_PCT=95
++STALL_SEC=1500
++
++# 15-18 IP/hour target profile
++MAX_CONCURRENT_SCAN_JOBS=1
++SCAN_IP_PARALLELISM=auto
++SCAN_IP_MAX_PARALLELISM=8
++SCAN_SLO_MIN_HOSTS_PER_HOUR=8
++SCAN_SLO_HOSTS_PER_HOUR=12
++SCAN_EXPECTED_HOST_MINUTES=35
++SCAN_CPU_THROTTLE_C=84
++SCAN_CPU_PAUSE_C=92
++SKIP_UNREACHABLE_TARGETS=false
++REACHABILITY_TIMEOUT_SEC=0.5
++REACHABILITY_WORKERS=10
++HIGH_PROGRESS_WARN_SEC=300
++MAX_SCAN_RUNTIME_SEC=5400
++
++# Site VA profile (Fundfox-style): SSH, TLS/SSL, SMB and the other common
++# service ports. Discovery probes those ports first and OpenVAS tests only
++# the ones that answer. Full 1-65535 TCP and all-UDP are what made scans sit
++# for hours; safe_checks stays on so destructive tests are not run.
++PORT_PROFILE=full
++UDP_PROFILE=priority
++UDP_PORT_RANGE=U:53,U:67-69,U:123,U:137-138,U:161-162,U:500,U:514,U:520,U:623,U:1434,U:1701,U:1812-1813,U:1900,U:4500,U:4789,U:5004,U:5060,U:5353,U:11211
++PORT_DISCOVERY_ENABLED=true
++PORT_DISCOVERY_TIMEOUT_SEC=0.25
++PORT_DISCOVERY_WORKERS=32
++PORT_DISCOVERY_RANGE=T:21-23,T:25,T:53,T:80,T:81,T:88,T:110,T:111,T:135,T:139,T:143,T:389,T:443,T:445,T:465,T:587,T:631,T:993,T:995,T:1433,T:1521,T:1723,T:2049,T:3000,T:3306,T:3389,T:5432,T:5672,T:5900,T:5985,T:6379,T:6443,T:8080,T:8443,T:9000,T:9418,T:27017
++
++# Greenbone task / report fidelity
++GVM_MAX_HOSTS=1
++GVM_MAX_CHECKS=8
++GVM_REPORT_MIN_QOD=0
++GVM_MIN_NVT_COUNT=10000
++GVM_ALLOW_BARE_TASK_FALLBACK=false
++GVM_OPTIMIZE_TEST=no
++GVM_SAFE_CHECKS=yes
++GVM_EXPAND_VHOSTS=yes
++GVM_TEST_EMPTY_VHOST=yes
++GVM_CHECKS_READ_TIMEOUT=10
++GVM_TIMEOUT_RETRY=3
++GVM_OPEN_SOCK_MAX_ATTEMPTS=5
++
++# V45 Nessus-parity: Greenbone default NVT budgets (the agent forced 60/90 s before)
++PLUGINS_TIMEOUT_SEC=320
++SCANNER_PLUGINS_TIMEOUT_SEC=36000
++# V45.4: re-run a host once when the report proves the port scanner never finished
++SCAN_DEGRADED_RETRY=1
++# V45.4: the agent refuses to claim jobs when scanner_plugins_timeout < 1800s (truncated scans). Diagnostic override only.
++ALLOW_DEGRADED_SCAN=false
++# Nessus "Advanced Scan" parity: safe checks on (DoS off), all TCP + priority UDP,
++# web-app NVTs via "Full and fast"; credentialed SMB/SSH via central scanner_credentials.
++GVM_SCAN_CONFIG=Full and fast
++GVM_ALIVE_TEST=Consider Alive
++
++# Durable per-IP logs
++IP_SCAN_LOG_DIR=/app/logs/ip
++SCANNER_ID=83f70358-8fb2-4b6c-879b-f7e50650a3d8
+--- /dev/null	2026-10-02 22:48:19.581966732 +0000
++++ b/laptop-scanner/Deploy-V45-Laptop.cmd	2026-10-04 17:15:31.199437286 +0000
+@@ -0,0 +1,46 @@
++@echo off
++setlocal EnableDelayedExpansion
++cd /d "%~dp0"
++echo ============================================================
++echo  Aetheris laptop scanner - deploy V45.4 (coverage guard)
++echo ============================================================
++echo.
++echo [0] Sanity: is THIS folder the V45.4 package?
++findstr /C:"AGENT_BUILD = \"1.5.1-v45.4\"" scanner-agent\agent\__init__.py >nul || (
++  echo   FAIL: scanner-agent\agent\__init__.py has no V45.4 build stamp.
++  echo         You are running this from an old folder. Unzip laptop-scanner_v45_full.zip over this folder first.
++  pause & exit /b 2
++)
++findstr /C:"SCANNER_PLUGINS_TIMEOUT_SEC=36000" .env >nul || (
++  echo   FAIL: .env is not the V45 .env ^(SCANNER_PLUGINS_TIMEOUT_SEC=36000 missing^).
++  echo         Copy the .env from the V45 package ^(keep your GVM_PASSWORD / tokens^).
++  pause & exit /b 2
++)
++findstr /C:"PORT_PROFILE=full" .env >nul || echo   WARN: PORT_PROFILE is not full - scans will use the fast port list.
++echo   ok: package and .env are V45.4
++echo.
++echo [1] Recreating scanner stack ^(openvas.conf is regenerated by configure-openvas^)...
++docker compose stop -t 30 scanner-agent
++docker compose rm -f -s scanner-agent configure-openvas >nul 2>&1
++docker compose up -d --build --force-recreate configure-openvas openvasd openvas ospd-openvas scanner-agent
++if errorlevel 1 (
++  echo   FAIL: docker compose up failed. See output above.
++  pause & exit /b 1
++)
++echo.
++echo [2] Waiting 25s for the agent banner...
++timeout /t 25 /nobreak >nul
++echo.
++echo [3] openvas.conf inside the scanner ^(expect plugins_timeout = 320, scanner_plugins_timeout = 36000^):
++docker compose exec -T openvas cat /etc/openvas/openvas.conf
++echo.
++echo [4] Agent startup banner ^(expect "AGENT BUILD 1.5.1-v45.4 ... scanner_plugins_timeout=36000s coverage_guard=on"^):
++docker compose logs --tail 300 scanner-agent 2>nul | findstr /C:"AGENT BUILD" /C:"DEGRADED SCAN CONFIG" /C:"OpenVAS quality profile"
++echo.
++echo ------------------------------------------------------------
++echo  If [4] shows "DEGRADED SCAN CONFIG" the agent is refusing jobs on purpose:
++echo  fix laptop-scanner\.env timeouts and run this script again.
++echo  If [4] shows no "AGENT BUILD" line at all, the container is still the old
++echo  image/folder: run  docker compose ps  and check the agent's mounted source path.
++echo ------------------------------------------------------------
++pause

@@ -1,0 +1,38 @@
+--- stage/a/docker-compose.yml	2026-10-04 16:14:30.452742894 +0000
++++ stage/b/docker-compose.yml	2026-10-04 16:14:30.493352127 +0000
+@@ -428,6 +428,7 @@
+       - ./scripts:/scripts
+       - ./migrations:/migrations
+       - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
++      - evidence_staging:/host/${EVIDENCE_STAGING_LETTER:-z}
+       - type: bind
+         source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data
+         target: /app/data
+@@ -475,6 +476,7 @@
+       - ./backend:/app
+       - ./scripts:/scripts:ro
+       - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
++      - evidence_staging:/host/${EVIDENCE_STAGING_LETTER:-z}
+       - type: bind
+         source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/job-data
+         target: /app/data
+@@ -523,6 +525,7 @@
+       - ./backend:/app
+       - ./scripts:/scripts:ro
+       - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
++      - evidence_staging:/host/${EVIDENCE_STAGING_LETTER:-z}
+       - type: bind
+         source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/job-data
+         target: /app/data
+@@ -805,6 +808,11 @@
+         condition: service_healthy
+ 
+ volumes:
++  # V45.3: evidence staged into the docker-desktop VM (ext4). Reads are native —
++  # no Windows file-sharing layer, so no 2-3 MB/s ceiling and no unkillable
++  # D-state worker. Appears in the UI as drive ${EVIDENCE_STAGING_LETTER:-Z}:.
++  # Fill it with Stage-Evidence.cmd <source folder> <case name>.
++  evidence_staging:
+   neo4j_data:
+   opensearch_data:
+ 

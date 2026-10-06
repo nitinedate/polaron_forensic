@@ -1,0 +1,31 @@
+# Auto-generated dynamic Windows drive mounts. Do not edit by hand.
+# Regenerate: powershell -File scripts/generate-drive-mounts.ps1
+# Direct Windows paths use bind mounts. Verified daemon paths use pre-created external volumes.
+
+services:
+  api:
+    volumes:
+      - type: bind
+        source: 'C:/'
+        target: '/host/c'
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: 'D:/'
+        target: '/host/d'
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: 'E:/'
+        target: '/host/e'
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: 'F:/'
+        target: '/host/f'
+        read_only: true
+        bind:
+          create_host_path: false

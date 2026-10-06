@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Aetheris",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "forensic",
+      "Username": "forensic",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpass"
+    }
+  }
+}

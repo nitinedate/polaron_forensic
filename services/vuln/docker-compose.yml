@@ -1,0 +1,160 @@
+# Service 3 — Vulnerabilities + laptop scanner control plane.
+# Laptop agent polls this API only (CENTRAL_API_URL → UI :3003 or API :8082).
+# From repo root:
+#   docker compose -f services/vuln/docker-compose.yml --project-directory . --profile gvm --profile vuln-scanners up -d --build
+name: aetheris-vuln
+
+include:
+  - docker-compose.gvm.yml
+  - docker-compose.vuln-scanners.yml
+
+x-vuln-env: &vuln-env
+  AETHERIS_SERVICE: vuln
+  VULN_MODULE_ENABLED: "true"
+  DATABASE_URL: postgresql+psycopg2://forensic:forensic@postgres:5432/forensic
+  REDIS_URL: redis://redis:6379/3
+  DATA_ROOT: /app/data
+  TMPDIR: /app/data/tmp
+  TMP: /app/data/tmp
+  TEMP: /app/data/tmp
+  AETHERIS_WORKER: "1"
+  IDLE_IN_TRANSACTION_SESSION_TIMEOUT: "0"
+  PIPELINE_SUPERVISOR_ENABLED: "false"
+  RAG_EMBEDDING_ENABLED: "false"
+  MAIL_SEND_ENABLED: "false"
+  NESSUS_WORKER_CONCURRENCY: ${NESSUS_WORKER_CONCURRENCY:-4}
+  VULN_MAX_PARALLEL_JOBS: ${VULN_MAX_PARALLEL_JOBS:-4}
+  DYNAMIC_PERF_ENABLED: ${DYNAMIC_PERF_ENABLED:-true}
+  DYNAMIC_PERF_FORCE: ${DYNAMIC_PERF_FORCE:-true}
+  AETHERIS_SHARE_HOST: ${AETHERIS_SHARE_HOST:-true}
+  LONG_JOB_TIMEOUT_SEC: ${LONG_JOB_TIMEOUT_SEC:-0}
+  VULN_PARALLEL_MIN_PACE: ${VULN_PARALLEL_MIN_PACE:-0.45}
+  GVM_HOST: ${GVM_HOST:-gvmd}
+  GVM_PORT: ${GVM_PORT:-9390}
+  GVM_URL: ${GVM_URL:-unix:///run/gvmd/gvmd.sock}
+  GVM_SOCKET_PATH: ${GVM_SOCKET_PATH:-/run/gvmd/gvmd.sock}
+  GVM_USERNAME: ${GVM_USERNAME:-admin}
+  GVM_PASSWORD: ${GVM_PASSWORD:-}
+  GVM_ADMIN_PASSWORD: ${GVM_ADMIN_PASSWORD:-admin}
+  GVM_LIVE_ENABLED: ${GVM_LIVE_ENABLED:-false}
+  GVM_PORT_PROFILE: ${GVM_PORT_PROFILE:-full}
+  GVM_MAX_HOSTS: ${GVM_MAX_HOSTS:-8}
+  GVM_OPTIMIZE_TEST: ${GVM_OPTIMIZE_TEST:-false}
+  GVM_SCAN_STALL_SEC: ${GVM_SCAN_STALL_SEC:-90}
+  GVM_SCAN_TIMEOUT_SEC: ${GVM_SCAN_TIMEOUT_SEC:-240}
+  VULN_TARGET_WORKERS: ${VULN_TARGET_WORKERS:-4}
+  ZAP_API_URL: ${ZAP_API_URL:-http://zap:8080}
+  ZAP_API_KEY: ${ZAP_API_KEY:-changeme}
+  TRIVY_SERVER_URL: ${TRIVY_SERVER_URL:-http://trivy:4954}
+  WAZUH_API_URL: ${WAZUH_API_URL:-https://wazuh-manager:55000}
+  ASV_MODULE_ENABLED: ${ASV_MODULE_ENABLED:-true}
+  PENTEST_MODULE_ENABLED: ${PENTEST_MODULE_ENABLED:-true}
+
+services:
+  api:
+    networks:
+      - default
+      - aetheris-common
+    image: rag_new2-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu130}
+    env_file:
+      - .env
+    environment:
+      <<: *vuln-env
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-superadmin@admin.com}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-admin@123456789}
+    ports:
+      - "127.0.0.1:8082:8080"
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts
+      - ./migrations:/migrations
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/vuln
+        target: /app/data
+    command: >
+      sh -c "mkdir -p /app/data/tmp && alembic upgrade head 2>/dev/null || true &&
+             python /scripts/ensure_sql_functions.py &&
+             python /scripts/bootstrap_platform_admin.py &&
+             uvicorn app.main_vuln:app --host 0.0.0.0 --port 8080"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 180s
+
+  worker-nessus:
+    networks:
+      - default
+      - aetheris-common
+    image: aetheris-vuln-worker-nessus
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.scanner
+    env_file:
+      - .env
+    environment:
+      <<: *vuln-env
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/vuln
+        target: /app/data
+      - gvm_gvmd_socket:/run/gvmd
+    depends_on:
+      api:
+        condition: service_healthy
+      gvmd:
+        condition: service_started
+        required: false
+      zap:
+        condition: service_started
+        required: false
+      trivy:
+        condition: service_started
+        required: false
+    entrypoint:
+      - python
+      - /scripts/dynamic_perf_entrypoint.py
+    command:
+      - celery
+      - -A
+      - app.celery_vuln.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=4
+      - --prefetch-multiplier=1
+      - -Q
+      - nessus-sync
+
+  frontend:
+    profiles: ["legacy-ui"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_AETHERIS_SERVICE: vuln
+        VITE_VULN_MODULE_ENABLED: "true"
+    ports:
+      - "3003:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+networks:
+  aetheris-common:
+    external: true
+    name: aetheris-common

@@ -1,0 +1,96 @@
+PDF artifacts parsed: 64
+XLSX artifacts parsed: 647
+Matched: 6  Gaps(nonzero): 6
+Only in PDF: 58  Only in XLSX: 641
+
+=== TOP GAPS (XLSX - PDF) ===
+  -59580  PDF=    70,580  XLSX=    11,000                Google Drive Account
+    +497  PDF=        15  XLSX=       512                Installed Applications
+    +425  PDF=        15  XLSX=       440                Scheduled Tasks
+    +298  PDF=        15  XLSX=       313                Registry
+     -10  PDF=        19  XLSX=         9                Pornography URLs
+      -8  PDF=        17  XLSX=         9                Virtual Machines
+
+=== ONLY IN PDF (sample 40) ===
+     2,009  1 operating system windows 10 pro
+         9  1. connected devices
+        13  1. user accounts  login activity
+        16  10. email artifacts (local clients)
+        17  11. clipboard  print activity
+        17  13. chat / communication apps
+        18  14. hidden partitions / alternate data streams (ads)
+        18  15. anti-forensic tools or cleanup attempts
+        18  16. data sync clients
+        19  17. shadow copies  backup artifacts
+        19  18. detection of torrent activity
+         9  2. application usages
+        13  2. file access and handling
+        10  3. communication
+        14  3. usb and external device usage
+        10  4. documents
+        14  4. network connections
+        11  5. email  calendar
+        11  6. encryption  credentials
+        12  7. media
+        16  8. antivirus  patch status
+        12  8. operating system
+        16  9. event logs  timeline reconstruction
+        12  9. web related
+         6  a. operating system
+         9  b. artifacts
+        13  c. objective procedure  observation -desktop ex-5
+        20  d. annexure
+        26  e. analysis summary
+        27  f. appendix
+         4  introduction
+        27  page 1 of
+        27  page 10 of
+        27  page 11 of
+        27  page 12 of
+        27  page 13 of
+        27  page 14 of
+        27  page 15 of
+        27  page 16 of
+        27  page 17 of
+
+=== ONLY IN XLSX with count>0 (sample 40) ===
+    75,145                Windows Event Logs - User Events
+    75,145                Windows Event Logs - User PNP Events
+    74,332                User Accounts - Windows
+    74,034                Windows Active Users
+    74,017                Signal Users - Windows
+    65,545                Prefetch Files - Windows XP/Vista/7
+    65,300                Prefetch Files - Windows 8/10/11
+    64,578                Windows Event Logs - Office Alert Events
+    64,142                Windows Event Logs - System Events
+    63,893                Windows Event Logs - Storage Device Events
+    63,634                Windows Event Logs - Service Events
+    63,417                Windows Event Logs - Script Events
+    63,322                Windows Event Logs - Firewall Events
+    63,281                Windows Event Logs
+    63,281                Windows Event Logs - Networking Events
+    63,281                Windows Event Logs - Scheduled Task Events
+    63,143                Microsoft Sticky Notes
+    61,357                Microsoft Teams Skype Messages
+    60,788                Microsoft Teams Direct Messages
+    60,767                Microsoft Teams Meeting Messages
+    60,761                Microsoft Teams Topic Messages
+    60,758                Microsoft Teams Messages Export
+    60,747                Microsoft Teams Direct Calls
+    60,726                Microsoft Teams Meeting Calls
+    60,714                Microsoft Teams Interactions
+    59,586                Windows Search - Document
+    59,564                KakaoTalk Shared Pictures - Windows
+    58,550                Windows Search - Image
+    57,516                Windows Notification Center
+    57,358                Signal Messages - Windows
+    57,338                Windows Viber Chat Messages
+    57,337                KakaoTalk Messages - Windows
+    57,337                QQ Messages - Windows
+    57,337                WhatsApp Messages - Windows
+    57,337                Windows Viber Messages
+    57,313                Windows Search - Outlook
+    57,311                Windows Search - Internet Explorer
+    57,295                Windows Firewall Rules
+    57,288                Telegram Media - Windows
+    57,257                Windows Mail

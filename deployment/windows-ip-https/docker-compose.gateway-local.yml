@@ -1,0 +1,8 @@
+# Loopback UI for local deployments; the public override replaces these ports.
+services:
+  gateway:
+    # Keep Docker Desktop's native Windows host DNS routing.
+    extra_hosts: !reset []
+    ports: !override
+      - "127.0.0.1:3000:80"
+      - "127.0.0.1:3001:80"

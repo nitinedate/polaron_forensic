@@ -1,0 +1,102 @@
+{
+  "release": 10,
+  "date": "2026-10-06",
+  "verification": {
+    "first_launch_file_checks_passed": 32,
+    "existing_startup_behavior_checks_passed": 31,
+    "full_launch_scenarios_with_mocked_docker_passed": 6,
+    "clean_profile_prepare_validate_checks_passed": 3,
+    "official_compose_2_39_4_configuration_checks_passed": 18,
+    "tls_certificate_tests_passed": 21,
+    "changed_powershell_parser_checks_passed": 3,
+    "powershell_runtime": "7.4.13 on Linux",
+    "native_windows_docker_desktop_build_up": "pending on target host",
+    "public_certificate_issuance": "not performed",
+    "live_phone_gpu": "pending on target host",
+    "backend_frontend_scanner_application_code": "byte-identical to supplied release9",
+    "dependency_cache_behavior": "cached by default; explicit RefreshDependencies only"
+  },
+  "clean_profile_results": {
+    "status": "passed",
+    "compose_version": "2.39.4",
+    "powershell_runtime": "7.4.13 on Linux",
+    "profiles": [
+      {
+        "profile": "local",
+        "clean_prepare": "passed",
+        "six_official_compose_configurations": "passed",
+        "existing_files_preserved": "passed",
+        "configuration_only_no_containers_or_runtime_directories": "passed"
+      },
+      {
+        "profile": "nitin",
+        "clean_prepare": "passed",
+        "six_official_compose_configurations": "passed",
+        "existing_files_preserved": "passed",
+        "configuration_only_no_containers_or_runtime_directories": "passed"
+      },
+      {
+        "profile": "prod",
+        "clean_prepare": "passed",
+        "six_official_compose_configurations": "passed",
+        "existing_files_preserved": "passed",
+        "configuration_only_no_containers_or_runtime_directories": "passed"
+      }
+    ],
+    "native_windows_docker_desktop_build_up": "not available"
+  },
+  "mocked_launch_results": [
+    {
+      "scenario": "local",
+      "status": "pass",
+      "application_builds": 5,
+      "certificate_issues": 0,
+      "docker_engine": "mocked"
+    },
+    {
+      "scenario": "prod",
+      "status": "pass",
+      "application_builds": 5,
+      "certificate_issues": 1,
+      "docker_engine": "mocked"
+    },
+    {
+      "scenario": "nitin",
+      "status": "pass",
+      "application_builds": 5,
+      "certificate_issues": 2,
+      "docker_engine": "mocked"
+    },
+    {
+      "scenario": "prod-reuse",
+      "status": "pass",
+      "application_builds": 5,
+      "certificate_issues": 0,
+      "docker_engine": "mocked"
+    },
+    {
+      "scenario": "local-cache",
+      "status": "pass",
+      "application_builds": 5,
+      "certificate_issues": 0,
+      "docker_engine": "mocked"
+    },
+    {
+      "scenario": "local-refresh",
+      "status": "pass",
+      "application_builds": 5,
+      "certificate_issues": 0,
+      "docker_engine": "mocked"
+    }
+  ],
+  "source": {
+    "file_name": "polaron-mobile-crypt-family-tested.zip",
+    "library_version": 11,
+    "sha256": "c656a1be1075ebac413b607e6473c66092f0bec91c46b6b1138e77eb4ae3c721"
+  },
+  "required_files": {
+    "common": 56,
+    "public_extra": 5
+  },
+  "secret_handling": "No active .env or user host-settings file is distributed. Signing secrets are generated only for a missing root .env on the target host."
+}

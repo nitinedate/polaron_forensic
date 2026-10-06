@@ -1,0 +1,35 @@
+{
+  "version": "report-formation-training-v1.0",
+  "purpose": "Layout and formation rules learned from the supplied forensic-report exemplars. Case-specific facts are never reused.",
+  "sources": [
+    "Ex-1 Forensic Report(1).docx",
+    "Ex-2 Forensic Report(1).docx",
+    "Ex-3 Forensic Report(1).docx",
+    "Ex-4 Forensic Report(1).docx",
+    "Ex-5 Forensic Report(1).docx",
+    "RRP E Mr.Seger Forensic Report(20260917-135427).pdf"
+  ],
+  "agent_split": {
+    "report_generator_agent": "Forensic content agent: artifacts, evidence selection, Objective, Procedure, Observation, Annexure and Analysis Summary.",
+    "report_formation_agent": "Formation-only agent: page packing, continuation logic, UI/PDF/DOCX parity and final document creation. It cannot rewrite content."
+  },
+  "formation_rules": [
+    "Use the saved UI section content as immutable canonical content.",
+    "Before creating a continuation page, place the next complete row, paragraph or panel on the current page when it physically fits.",
+    "Do not waste a page merely because a conservative fixed row-count threshold was reached.",
+    "Never split one table row between pages; repeat the table header after a true split.",
+    "Keep section/subsection headings with following content.",
+    "Objective/Procedure/Observation panels remain together when possible; oversized panels may continue without changing wording.",
+    "Only add '(CONTINUED)' as layout metadata; do not add forensic meaning or new narrative.",
+    "PDF and DOCX are generated from the same canonical content snapshot as the UI.",
+    "No export-specific sanitization, summarization or LLM rewriting is allowed.",
+    "A content fingerprint is stored with every PDF/DOCX export for parity verification."
+  ],
+  "reference_layout_observations": [
+    "The sample reports use a stable section order: Introduction, Operating System, Artifacts, Objective/Procedure/Observation, Annexure, Analysis Summary and Appendix.",
+    "Annexure tables continue across pages while preserving serial-number continuity.",
+    "Continuation headings appear only when content truly continues onto another page.",
+    "Branding/header/footer are repeated consistently without consuming report-body facts.",
+    "The reports prefer compact pages rather than leaving usable body space empty."
+  ]
+}

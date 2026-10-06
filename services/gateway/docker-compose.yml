@@ -1,0 +1,27 @@
+# Single Aetheris UI + API gateway (port 3001; 3000 kept as an extra alias).
+# Proxies /api to the three isolated backends on the host loopback ports.
+name: aetheris-gateway
+
+services:
+  gateway:
+    image: aetheris-gateway
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_AETHERIS_SERVICE: unified
+        VITE_VULN_MODULE_ENABLED: "true"
+    ports:
+      - "3000:80"
+      - "3001:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./frontend/nginx-gateway.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend/gateway-proxy.inc:/etc/nginx/conf.d/gateway-proxy.inc:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s

@@ -1,0 +1,66 @@
+{
+  "release": 11,
+  "date": "2026-10-06",
+  "source_library_version": 12,
+  "source_archive_sha256": "4291137e7e228bc5b5545fb26267bcb16a9333749ab480faa2198484353d6f23",
+  "verification": {
+    "simulated_windows_powershell_volume_checks_passed": 20,
+    "offline_native_migration_scenarios_passed": 8,
+    "first_launch_file_checks_passed": 32,
+    "existing_startup_checks_passed": 31,
+    "powershell_parser_checks_passed": 4,
+    "python_compile_and_311_grammar": "pass",
+    "powershell_runtime": "7.4.13 on Linux",
+    "native_windows_powershell_5_1_docker_desktop": "pending on target host",
+    "live_phone_gpu": "pending on target host"
+  },
+  "migration_scenarios": {
+    "status": "passed",
+    "migration_scenarios": 8,
+    "cases": [
+      {
+        "case": "fresh",
+        "status": "passed",
+        "expected_failure": false
+      },
+      {
+        "case": "daemon-fail",
+        "status": "passed",
+        "expected_failure": true
+      },
+      {
+        "case": "legacy",
+        "status": "passed",
+        "expected_failure": false
+      },
+      {
+        "case": "retry_after_failed_copy",
+        "status": "passed",
+        "expected_failure": false
+      },
+      {
+        "case": "copy-fail",
+        "status": "passed",
+        "expected_failure": true
+      },
+      {
+        "case": "cleanup-busy",
+        "status": "passed",
+        "expected_failure": false
+      },
+      {
+        "case": "populated",
+        "status": "passed",
+        "expected_failure": false
+      },
+      {
+        "case": "images-fail",
+        "status": "passed",
+        "expected_failure": true
+      }
+    ],
+    "docker": "offline native executable mock",
+    "native_windows_desktop": "not exercised"
+  },
+  "scope": "No actual Docker daemon or live Windows Desktop was used. Test counts are separate scopes and are not added together."
+}

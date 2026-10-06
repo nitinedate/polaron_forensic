@@ -1,0 +1,506 @@
+--- a/backend/app/services/host_evidence.py
++++ b/backend/app/services/host_evidence.py
+@@ -2821,12 +2821,23 @@
+             source_ds.update({
+                 "intake": "browser_upload",
+                 "source_residency": "client_uploaded_to_server",
++                "source_origin": "client_browser",
++                "transfer_required": True,
+                 "cleanup_policy": "delete_after_pipeline_success",
+             })
+         else:
++            raw_display = str(display_folder or "")
++            if raw_display.startswith("\\\\") or raw_display.startswith("//"):
++                source_origin = "server_network"
++            elif len(raw_display) >= 3 and raw_display[1:3] in (":\\", ":/"):
++                source_origin = "server_attached_or_mapped"
++            else:
++                source_origin = "server_path"
+             source_ds.update({
+                 "intake": "server_local",
+                 "source_residency": "server_local",
++                "source_origin": source_origin,
++                "transfer_required": False,
+                 "cleanup_policy": "never_delete_source",
+                 "staging_purged": False,
+             })
+@@ -3168,6 +3179,8 @@
+     locs = staging_locations(job_id)
+     ds["intake"] = "browser_upload"
+     ds["source_residency"] = "client_uploaded_to_server"
++    ds["source_origin"] = "client_browser"
++    ds["transfer_required"] = True
+     ds["cleanup_policy"] = "delete_after_pipeline_success"
+     ds["upload_parallelism"] = 5
+     ds["upload_status"] = "receiving"
+@@ -3234,6 +3247,8 @@
+     locs = staging_locations(job_id)
+     ds["intake"] = "browser_upload"
+     ds["source_residency"] = "client_uploaded_to_server"
++    ds["source_origin"] = "client_browser"
++    ds["transfer_required"] = True
+     ds["cleanup_policy"] = "delete_after_pipeline_success"
+     ds["upload_parallelism"] = 5
+     # Keep the global pipeline gate closed while the now-complete byte set is
+@@ -3272,6 +3287,8 @@
+     ds = dict(load_job_disk_source(row))
+     ds["intake"] = "browser_upload"
+     ds["source_residency"] = "client_uploaded_to_server"
++    ds["source_origin"] = "client_browser"
++    ds["transfer_required"] = True
+     ds["cleanup_policy"] = "delete_after_pipeline_success"
+     ds["upload_parallelism"] = 5
+     ds["upload_status"] = "complete"
+--- a/frontend/src/lib/orchestrationStages.ts
++++ b/frontend/src/lib/orchestrationStages.ts
+@@ -116,13 +116,48 @@
+   return String(ds.source_type || "").toLowerCase() === "mobile" || mobileJobPlatform(job) != null;
+ }
+ 
++export type EvidenceTransportMode = "server" | "client" | "unknown";
++
++/**
++ * Classify how evidence bytes reach the forensic backend. This is deliberately
++ * based on the persisted intake contract, not on the browser hostname/IP. A
++ * mapped/network/server drive selected through HostDrive is still zero-copy
++ * server evidence; only the explicit browser-upload channel is a client copy.
++ */
++export function evidenceTransportModeForJob(job: Job | null | undefined): EvidenceTransportMode {
++  if (!job) return "unknown";
++  const ds = (job.disk_source || {}) as Record<string, unknown>;
++  const intake = String(ds.intake || "").toLowerCase();
++  const residency = String(ds.source_residency || "").toLowerCase();
++  const origin = String(ds.source_origin || "").toLowerCase();
++  if (
++    intake === "browser_upload" ||
++    residency === "client_uploaded_to_server" ||
++    origin === "client_browser"
++  ) {
++    return "client";
++  }
++  if (
++    intake === "server_local" ||
++    residency === "server_local" ||
++    residency === "server_accessible" ||
++    origin.startsWith("server_")
++  ) {
++    return "server";
++  }
++  return "unknown";
++}
++
+ export function agentOrderForJob(job: Job): Array<{ id: string; label: string }> {
+   const mobile = isMobilePipelineJob(job);
+   const platform = mobileJobPlatform(job);
++  const transport = evidenceTransportModeForJob(job);
+   return AGENT_ORDER.filter(({ id }) => {
+     if (id === "iosagent") return mobile && platform !== "android";
+     if (id === "androidagent") return mobile && platform !== "ios";
+     if (mobile && DISK_ONLY_AGENT_IDS.has(id)) return false;
++    if (!mobile && id === "download_agent") return transport === "client";
++    if (!mobile && id === "drive_mount_agent") return transport !== "client";
+     return !mobile ? id !== "iosagent" && id !== "androidagent" : true;
+   });
+ }
+--- a/frontend/src/lib/jobUploadSession.ts
++++ b/frontend/src/lib/jobUploadSession.ts
+@@ -159,6 +159,23 @@
+     this.notify(jobId);
+   }
+ 
++  /**
++   * Remove stale client-transfer UI state after the examiner switches to a
++   * server-accessible source. Never clear an upload that is actually running.
++   */
++  clearInactiveForServerSource(jobId: string): boolean {
++    if (this.runners.has(jobId)) return false;
++    this.fileBlobs.delete(jobId);
++    this.sessions.set(jobId, { lines: [], progress: null, uploading: false, files: [] });
++    try {
++      sessionStorage.removeItem(STORAGE_PREFIX + jobId);
++    } catch {
++      // sessionStorage can be unavailable in hardened browser modes.
++    }
++    this.listeners.get(jobId)?.forEach((fn) => fn());
++    return true;
++  }
++
+   private setFileStatus(jobId: string, fileId: string, status: UploadFileItem["status"]) {
+     const session = this.get(jobId);
+     session.files = session.files.map((f) => (f.id === fileId ? { ...f, status } : f));
+--- a/frontend/src/components/forensic/HostEvidencePanel.tsx
++++ b/frontend/src/components/forensic/HostEvidencePanel.tsx
+@@ -154,6 +154,8 @@
+   onRegisterError?: (message: string) => void;
+   onProcessingError?: (message: string) => void;
+   onReceivingSegmentsStarted?: () => void;
++  /** Explicit acquisition channel chosen by the examiner. */
++  onSourceTransportChanged?: (mode: "server" | "client") => void;
+ }
+ 
+ export type HostEvidencePanelHandle = {
+@@ -333,6 +335,7 @@
+       onRegisterError,
+       onProcessingError,
+       onReceivingSegmentsStarted,
++      onSourceTransportChanged,
+     },
+     ref
+   ) {
+@@ -808,6 +811,7 @@
+   const uploadClientFiles = useCallback(
+     async (incoming: File[]) => {
+       if (!incoming.length) return;
++      onSourceTransportChanged?.("client");
+       if (shouldRefuseBrowserCopy(incoming, sourceType)) {
+         const msg =
+           "Could not upload that folder from this browser. Choose the image folder on this computer and try again.";
+@@ -900,6 +904,7 @@
+       onRegisterError,
+       onRegisterProgress,
+       onRegistered,
++      onSourceTransportChanged,
+       sourceType,
+     ]
+   );
+@@ -1096,6 +1101,8 @@
+       return;
+     }
+ 
++    onSourceTransportChanged?.("server");
++    jobUploadSession.clearInactiveForServerSource(jobId);
+     const filenames = folder.files.map((f) => f.name);
+     const relativePaths = folder.files.map((f) => f.relativePath);
+     const segments = filenames.filter((name) => isSegmentFilename(name));
+@@ -1526,6 +1533,10 @@
+   }
+ 
+   async function registerFromBrowse(res: HostBrowse, segments: string[]) {
++    if (sourceType === "disk") {
++      onSourceTransportChanged?.("server");
++      jobUploadSession.clearInactiveForServerSource(jobId);
++    }
+     setRegistering(true);
+     const label = res.display_path || `${segments.length} segment(s)`;
+     try {
+@@ -1696,6 +1707,10 @@
+   }
+ 
+   async function enterDrive(key: string, mounted = true) {
++    if (sourceType === "disk") {
++      onSourceTransportChanged?.("server");
++      jobUploadSession.clearInactiveForServerSource(jobId);
++    }
+     if (!mounted) {
+       const ok = await refreshDriveMountsOnHost(key);
+       if (!ok) return;
+@@ -2201,7 +2216,13 @@
+               variant="outline"
+               className="border-amber-300 bg-white text-[11px]"
+               loading={remounting}
+-              onClick={() => void refreshDriveMountsOnHost()}
++              onClick={() => {
++                if (sourceType === "disk") {
++                  onSourceTransportChanged?.("server");
++                  jobUploadSession.clearInactiveForServerSource(jobId);
++                }
++                void refreshDriveMountsOnHost();
++              }}
+             >
+               <RefreshCw className="mr-1 h-3 w-3" />
+               Refresh drive mounts
+--- a/frontend/src/components/forensic/JobActivityPanel.tsx
++++ b/frontend/src/components/forensic/JobActivityPanel.tsx
+@@ -15,6 +15,7 @@
+   uploadLines: ActivityLine[];
+   uploadProgress: UploadProgressState | null;
+   uploading: boolean;
++  sourceTransport?: "server" | "client" | "unknown";
+   extractionLogs?: ExtractionLog[];
+   extractionLogsLoading?: boolean;
+   registering?: boolean;
+@@ -49,14 +50,16 @@
+   uploadLines,
+   uploadProgress,
+   uploading,
++  sourceTransport = "unknown",
+   extractionLogs,
+   extractionLogsLoading,
+   registering = false,
+   onRefreshLogs,
+   panelHeight,
+ }: JobActivityPanelProps) {
+-  const showUpload = uploading || uploadLines.length > 0 || uploadProgress !== null;
+-  const uploadExpanded = uploading || uploadLines.length > 0;
++  const clientTransferSelected = sourceTransport === "client" || (sourceTransport === "unknown" && uploading);
++  const showUpload = clientTransferSelected && (uploading || uploadLines.length > 0 || uploadProgress !== null);
++  const uploadExpanded = clientTransferSelected && (uploading || uploadLines.length > 0);
+   const overallPct = uploadProgress
+     ? Math.round(((uploadProgress.index + uploadProgress.filePct / 100) / uploadProgress.total) * 100)
+     : 0;
+@@ -79,7 +82,7 @@
+           <div className="flex items-center justify-between border-b border-ink-800 px-4 py-2">
+             <div className="flex items-center gap-2 text-ink-300">
+               <Upload className="h-4 w-4" />
+-              <span className="text-xs font-semibold uppercase tracking-wider">Upload activity</span>
++              <span className="text-xs font-semibold uppercase tracking-wider">Client transfer activity</span>
+               <span className="text-xs text-ink-500">{uploadLines.length} entries</span>
+             </div>
+             {uploading && uploadProgress && (
+--- a/frontend/src/pages/forensic/JobDetailPage.tsx
++++ b/frontend/src/pages/forensic/JobDetailPage.tsx
+@@ -52,7 +52,11 @@
+ import type { ExtractionLog, Job } from "../../lib/types/forensic";
+ import { effectiveJobProgressPct } from "../../lib/extractCoverage";
+ import { mergeJobProgress, pickLatestPipelineLogMessage } from "../../lib/jobProgress";
+-import { isPipelineFullyComplete } from "../../lib/orchestrationStages";
++import {
++  evidenceTransportModeForJob,
++  isPipelineFullyComplete,
++  type EvidenceTransportMode,
++} from "../../lib/orchestrationStages";
+ import { formatPipelineProgress, parsePathProgressFromLog } from "../../lib/pipelineProgress";
+ 
+ 
+@@ -177,6 +181,7 @@
+   const [pipelineErrorStep, setPipelineErrorStep] = useState<number | undefined>(undefined);
+   const [refreshingArtifacts, setRefreshingArtifacts] = useState(false);
+   const [receivingSegmentsStarted, setReceivingSegmentsStarted] = useState(false);
++  const [selectedTransportMode, setSelectedTransportMode] = useState<EvidenceTransportMode>("unknown");
+   const [logPanelHeight, setLogPanelHeight] = useState<number | undefined>();
+ 
+   pollStoppedRef.current = pollStopped;
+@@ -193,8 +198,27 @@
+   toastRef.current = toast;
+ 
+   const uploadSession = useJobUploadSession(jobId ?? "");
++  const pipelineJob = useMemo(() => {
++    if (!job || selectedTransportMode === "unknown") return job;
++    const ds = { ...(job.disk_source || {}) };
++    if (selectedTransportMode === "client") {
++      ds.intake = "browser_upload";
++      ds.source_residency = "client_uploaded_to_server";
++      ds.source_origin = "client_browser";
++      ds.transfer_required = true;
++    } else {
++      ds.intake = "server_local";
++      ds.source_residency = "server_local";
++      ds.source_origin = String(ds.source_origin || "server_selected");
++      ds.transfer_required = false;
++    }
++    return { ...job, disk_source: ds };
++  }, [job, selectedTransportMode]);
++  const evidenceTransportMode = evidenceTransportModeForJob(pipelineJob);
++  const clientTransferActive =
++    evidenceTransportMode === "client" && (uploadSession.uploading || uploadSession.isRunning);
+ 
+-  const pipelineSteps = usePipelineStepTracker(job, {
++  const pipelineSteps = usePipelineStepTracker(pipelineJob, {
+     registering: registerProgress.active && registerProgress.phase !== "listing",
+     receivingSegmentsStarted,
+     processRequested,
+@@ -202,7 +226,7 @@
+     pipelineErrorStep,
+     listingFolder: registerProgress.phase === "listing",
+     mountingDrive: registerProgress.phase === "mounting",
+-    uploading: uploadSession.uploading || uploadSession.isRunning,
++    uploading: clientTransferActive,
+     uploadDetail: uploadSession.progress
+       ? `Uploading ${uploadSession.progress.index + 1}/${uploadSession.progress.total}: ${uploadSession.progress.fileName} (${uploadSession.progress.filePct}%)`
+       : uploadSession.uploading
+@@ -325,6 +349,7 @@
+     setJobNotFound(false);
+     setLoadError(null);
+     setPollStopped(false);
++    setSelectedTransportMode("unknown");
+   }, [jobId]);
+ 
+   useEffect(() => {
+@@ -1152,7 +1177,7 @@
+         registering={registerProgress.active}
+         registerPct={registerProgress.pct}
+         registerFileName={registerProgress.fileName}
+-        uploading={uploadSession.uploading || uploadSession.isRunning}
++        uploading={clientTransferActive}
+         uploadProgress={uploadSession.progress}
+         processRequested={processRequested}
+         pollStopped={pollStopped}
+@@ -1187,7 +1212,7 @@
+             <div className="mb-4 flex items-center gap-2">
+               <Upload className="h-4 w-4 text-brand-600" />
+               <h3 className="text-sm font-bold text-ink-800">
+-                {isMobileJob ? "Upload or select mobile extraction" : "Upload or select disk folder"}
++                {isMobileJob ? "Upload or select mobile extraction" : "Select server evidence or upload from client"}
+               </h3>
+             </div>
+             <HostEvidencePanel
+@@ -1211,6 +1236,12 @@
+               }
+               capabilityLabel={capabilityLabel}
+               mobileOsLabel={mobileOsLabel}
++              onSourceTransportChanged={(mode) => {
++                setSelectedTransportMode(mode);
++                if (mode === "server" && jobId) {
++                  jobUploadSession.clearInactiveForServerSource(jobId);
++                }
++              }}
+               onRegistered={() => load({ silent: true })}
+               onProcessingStarted={async () => {
+                 setPipelineError(null);
+@@ -1253,7 +1284,7 @@
+       <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+         <div ref={pipelinePanelRef} className="min-h-0">
+           <AgentPipelineBanner
+-            job={job}
++            job={pipelineJob || job}
+             processRequested={processRequested}
+             latestLog={latestLogMessage}
+             pathProgress={pathProgressLabel}
+@@ -1273,7 +1304,8 @@
+               jobId={jobId}
+               uploadLines={uploadSession.lines}
+               uploadProgress={uploadSession.progress}
+-              uploading={uploadSession.uploading || uploadSession.isRunning}
++              uploading={clientTransferActive}
++              sourceTransport={evidenceTransportMode}
+               extractionLogs={logs}
+               extractionLogsLoading={logsLoading || registerProgress.active}
+               registering={registerProgress.active}
+--- /dev/null
++++ b/backend/tests/test_source_transport_isolation_v29_5.py
+@@ -0,0 +1,53 @@
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[2]
++
++
++def _read(rel: str) -> str:
++    return (ROOT / rel).read_text(encoding="utf-8")
++
++
++def test_disk_pipeline_only_shows_download_for_explicit_client_transfer() -> None:
++    orch = _read("frontend/src/lib/orchestrationStages.ts")
++    assert 'export type EvidenceTransportMode = "server" | "client" | "unknown"' in orch
++    assert 'if (!mobile && id === "download_agent") return transport === "client";' in orch
++    assert 'if (!mobile && id === "drive_mount_agent") return transport !== "client";' in orch
++    assert 'origin === "client_browser"' in orch
++    assert 'origin.startsWith("server_")' in orch
++
++
++def test_upload_activity_is_hidden_for_server_source_and_labeled_client_transfer() -> None:
++    panel = _read("frontend/src/components/forensic/JobActivityPanel.tsx")
++    assert 'sourceTransport?: "server" | "client" | "unknown"' in panel
++    assert 'sourceTransport === "client"' in panel
++    assert "Client transfer activity" in panel
++    assert "Upload activity" not in panel
++
++
++def test_server_selection_clears_stale_client_transfer_state() -> None:
++    host = _read("frontend/src/components/forensic/HostEvidencePanel.tsx")
++    upload = _read("frontend/src/lib/jobUploadSession.ts")
++    assert 'onSourceTransportChanged?.("server")' in host
++    assert 'onSourceTransportChanged?.("client")' in host
++    assert "clearInactiveForServerSource" in host
++    assert "clearInactiveForServerSource(jobId: string): boolean" in upload
++    assert "if (this.runners.has(jobId)) return false" in upload
++
++
++def test_backend_persists_transport_origin_and_zero_copy_contract() -> None:
++    host = _read("backend/app/services/host_evidence.py")
++    assert '"source_origin": "client_browser"' in host
++    assert '"transfer_required": True' in host
++    assert 'source_origin = "server_network"' in host
++    assert 'source_origin = "server_attached_or_mapped"' in host
++    assert '"transfer_required": False' in host
++    assert '"cleanup_policy": "never_delete_source"' in host
++
++
++def test_job_detail_uses_source_mode_for_transfer_panel() -> None:
++    page = _read("frontend/src/pages/forensic/JobDetailPage.tsx")
++    assert "evidenceTransportModeForJob" in page
++    assert "selectedTransportMode" in page
++    assert "clientTransferActive" in page
++    assert "sourceTransport={evidenceTransportMode}" in page
++    assert "Select server evidence or upload from client" in page
+--- /dev/null
++++ b/SOURCE_TRANSPORT_ISOLATION_V29_5_20260926.md
+@@ -0,0 +1,79 @@
++# Polaron V29.5 — Server vs Client Evidence Transport Isolation
++
++## Problem
++Disk Job Detail could still display a persisted **Upload Activity / Download Agent** panel even while the examiner was using the server-side HostDrive browser. The Disk pipeline also always contained a `Download` stage even though server-attached HDD/SSD/USB/network evidence is processed in place.
++
++This mixed two different acquisition contracts:
++
++1. **Server-accessible evidence** — HDD/SSD/USB or server/network share visible to the forensic server. Bytes stay at the original path and are processed zero-copy.
++2. **Client-browser evidence** — images exist only on the examiner/client computer. Files must first transfer to server staging; all downstream processing remains held until the full declared set is received and verified.
++
++## V29.5 source transport contract
++The transport decision is based on the acquisition channel, not on the browser URL or IP address.
++
++### Server channel
++Selecting/opening a drive/folder through **Server evidence browser — zero-copy** marks the active transport as `server` immediately.
++
++Backend metadata after registration:
++
++```json
++{
++  "intake": "server_local",
++  "source_residency": "server_local",
++  "source_origin": "server_attached_or_mapped | server_network | server_path",
++  "transfer_required": false,
++  "cleanup_policy": "never_delete_source"
++}
++```
++
++Behavior:
++- no browser upload;
++- no Download Agent;
++- no staging copy of E01/E02/...;
++- no MinIO copy of raw source segments before extraction;
++- original source is never auto-deleted;
++- server drive mount/list/register logs go to the normal extraction/activity log.
++
++### Client channel
++Only the explicit **Upload from client computer** path marks the transport as `client`.
++
++Backend metadata:
++
++```json
++{
++  "intake": "browser_upload",
++  "source_residency": "client_uploaded_to_server",
++  "source_origin": "client_browser",
++  "transfer_required": true,
++  "cleanup_policy": "delete_after_pipeline_success"
++}
++```
++
++Behavior:
++- Download Agent appears;
++- up to five files transfer concurrently;
++- extraction / parse / OCR / RAG / report remain held until all declared files are fully received and verified;
++- client staging is deleted only after successful terminal processing.
++
++## UI changes
++- `Upload Activity` is now **Client transfer activity**.
++- The client transfer panel is hidden for server transport, even if stale client-transfer messages exist in browser `sessionStorage`.
++- Selecting a server drive clears stale inactive client transfer UI state.
++- Disk Processing Pipeline omits `Download` by default/server mode.
++- `Download` appears only when the job has explicitly entered `browser_upload` / client transport.
++- Client transport omits the server Drive Mount stage.
++- Disk evidence card heading is now **Select server evidence or upload from client**.
++
++## Why browser IP is not used
++A browser opened on `localhost`, LAN IP, VPN, or public hostname does not reliably tell where the evidence bytes live. A browser on the forensic server can still choose a client-mounted folder, and a remote workstation can operate the server-side HostDrive browser. Therefore V29.5 uses the selected acquisition channel as the authoritative classification:
++
++- HostDrive/server browser => server zero-copy
++- browser File/Directory picker => client transfer
++
++This prevents accidental duplication and avoids false network-location inference.
++
++## Validation
++- 121 relevant Disk source-residency, Download Agent, HostDrive, Android/iOS isolation, semaphore and host-capacity tests passed.
++- `backend/app/services/host_evidence.py` compiles cleanly.
++- Changed TS/TSX files passed TypeScript 5.8.3 ES2020 syntax transpilation.
++

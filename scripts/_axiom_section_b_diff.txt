@@ -1,0 +1,70 @@
+Axiom PDF B.ARTIFACTS vs artifacts_d963d7b1.xlsx
+========================================================================
+GAP delta=     -14  PDF=      39  XLSX=      25  PDF[USB Devices] <-> XLSX[USB Devices]
+GAP delta=      -1  PDF=       2  XLSX=       1  PDF[Your Phone Device] <-> XLSX[Your Phone Device]
+GAP delta=      -2  PDF=       6  XLSX=       4  PDF[Remote Desktop Protocol (RDP)] <-> XLSX[Remote Desktop Protocol (RDP)]
+GAP delta=     +13  PDF=      42  XLSX=      55  PDF[Feature Usage] <-> XLSX[Feature Usage]
+GAP delta=      -5  PDF=      31  XLSX=      26  PDF[Installed Microsoft Programs] <-> XLSX[Installed Microsoft Programs]
+GAP delta=      -6  PDF=     167  XLSX=     161  PDF[Installed Programs (Non-Microsoft)] <-> XLSX[Installed Programs (Non-Microsoft)]
+GAP delta=      +2  PDF=       3  XLSX=       5  PDF[Windows Defender Logs] <-> XLSX[Windows Defender Logs]
+GAP delta=     -10  PDF=      10  XLSX=       0  PDF[Web Chat URLs] <-> XLSX[Web Chat URLs]
+GAP delta=     -50  PDF=      50  XLSX=       0  PDF[Social Media URLs] <-> XLSX[Social Media URLs]
+OK  delta=      +0  PDF=       0  XLSX=       0  PDF[Malware/Phishing URLs] <-> XLSX[Malware/Phishing URLs]
+OK  delta=      +0  PDF=       5  XLSX=       5  PDF[CSV Documents] <-> XLSX[CSV Documents]
+GAP delta=     -13  PDF=      21  XLSX=       8  PDF[Microsoft PowerPoint Documents] <-> XLSX[Microsoft PowerPoint Documents]
+GAP delta=     -38  PDF=     150  XLSX=     112  PDF[Microsoft Excel Documents] <-> XLSX[Microsoft Excel Documents]
+GAP delta=    -248  PDF=     400  XLSX=     152  PDF[PDF Documents] <-> XLSX[PDF Documents]
+GAP delta=   -2070  PDF=   5,847  XLSX=   3,777  PDF[RTF Documents] <-> XLSX[RTF Documents]
+GAP delta=    +151  PDF=   2,473  XLSX=   2,624  PDF[Text Documents] <-> XLSX[Text Documents]
+GAP delta=     -61  PDF=     305  XLSX=     244  PDF[Microsoft Word Documents] <-> XLSX[Microsoft Word Documents]
+GAP delta=    -305  PDF=     312  XLSX=       7  PDF[Email Attachments] <-> XLSX[Email Attachments]
+GAP delta=  +31917  PDF=      18  XLSX=  31,935  PDF[EML(X) Files] <-> XLSX[EML(X) Files]
+GAP delta=  +57257  PDF=       0  XLSX=  57,257  PDF[Windows Mail] <-> XLSX[Windows Mail]
+GAP delta=    +903  PDF=     216  XLSX=   1,119  PDF[Outlook Emails] <-> XLSX[Outlook Emails]
+GAP delta=    +803  PDF=       0  XLSX=     803  PDF[Outlook Tasks] <-> XLSX[Outlook Tasks]
+GAP delta=    +399  PDF=       0  XLSX=     399  PDF[Outlook Contacts] <-> XLSX[Outlook Contacts]
+GAP delta=    +376  PDF=       0  XLSX=     376  PDF[Outlook Appointments] <-> XLSX[Outlook Appointments]
+GAP delta=  +29895  PDF=      56  XLSX=  29,951  PDF[Encrypted Files] <-> XLSX[Encrypted Files]
+GAP delta=  +57235  PDF=       0  XLSX=  57,235  PDF[Windows Stored Credentials] <-> XLSX[Windows Stored Credentials]
+GAP delta=     -47  PDF=     594  XLSX=     547  PDF[Audio] <-> XLSX[Audio]
+GAP delta=  -36549  PDF=  70,580  XLSX=  34,031  PDF[Picture] <-> XLSX[Picture]
+GAP delta=    -270  PDF=     330  XLSX=      60  PDF[Video] <-> XLSX[Video]
+GAP delta=     -50  PDF=      50  XLSX=       0  PDF[Photoshop Files] <-> XLSX[Photoshop Files]
+GAP delta=  +11537  PDF=  12,463  XLSX=  24,000  PDF[Logfile Analysis] <-> XLSX[Logfile Analysis]
+GAP delta=     +43  PDF=     721  XLSX=     764  PDF[Jump List] <-> XLSX[Jump List]
+GAP delta=    +130  PDF=   1,443  XLSX=   1,573  PDF[LNK Files] <-> XLSX[LNK Files]
+
+Matched 33/33; nonzero gaps=31
+
+PRIORITY GAPS (sorted by |delta|):
+    +57257  PDF=       0  XLSX=  57,257  Windows Mail
+    +57235  PDF=       0  XLSX=  57,235  Windows Stored Credentials
+    -36549  PDF=  70,580  XLSX=  34,031  Picture
+    +31917  PDF=      18  XLSX=  31,935  EML(X) Files
+    +29895  PDF=      56  XLSX=  29,951  Encrypted Files
+    +11537  PDF=  12,463  XLSX=  24,000  Logfile Analysis
+     -2070  PDF=   5,847  XLSX=   3,777  RTF Documents
+      +903  PDF=     216  XLSX=   1,119  Outlook Emails
+      +803  PDF=       0  XLSX=     803  Outlook Tasks
+      +399  PDF=       0  XLSX=     399  Outlook Contacts
+      +376  PDF=       0  XLSX=     376  Outlook Appointments
+      -305  PDF=     312  XLSX=       7  Email Attachments
+      -270  PDF=     330  XLSX=      60  Video
+      -248  PDF=     400  XLSX=     152  PDF Documents
+      +151  PDF=   2,473  XLSX=   2,624  Text Documents
+      +130  PDF=   1,443  XLSX=   1,573  LNK Files
+       -61  PDF=     305  XLSX=     244  Microsoft Word Documents
+       -50  PDF=      50  XLSX=       0  Social Media URLs
+       -50  PDF=      50  XLSX=       0  Photoshop Files
+       -47  PDF=     594  XLSX=     547  Audio
+       +43  PDF=     721  XLSX=     764  Jump List
+       -38  PDF=     150  XLSX=     112  Microsoft Excel Documents
+       -14  PDF=      39  XLSX=      25  USB Devices
+       +13  PDF=      42  XLSX=      55  Feature Usage
+       -13  PDF=      21  XLSX=       8  Microsoft PowerPoint Documents
+       -10  PDF=      10  XLSX=       0  Web Chat URLs
+        -6  PDF=     167  XLSX=     161  Installed Programs (Non-Microsoft)
+        -5  PDF=      31  XLSX=      26  Installed Microsoft Programs
+        -2  PDF=       6  XLSX=       4  Remote Desktop Protocol (RDP)
+        +2  PDF=       3  XLSX=       5  Windows Defender Logs
+        -1  PDF=       2  XLSX=       1  Your Phone Device

@@ -1,0 +1,4 @@
+services:
+  frontend:
+    ports: !override
+      - "127.0.0.1:3004:80"

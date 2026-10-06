@@ -1,0 +1,1270 @@
+"""Claim / progress / result ingest for edge scanner agents."""
+
+from __future__ import annotations
+
+import ipaddress
+import json
+import logging
+import re
+from typing import Any
+
+from uuid import UUID
+
+from app.db.sql_helpers import execute, fetchall, fetchone
+from app.services.scan_orchestrator import ingest_engine_results
+from app.services.vuln_helpers import timeline
+
+log = logging.getLogger("scanner_agent_jobs")
+
+
+def _orch(job: dict[str, Any]) -> dict[str, Any]:
+    raw = job.get("orchestration_json")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def job_is_edge_agent(job: dict[str, Any]) -> bool:
+    orch = _orch(job)
+    return bool(orch.get("edge_agent"))
+
+
+def _version_tuple(value: Any) -> tuple[int, int, int]:
+    """Parse an agent version conservatively for resume-capability gating."""
+    nums = [int(x) for x in re.findall(r"\d+", str(value or ""))[:3]]
+    while len(nums) < 3:
+        nums.append(0)
+    return nums[0], nums[1], nums[2]
+
+
+def _agent_supports_resume(db, scanner_id: str) -> bool:
+    row = fetchone(
+        db,
+        "SELECT version FROM vuln_scanners WHERE id = CAST(:sid AS uuid)",
+        {"sid": scanner_id},
+    )
+    return _version_tuple((row or {}).get("version")) >= (1, 1, 1)
+
+
+def _agent_supports_parallel(db, scanner_id: str) -> bool:
+    """Parallel queue dispatch is opt-in by agent version to preserve old agents.
+
+    An empty/missing version is treated as current (1.2+). Laptop-NITIN and
+    other newly registered scanners otherwise sat in the legacy single-job
+    gate and never claimed queued work.
+    """
+    row = fetchone(
+        db,
+        "SELECT version FROM vuln_scanners WHERE id = CAST(:sid AS uuid)",
+        {"sid": scanner_id},
+    )
+    raw = str((row or {}).get("version") or "").strip()
+    if not raw:
+        return True
+    return _version_tuple(raw) >= (1, 2, 0)
+
+
+def _valid_active_job_ids(values: list[str] | None) -> list[str]:
+    import uuid
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in values or []:
+        try:
+            value = str(uuid.UUID(str(raw).strip()))
+        except (ValueError, TypeError, AttributeError):
+            continue
+        if value not in seen:
+            seen.add(value)
+            out.append(value)
+        if len(out) >= 16:
+            break
+    return out
+
+
+def _normalize_host(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        return str(ipaddress.ip_address(text))
+    except ValueError:
+        return text.casefold()
+
+
+def _job_target_list(db, job_id: str) -> list[str]:
+    rows = fetchall(
+        db,
+        """SELECT target, excluded
+           FROM vuln_scan_targets
+           WHERE scan_job_id = CAST(:id AS uuid)
+           ORDER BY target""",
+        {"id": job_id},
+    )
+    return [
+        str(t["target"]).strip()
+        for t in rows
+        if not t.get("excluded") and str(t.get("target") or "").strip()
+    ]
+
+
+def network_key_from_targets(targets: list[str] | None) -> frozenset[str]:
+    """IPv4 /24, IPv6 /64, or literal name. Different keys are different networks."""
+    keys: set[str] = set()
+    for raw in targets or []:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        try:
+            ip = ipaddress.ip_address(text)
+        except ValueError:
+            keys.add(text.casefold())
+            continue
+        if isinstance(ip, ipaddress.IPv4Address):
+            keys.add(str(ipaddress.ip_network(f"{ip}/24", strict=False)))
+        else:
+            keys.add(str(ipaddress.ip_network(f"{ip}/64", strict=False)))
+    return frozenset(keys)
+
+
+def _job_network_key(db, job_id: str) -> frozenset[str]:
+    return network_key_from_targets(_job_target_list(db, job_id))
+
+
+def _clip_chunk_tasks_to_job(chunk_tasks: Any, job_hosts: list[str]) -> list[dict[str, Any]]:
+    """Drop OpenVAS task metadata whose hosts are not this job's targets."""
+    allowed = {_normalize_host(h) for h in job_hosts}
+    allowed.discard("")
+    out: list[dict[str, Any]] = []
+    if not isinstance(chunk_tasks, list):
+        return out
+    for item in chunk_tasks:
+        if not isinstance(item, dict):
+            continue
+        tid = str(item.get("task_id") or "").strip()
+        raw_hosts = [str(h).strip() for h in (item.get("hosts") or []) if str(h).strip()]
+        keys = {_normalize_host(h) for h in raw_hosts}
+        keys.discard("")
+        if not tid or not keys or not keys <= allowed:
+            continue
+        out.append({"task_id": tid, "hosts": raw_hosts})
+    return out
+
+
+_BLOCK_NETWORK = frozenset({"__mixed_active_networks__"})
+
+
+def _required_network_key(db, active_job_ids: list[str]) -> frozenset[str] | None:
+    """Network the laptop is already scanning, or None if it is idle.
+
+    Mixed in-flight identities block further claims so we do not add a third
+    site's IPs into the same OpenVAS wave.
+    """
+    if not active_job_ids:
+        return None
+    keys = [_job_network_key(db, jid) for jid in active_job_ids]
+    first = keys[0]
+    if any(k != first for k in keys[1:]):
+        log.warning(
+            "Scanner already has mixed network identities in-flight; withholding new claims"
+        )
+        return _BLOCK_NETWORK
+    return first
+
+
+def _network_compatible(job_key: frozenset[str], required: frozenset[str] | None) -> bool:
+    if required is None:
+        return True
+    return job_key == required
+
+
+def _stale_scanner_queued_job(
+    db, scanner_id: str, exclude_ids: list[str]
+) -> dict[str, Any] | None:
+    """Claim a queued edge job left on an offline/stale laptop scanner.
+
+    Jobs are bound to scanner_id. After Laptop-NITIN (or any new laptop) is
+    registered, a queued row aimed at the previous token stays queued forever
+    unless this online agent adopts it.
+    """
+    params: dict[str, Any] = {"sid": scanner_id}
+    exclude_sql = ""
+    if exclude_ids:
+        placeholders: list[str] = []
+        for idx, value in enumerate(exclude_ids):
+            key = f"stale_ex_{idx}"
+            placeholders.append(f"CAST(:{key} AS uuid)")
+            params[key] = value
+        exclude_sql = " AND j.id NOT IN (" + ", ".join(placeholders) + ")"
+    return fetchone(
+        db,
+        f"""
+        SELECT j.*
+        FROM vuln_scan_jobs j
+        JOIN vuln_scanners s ON s.id = j.scanner_id
+        WHERE j.status IN ('queued', 'pending')
+          /* stale_scanner_queued */
+          AND COALESCE((j.orchestration_json->>'edge_agent')::boolean, false) = true
+          AND j.scanner_id <> CAST(:sid AS uuid)
+          AND (j.scheduled_at IS NULL OR j.scheduled_at <= NOW())
+          AND (
+            s.last_heartbeat_at IS NULL
+            OR s.last_heartbeat_at < NOW() - INTERVAL '3 minutes'
+          )
+          AND (
+            lower(coalesce(s.connection_mode, '')) = 'edge_agent'
+            OR lower(coalesce(s.url, '')) LIKE 'agent://%'
+          )
+          {exclude_sql}
+        FOR UPDATE OF j SKIP LOCKED
+        LIMIT 1
+        """,
+        params,
+    )
+
+
+def touch_scanner_heartbeat(db, scanner_id: str, *, version: str | None = None) -> None:
+    execute(
+        db,
+        """UPDATE vuln_scanners
+           SET last_heartbeat_at = NOW(),
+               version = COALESCE(:ver, version),
+               updated_at = NOW()
+           WHERE id = CAST(:id AS uuid)""",
+        {"id": scanner_id, "ver": version},
+    )
+
+
+def _scanner_role_for_job(db, row: dict[str, Any]) -> str:
+    from app.services.scanner_credentials import infer_scanner_role
+
+    sid = row.get("scanner_id")
+    if not sid:
+        return infer_scanner_role(None)
+    scanner = fetchone(
+        db,
+        "SELECT * FROM vuln_scanners WHERE id = CAST(:id AS uuid)",
+        {"id": str(sid)},
+    )
+    return infer_scanner_role(scanner)
+
+
+def _job_payload(db, row: dict[str, Any], *, resumed: bool = False) -> dict[str, Any]:
+    targets = fetchall(
+        db,
+        """SELECT target, target_type, credential_ref, excluded
+           FROM vuln_scan_targets
+           WHERE scan_job_id = CAST(:id AS uuid)
+           ORDER BY target""",
+        {"id": str(row["id"])},
+    )
+    orch = _orch(row)
+    progress = dict(orch.get("edge_progress") or {})
+    target_list = [
+        str(t["target"]).strip()
+        for t in targets
+        if not t.get("excluded") and str(t.get("target") or "").strip()
+    ]
+    chunk_tasks = _clip_chunk_tasks_to_job(orch.get("edge_chunk_tasks") or [], target_list)
+    has_resume = bool(resumed or str(row.get("external_scan_id") or "").strip() or chunk_tasks)
+    return {
+        "id": str(row["id"]),
+        "case_id": str(row["case_id"]),
+        "status": row["status"],
+        "authorization_ref": row.get("authorization_ref"),
+        "external_scan_id": row.get("external_scan_id"),
+        "progress_pct": progress.get("pct"),
+        "progress_message": progress.get("message"),
+        "resume": has_resume,
+        "chunk_tasks": chunk_tasks,
+        "assessed_hosts": [
+            str(x).strip() for x in (orch.get("assessed_hosts") or []) if str(x).strip()
+        ],
+        "skipped_hosts": orch.get("skipped_hosts") or [],
+        "scanner_role": _scanner_role_for_job(db, row),
+        "targets": [
+            {
+                "target": t["target"],
+                "target_type": t.get("target_type") or "host",
+                "credential_ref": t.get("credential_ref"),
+                "excluded": bool(t.get("excluded")),
+            }
+            for t in targets
+            if not t.get("excluded")
+        ],
+    }
+
+
+def claim_next_job(
+    db,
+    scanner_id: str,
+    *,
+    active_job_ids: list[str] | None = None,
+) -> dict[str, Any] | None:
+    """Return one claimable job without head-of-line blocking.
+
+    Agent versions before 1.2.0 keep the legacy one-running-job behaviour.
+    Version 1.2.0+ sends the jobs already owned by its local worker pool. The
+    server first offers a recoverable running job that is *not* already active
+    locally, then atomically claims any queued/pending job with
+    ``FOR UPDATE SKIP LOCKED``. No FIFO/LIFO ordering is imposed.
+
+    A historical ``running`` row with no ``external_scan_id`` is deliberately
+    not allowed to block unrelated queued jobs for a 1.2.0+ agent. It remains
+    visible for operator cleanup, which is safer than inventing a duplicate
+    OpenVAS task id.
+    """
+    supports_parallel = _agent_supports_parallel(db, scanner_id)
+    active = _valid_active_job_ids(active_job_ids) if supports_parallel else []
+
+    # Self-heal a legacy/racy edge job that was marked completed before the
+    # durable vuln_scan_results row was committed.  A completed UI state alone
+    # is not scan evidence.  Hand the job back to the same scanner so it can
+    # harvest the existing GVMD report (or safely recreate only missing work).
+    # This specifically repairs "completed but no durable scan-result evidence"
+    # without inventing assessment coverage.
+    recover_params: dict[str, Any] = {"sid": scanner_id}
+    recover_exclude = ""
+    if active:
+        placeholders: list[str] = []
+        for idx, value in enumerate(active):
+            key = f"recover_ex_{idx}"
+            placeholders.append(f"CAST(:{key} AS uuid)")
+            recover_params[key] = value
+        recover_exclude = " AND j.id NOT IN (" + ", ".join(placeholders) + ")"
+    recoverable = fetchone(
+        db,
+        f"""
+        SELECT j.*
+        FROM vuln_scan_jobs j
+        WHERE j.scanner_id = CAST(:sid AS uuid)
+          AND j.status = 'completed'
+          AND COALESCE((j.orchestration_json->>'edge_agent')::boolean, false) = true
+          AND NULLIF(BTRIM(COALESCE(j.external_scan_id, '')), '') IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1
+              FROM vuln_scan_results r
+              WHERE r.scan_job_id = j.id
+                AND COALESCE((r.result_json->>'edge_agent')::boolean, false) = true
+                AND COALESCE((r.result_json->>'assessment_complete')::boolean, false) = true
+          )
+          {recover_exclude}
+        ORDER BY j.completed_at ASC NULLS LAST, j.created_at ASC
+        FOR UPDATE OF j SKIP LOCKED
+        LIMIT 1
+        """,
+        recover_params,
+    )
+    if recoverable and _agent_supports_resume(db, scanner_id):
+        jid = str(recoverable["id"])
+        row = fetchone(
+            db,
+            """
+            UPDATE vuln_scan_jobs
+               SET status = 'running', completed_at = NULL, error = NULL, updated_at = NOW()
+             WHERE id = CAST(:id AS uuid)
+            RETURNING *
+            """,
+            {"id": jid},
+        )
+        timeline(
+            db,
+            case_id=str(row["case_id"]),
+            source_type="scan_job",
+            source_id=jid,
+            event_type="scan.edge_evidence_recovery",
+            actor="scanner-agent",
+            summary="Recovering durable OpenVAS result evidence for previously completed edge job",
+        )
+        log.warning(
+            "Reopening completed edge job %s because durable scan-result evidence is missing",
+            jid,
+        )
+        return _job_payload(db, row, resumed=True)
+
+    # Backward compatibility: old single-worker agents must never be handed a
+    # second job while any edge job is running.
+    if not supports_parallel:
+        running = fetchone(
+            db,
+            """
+            SELECT *
+            FROM vuln_scan_jobs
+            WHERE scanner_id = CAST(:sid AS uuid)
+              AND status = 'running'
+              AND COALESCE((orchestration_json->>'edge_agent')::boolean, false) = true
+            ORDER BY started_at ASC NULLS LAST, created_at ASC
+            FOR UPDATE SKIP LOCKED
+            LIMIT 1
+            """,
+            {"sid": scanner_id},
+        )
+        if running:
+            task_id = str(running.get("external_scan_id") or "").strip()
+            if task_id and _agent_supports_resume(db, scanner_id):
+                timeline(
+                    db,
+                    case_id=str(running["case_id"]),
+                    source_type="scan_job",
+                    source_id=str(running["id"]),
+                    event_type="scan.edge_resumed",
+                    actor="scanner-agent",
+                    summary=f"Edge scanner agent resumed OpenVAS task {task_id}",
+                )
+                return _job_payload(db, running, resumed=True)
+            log.warning(
+                "Scanner %s has running edge job %s that cannot be resumed "
+                "(task_id=%s); not withholding the queue",
+                scanner_id,
+                running.get("id"),
+                task_id or "missing",
+            )
+
+    # Parallel agents may already own multiple jobs. Offer only a running job
+    # that is not already represented by a local worker, has a real task id,
+    # and belongs to the same network identity as in-flight work.
+    required_key = _required_network_key(db, active)
+    exclude_ids = list(active)
+
+    def _exclude_clause(ids: list[str], params: dict[str, Any]) -> str:
+        if not ids:
+            return ""
+        placeholders: list[str] = []
+        for idx, value in enumerate(ids):
+            key = f"ex_{idx}"
+            placeholders.append(f"CAST(:{key} AS uuid)")
+            params[key] = value
+        return " AND id NOT IN (" + ", ".join(placeholders) + ")"
+
+    if supports_parallel:
+        for _ in range(12):
+            params: dict[str, Any] = {"sid": scanner_id}
+            exclude_sql = _exclude_clause(exclude_ids, params)
+            running = fetchone(
+                db,
+                f"""
+                SELECT *
+                FROM vuln_scan_jobs
+                WHERE scanner_id = CAST(:sid AS uuid)
+                  AND status = 'running'
+                  AND completed_at IS NULL
+                  AND NULLIF(BTRIM(COALESCE(external_scan_id, '')), '') IS NOT NULL
+                  AND COALESCE((orchestration_json->>'edge_agent')::boolean, false) = true
+                  {exclude_sql}
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+                """,
+                params,
+            )
+            if not running:
+                break
+            if not _network_compatible(_job_network_key(db, str(running["id"])), required_key):
+                log.info(
+                    "Withholding running job %s; different network than in-flight laptop work",
+                    running["id"],
+                )
+                exclude_ids.append(str(running["id"]))
+                continue
+            task_id = str(running.get("external_scan_id") or "").strip()
+            timeline(
+                db,
+                case_id=str(running["case_id"]),
+                source_type="scan_job",
+                source_id=str(running["id"]),
+                event_type="scan.edge_resumed",
+                actor="scanner-agent",
+                summary=f"Parallel edge worker resumed OpenVAS task {task_id}",
+            )
+            return _job_payload(db, running, resumed=True)
+
+    # Work-conserving, unordered claim. SELECT first so a different network is
+    # skipped without flipping its status to running.
+    exclude_ids = list(active)
+    for _ in range(12):
+        params = {"sid": scanner_id}
+        exclude_sql = _exclude_clause(exclude_ids, params)
+        candidate = fetchone(
+            db,
+            f"""
+            SELECT *
+            FROM vuln_scan_jobs
+            WHERE scanner_id = CAST(:sid AS uuid)
+              AND status IN ('queued', 'pending')
+              AND COALESCE((orchestration_json->>'edge_agent')::boolean, false) = true
+              AND (scheduled_at IS NULL OR scheduled_at <= NOW())
+              {exclude_sql}
+            FOR UPDATE SKIP LOCKED
+            LIMIT 1
+            """,
+            params,
+        )
+        if not candidate:
+            candidate = _stale_scanner_queued_job(db, scanner_id, exclude_ids)
+            if not candidate:
+                return None
+        jid = str(candidate["id"])
+        if not _network_compatible(_job_network_key(db, jid), required_key):
+            log.info(
+                "Skipping queued job %s; different network than in-flight laptop work",
+                jid,
+            )
+            exclude_ids.append(jid)
+            continue
+        row = fetchone(
+            db,
+            """
+            UPDATE vuln_scan_jobs
+               SET scanner_id = CAST(:sid AS uuid),
+                   status = 'running',
+                   started_at = COALESCE(started_at, NOW()),
+                   updated_at = NOW(),
+                   error = NULL
+             WHERE id = CAST(:id AS uuid)
+            RETURNING *
+            """,
+            {"id": jid, "sid": scanner_id},
+        )
+        if not row:
+            return None
+        timeline(
+            db,
+            case_id=str(row["case_id"]),
+            source_type="scan_job",
+            source_id=str(row["id"]),
+            event_type="scan.edge_claimed",
+            actor="scanner-agent",
+            summary="Parallel edge worker claimed queued job",
+        )
+        return _job_payload(db, row, resumed=False)
+    return None
+
+def update_job_progress(
+    db,
+    *,
+    scanner_id: str,
+    job_id: str,
+    status: str | None = None,
+    progress_pct: float | None = None,
+    message: str | None = None,
+    external_scan_id: str | None = None,
+    error: str | None = None,
+    chunk_tasks: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    job = fetchone(
+        db,
+        """SELECT * FROM vuln_scan_jobs
+           WHERE id = CAST(:id AS uuid) AND scanner_id = CAST(:sid AS uuid)""",
+        {"id": job_id, "sid": scanner_id},
+    )
+    if not job:
+        return {}
+    if not job_is_edge_agent(job):
+        return {}
+
+    orch = _orch(job)
+    progress = dict(orch.get("edge_progress") or {})
+    if progress_pct is not None:
+        progress["pct"] = max(0.0, min(100.0, float(progress_pct)))
+    if message:
+        progress["message"] = message[:500]
+    orch["edge_progress"] = progress
+    orch["edge_agent"] = True
+    orch["enabled"] = False
+    if chunk_tasks is not None:
+        orch["edge_chunk_tasks"] = _clip_chunk_tasks_to_job(
+            chunk_tasks, _job_target_list(db, job_id)
+        )
+
+    new_status = (status or job.get("status") or "running").lower()
+    if new_status not in {"running", "failed", "cancelled", "canceled", "queued"}:
+        new_status = "running"
+
+    current = str(job.get("status") or "").lower()
+    # Never reopen a finished job. A late progress PATCH (or all-skip race)
+    # used to set status back to running, which made claim_next_job resume
+    # the same OpenVAS task and the UI sit at 99% then fail.
+    if current in {"completed", "failed", "cancelled", "canceled"}:
+        if new_status == "running":
+            return _job_payload(db, job, resumed=False)
+        if current == "completed" and new_status != "completed":
+            return _job_payload(db, job, resumed=False)
+
+    execute(
+        db,
+        """UPDATE vuln_scan_jobs
+           SET status = :st,
+               external_scan_id = COALESCE(:eid, external_scan_id),
+               error = CASE WHEN :err IS NULL THEN error ELSE :err END,
+               orchestration_json = CAST(:orch AS jsonb),
+               updated_at = NOW(),
+               completed_at = CASE
+                 WHEN :st IN ('failed', 'cancelled', 'canceled') THEN NOW()
+                 ELSE completed_at
+               END
+           WHERE id = CAST(:id AS uuid)""",
+        {
+            "st": new_status,
+            "eid": external_scan_id,
+            "err": (error[:2000] if error else None),
+            "orch": json.dumps(orch),
+            "id": job_id,
+        },
+    )
+    if new_status in {"failed", "cancelled", "canceled"}:
+        timeline(
+            db,
+            case_id=str(job["case_id"]),
+            source_type="scan_job",
+            source_id=job_id,
+            event_type="scan.failed" if new_status == "failed" else "scan.cancelled",
+            actor="scanner-agent",
+            summary=(error or message or new_status)[:500],
+        )
+    return {"id": job_id, "status": new_status, "progress": progress}
+
+
+class RetryNotAllowed(ValueError):
+    def __init__(self, message: str, *, code: str = "retry_not_allowed"):
+        super().__init__(message)
+        self.code = code
+
+
+def retry_edge_job(db, job_id: str, *, actor: str) -> dict[str, Any]:
+    """Requeue one failed edge job with its original authorized targets.
+
+    Keeps ``vuln_scan_targets``, ``scanner_id``, ``case_id``, and task ids, and
+    never copies hosts from another job.  V2.3 could persist a temporary TCP
+    reachability decision as ``excluded=true``. An explicit operator Resume
+    restores those original rows so the job cannot be dispatched with an empty
+    target list.
+    """
+    job = fetchone(
+        db,
+        "SELECT * FROM vuln_scan_jobs WHERE id = CAST(:id AS uuid) FOR UPDATE",
+        {"id": job_id},
+    )
+    if not job:
+        raise RetryNotAllowed("Scan job not found", code="not_found")
+    if not job_is_edge_agent(job):
+        raise RetryNotAllowed(
+            "Only laptop edge-agent jobs can be resumed in place",
+            code="not_edge_job",
+        )
+    current = str(job.get("status") or "").lower()
+    if current not in {"failed", "cancelled", "canceled"}:
+        raise RetryNotAllowed(
+            f"Scan job is {current}; only failed or cancelled jobs can be resumed",
+            code="job_not_failed",
+        )
+    orch = _orch(job)
+    orch["edge_agent"] = True
+    orch["edge_resume_requested"] = True
+    execute(
+        db,
+        """UPDATE vuln_scan_targets
+              SET excluded = false
+            WHERE scan_job_id = CAST(:id AS uuid)
+              AND excluded = true""",
+        {"id": job_id},
+    )
+    execute(
+        db,
+        """UPDATE vuln_scan_jobs
+           SET status = 'queued',
+               completed_at = NULL,
+               error = NULL,
+               updated_at = NOW(),
+               orchestration_json = CAST(:orch AS jsonb)
+         WHERE id = CAST(:id AS uuid)""",
+        {"id": job_id, "orch": json.dumps(orch)},
+    )
+    timeline(
+        db,
+        case_id=str(job["case_id"]),
+        source_type="scan_job",
+        source_id=job_id,
+        event_type="scan.edge_retry_queued",
+        actor=actor,
+        summary="Failed edge job requeued with original targets and OpenVAS task ids",
+    )
+    row = fetchone(
+        db,
+        "SELECT * FROM vuln_scan_jobs WHERE id = CAST(:id AS uuid)",
+        {"id": job_id},
+    )
+    return _job_payload(db, row or job, resumed=True)
+
+
+def retry_failed_edge_jobs_for_case(db, case_id: str, *, actor: str) -> dict[str, Any]:
+    """Requeue each failed edge job in a case independently (no target merge)."""
+    rows = fetchall(
+        db,
+        """SELECT id
+           FROM vuln_scan_jobs
+           WHERE case_id = CAST(:cid AS uuid)
+             AND status IN ('failed', 'cancelled', 'canceled')
+             AND COALESCE((orchestration_json->>'edge_agent')::boolean, false) = true
+           ORDER BY created_at ASC""",
+        {"cid": case_id},
+    )
+    retried: list[dict[str, Any]] = []
+    for row in rows:
+        payload = retry_edge_job(db, str(row["id"]), actor=actor)
+        retried.append(
+            {
+                "id": payload.get("id"),
+                "status": payload.get("status"),
+                "target_count": len(payload.get("targets") or []),
+            }
+        )
+    return {"count": len(retried), "retried": retried}
+
+
+def _nonneg_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def evaluate_edge_ingest_verdict(
+    *,
+    target_list: list[str],
+    skipped_details: list[dict[str, Any]],
+    skipped_set: set[str],
+    assessed_list: list[str],
+    status: str,
+    partial: bool,
+    partial_reason: str | None,
+    error: str | None,
+    external_scan_id: str | None,
+    report_id: str | None,
+    task_status: str | None,
+    hosts_attempted: int,
+    hosts_assessed: int,
+    report_result_count: int,
+    plugin_error_count: int,
+    scan_start: str | None,
+    scan_end: str | None,
+    assessment_complete: bool | None,
+    assessment_verdict: str | None,
+    report_read_error: str | None,
+    vulnerability_count: int,
+    evidence_present: bool,
+) -> dict[str, Any]:
+    """Decide whether an edge upload is a verified assessment.
+
+    OpenVAS ``Done`` is not enough by itself. Every requested literal IP must
+    have host evidence in the report; reachability guesses cannot reduce the
+    assessment scope or create a clean result.
+    """
+    target_count = len(target_list)
+    attempted = hosts_attempted
+    assessed = hosts_assessed
+    task_status_norm = str(task_status or "").strip().lower()
+    status_norm = str(status or "completed").strip().lower()
+
+    task_ok = task_status_norm in {
+        "done",
+        "finished",
+        "succeeded",
+        "completed",
+        "complete",
+        "success",
+    }
+    literal_ip_targets: list[str] = []
+    for target in target_list:
+        try:
+            tip = str(ipaddress.ip_address(target))
+        except ValueError:
+            continue
+        literal_ip_targets.append(tip)
+    required_count = len(literal_ip_targets)
+    normalized_assessed: set[str] = set()
+    for host in assessed_list:
+        try:
+            normalized_assessed.add(str(ipaddress.ip_address(host)))
+        except ValueError:
+            normalized_assessed.add(host.casefold())
+    missing_ip_targets = [t for t in literal_ip_targets if t not in normalized_assessed]
+    target_identity_ok = not missing_ip_targets
+    coverage_ok = required_count > 0 and target_identity_ok
+    scan_timestamps_ok = bool(scan_start and scan_end)
+    plugin_health_ok = plugin_error_count == 0
+    # With the edge agent requesting rows=-1/min_qod=0, the raw Greenbone
+    # report result count must exactly match the uploaded parsed rows.  The old
+    # zero-only check missed partial parser/filter loss (for example raw=81,
+    # uploaded=3), which could make a shallow scan look valid.
+    result_payload_ok = report_result_count == vulnerability_count
+
+    effective_report_id = report_id
+    # Accept completion only when the full requested target identity is proven.
+    if (
+        status_norm == "completed"
+        and coverage_ok
+        and task_ok
+        and effective_report_id
+    ):
+        if assessment_complete is not True:
+            assessment_complete = True
+        if not assessment_verdict or assessment_verdict in {
+            "target_not_in_report",
+            "partial_coverage",
+            "incomplete_coverage",
+            "partial_or_running",
+        }:
+            assessment_verdict = (
+                "assessed"
+            )
+        if not scan_timestamps_ok and effective_report_id:
+            from datetime import datetime, timezone
+
+            now = datetime.now(timezone.utc).isoformat()
+            scan_start = scan_start or now
+            scan_end = scan_end or now
+            scan_timestamps_ok = True
+
+    partial_blocks = bool(partial) and not coverage_ok
+    verified_complete = bool(
+        status_norm == "completed"
+        and not partial_blocks
+        and assessment_complete is True
+        and evidence_present
+        and external_scan_id
+        and effective_report_id
+        and task_ok
+        and coverage_ok
+        and scan_timestamps_ok
+        and result_payload_ok
+        and not report_read_error
+    )
+
+    reasons: list[str] = []
+    if status_norm in {"failed", "cancelled", "canceled"}:
+        reasons.append(error or f"agent reported {status_norm}")
+    if partial_blocks:
+        reasons.append(partial_reason or "agent reported a partial scan")
+    if not evidence_present:
+        reasons.append("edge agent did not provide durable host-assessment evidence (agent 1.1.0+ required)")
+    if not external_scan_id:
+        reasons.append("missing OpenVAS task id")
+    if not effective_report_id:
+        reasons.append("missing OpenVAS report id")
+    if task_status_norm and not task_ok:
+        reasons.append(f"OpenVAS task status is {task_status}")
+    if target_count <= 0:
+        reasons.append("scan has no active targets")
+    elif required_count > 0 and attempted < required_count and not target_identity_ok:
+        reasons.append(f"attempted {attempted} of {required_count} reachable target(s)")
+    if required_count > 0 and assessed < required_count and not target_identity_ok:
+        reasons.append(f"assessed {assessed} of {required_count} reachable target(s)")
+    if missing_ip_targets:
+        reasons.append("OpenVAS report has no assessment evidence for target(s): " + ", ".join(missing_ip_targets))
+    if skipped_details:
+        reasons.append(
+            "skipped unreachable: " + ", ".join(str(x.get("host")) for x in skipped_details[:20])
+        )
+    if not scan_timestamps_ok:
+        reasons.append("missing OpenVAS scan_start/scan_end evidence")
+    if not result_payload_ok:
+        reasons.append(
+            f"OpenVAS result integrity mismatch: report declares {report_result_count} result(s) "
+            f"but the agent uploaded {vulnerability_count} parsed row(s)"
+        )
+    if assessment_complete is False and not coverage_ok:
+        reasons.append(assessment_verdict or "scanner reported incomplete host assessment")
+    if report_read_error:
+        reasons.append(f"report read error: {report_read_error}")
+
+    final_status = "completed" if verified_complete else "failed"
+    if status_norm in {"cancelled", "canceled"}:
+        final_status = "cancelled"
+
+    err_text = error
+    if final_status != "completed" and not err_text:
+        unique_reasons = list(
+            dict.fromkeys(
+                r
+                for r in reasons
+                if r and not str(r).startswith("skipped unreachable:")
+            )
+        )
+        err_text = "Assessment incomplete - " + "; ".join(unique_reasons or ["verification evidence missing"])
+    if partial_blocks and partial_reason and partial_reason not in (err_text or ""):
+        err_text = ((err_text + "; ") if err_text else "") + f"partial: {partial_reason}"
+    if final_status == "completed":
+        err_text = None
+
+    return {
+        "verified_complete": verified_complete,
+        "final_status": final_status,
+        "err_text": err_text,
+        "reasons": reasons,
+        "coverage_ok": coverage_ok,
+        "task_ok": task_ok,
+        "target_identity_ok": target_identity_ok,
+        "missing_ip_targets": missing_ip_targets,
+        "required_count": required_count,
+        "scan_timestamps_ok": scan_timestamps_ok,
+        "plugin_health_ok": plugin_health_ok,
+        "clean_eligible": bool(verified_complete and plugin_health_ok and result_payload_ok and not skipped_details),
+        "result_payload_ok": result_payload_ok,
+        "effective_report_id": effective_report_id,
+        "scan_start": scan_start,
+        "scan_end": scan_end,
+        "assessment_complete": assessment_complete,
+        "assessment_verdict": assessment_verdict,
+        "status_norm": status_norm,
+    }
+
+
+def ingest_agent_results(
+    db,
+    *,
+    scanner_id: str,
+    job_id: str,
+    vulnerabilities: list[dict[str, Any]],
+    status: str = "completed",
+    external_scan_id: str | None = None,
+    partial: bool = False,
+    partial_reason: str | None = None,
+    error: str | None = None,
+    report_id: str | None = None,
+    task_status: str | None = None,
+    hosts_attempted: int | None = None,
+    hosts_assessed: int | None = None,
+    assessed_hosts: list[str] | None = None,
+    skipped_hosts: list[Any] | None = None,
+    report_result_count: int | None = None,
+    plugin_error_count: int | None = None,
+    plugin_error_details: list[dict[str, Any]] | None = None,
+    scan_start: str | None = None,
+    scan_end: str | None = None,
+    assessment_complete: bool | None = None,
+    assessment_verdict: str | None = None,
+    alive_test: str | None = None,
+    report_read_error: str | None = None,
+) -> dict[str, Any]:
+    """Ingest an edge-agent result and persist host-assessment evidence.
+
+    A completed OpenVAS task is not equivalent to a verified assessment.  The
+    central service requires durable evidence that the intended targets were
+    actually assessed before it can leave the job in ``completed`` state.
+    """
+    job = fetchone(
+        db,
+        """SELECT * FROM vuln_scan_jobs
+           WHERE id = CAST(:id AS uuid) AND scanner_id = CAST(:sid AS uuid)""",
+        {"id": job_id, "sid": scanner_id},
+    )
+    if not job:
+        return {"status": "missing", "findings": 0}
+    if not job_is_edge_agent(job):
+        return {"status": "not_edge_job", "findings": 0}
+
+    targets = fetchall(
+        db,
+        """SELECT target, target_type, excluded FROM vuln_scan_targets
+           WHERE scan_job_id = CAST(:id AS uuid)""",
+        {"id": job_id},
+    )
+    active_targets = [t for t in targets if not t.get("excluded")]
+    target_list = [str(t["target"]).strip() for t in active_targets if str(t.get("target") or "").strip()]
+    target_count = len(target_list)
+    case_id = str(job["case_id"])
+
+    findings = ingest_engine_results(
+        db,
+        case_id=case_id,
+        scan_job_id=job_id,
+        engine="openvas",
+        targets=target_list,
+        vulnerabilities=vulnerabilities or [],
+        credentialed=False,
+    )
+
+    attempted = _nonneg_int(hosts_attempted)
+    assessed = _nonneg_int(hosts_assessed)
+    error_details = [dict(x) for x in (plugin_error_details or []) if isinstance(x, dict)][:100]
+    plugin_errors = max(_nonneg_int(plugin_error_count), len(error_details))
+    result_count = _nonneg_int(report_result_count)
+    assessed_list = sorted({str(x).strip() for x in (assessed_hosts or []) if str(x).strip()})
+
+    skipped_details: list[dict[str, Any]] = []
+    skipped_set: set[str] = set()
+    for item in skipped_hosts or []:
+        if isinstance(item, dict):
+            host = str(item.get("host") or item.get("target") or "").strip()
+            reason = str(item.get("reason") or "unreachable").strip() or "unreachable"
+        else:
+            host = str(item).strip()
+            reason = "unreachable"
+        if not host:
+            continue
+        skipped_details.append({"host": host, "reason": reason})
+        try:
+            skipped_set.add(str(ipaddress.ip_address(host)))
+        except ValueError:
+            skipped_set.add(host.casefold())
+
+    evidence_present = any(
+        value is not None
+        for value in (
+            assessment_complete,
+            report_id,
+            hosts_attempted,
+            hosts_assessed,
+            report_result_count,
+            plugin_error_count,
+        )
+    ) or bool(skipped_details)
+
+    verdict = evaluate_edge_ingest_verdict(
+        target_list=target_list,
+        skipped_details=skipped_details,
+        skipped_set=skipped_set,
+        assessed_list=assessed_list,
+        status=status,
+        partial=partial,
+        partial_reason=partial_reason,
+        error=error,
+        external_scan_id=external_scan_id,
+        report_id=report_id,
+        task_status=task_status,
+        hosts_attempted=attempted,
+        hosts_assessed=assessed,
+        report_result_count=result_count,
+        plugin_error_count=plugin_errors,
+        scan_start=scan_start,
+        scan_end=scan_end,
+        assessment_complete=assessment_complete,
+        assessment_verdict=assessment_verdict,
+        report_read_error=report_read_error,
+        vulnerability_count=len(vulnerabilities or []),
+        evidence_present=evidence_present,
+    )
+    verified_complete = bool(verdict["verified_complete"])
+    final_status = str(verdict["final_status"])
+    err_text = verdict["err_text"]
+    required_count = int(verdict["required_count"])
+    missing_ip_targets = list(verdict["missing_ip_targets"])
+    target_identity_ok = bool(verdict["target_identity_ok"])
+    scan_timestamps_ok = bool(verdict["scan_timestamps_ok"])
+    plugin_health_ok = bool(verdict["plugin_health_ok"])
+    result_payload_ok = bool(verdict["result_payload_ok"])
+    effective_report_id = verdict["effective_report_id"]
+    scan_start = verdict["scan_start"]
+    scan_end = verdict["scan_end"]
+    assessment_complete = verdict["assessment_complete"]
+    assessment_verdict = verdict["assessment_verdict"]
+
+    evidence = {
+        "edge_agent": True,
+        "task_id": external_scan_id,
+        "report_id": effective_report_id,
+        "task_status": task_status,
+        "targets": target_list,
+        "hosts_attempted": attempted,
+        "hosts_assessed": assessed,
+        "assessed_hosts": assessed_list,
+        "skipped_hosts": skipped_details,
+        "reachable_target_count": required_count,
+        "missing_ip_targets": missing_ip_targets,
+        "target_identity_ok": target_identity_ok,
+        "scan_timestamps_ok": scan_timestamps_ok,
+        "plugin_health_ok": plugin_health_ok,
+        # A scan that skipped any requested host is verified as an execution,
+        # but it is not eligible for a "clean/no vulnerabilities" conclusion
+        # over the full requested scope.
+        "clean_eligible": bool(verified_complete and plugin_health_ok and result_payload_ok and not skipped_details),
+        "completed_with_warnings": bool(verified_complete and (plugin_errors > 0 or bool(skipped_details))),
+        "result_payload_ok": result_payload_ok,
+        "report_result_count": result_count,
+        "plugin_error_count": plugin_errors,
+        "plugin_error_details": error_details,
+        "scan_start": scan_start,
+        "scan_end": scan_end,
+        "assessment_complete": verified_complete,
+        "agent_assessment_complete": assessment_complete,
+        "assessment_verdict": assessment_verdict,
+        "alive_test": alive_test,
+        "report_read_error": report_read_error,
+        "partial": bool(partial),
+        "partial_reason": partial_reason,
+        "uploaded_vulnerability_rows": len(vulnerabilities or []),
+        "ingested_findings": findings,
+    }
+
+    # Keep a single durable evidence row for the current edge-agent upload so
+    # retries remain idempotent and reporting does not double-count coverage.
+    execute(
+        db,
+        "DELETE FROM vuln_scan_results WHERE scan_job_id = CAST(:jid AS uuid)",
+        {"jid": job_id},
+    )
+    from app.services.vuln_brd import record_scan_result
+
+    record_scan_result(
+        db,
+        scan_job_id=job_id,
+        hosts_attempted=attempted,
+        hosts_assessed=assessed,
+        credential_success=0,
+        credential_fail=0,
+        plugin_errors=plugin_errors,
+        result_json=evidence,
+    )
+
+    orch = _orch(job)
+    orch["edge_agent"] = True
+    orch["enabled"] = False
+    if final_status == "completed" and plugin_errors > 0:
+        progress_message = f"assessment completed with {plugin_errors} scanner warning(s)"
+    elif final_status == "completed":
+        progress_message = "assessment verified"
+    else:
+        progress_message = "assessment incomplete"
+    orch["edge_progress"] = {
+        "pct": 100.0,
+        "message": progress_message,
+    }
+    orch["assessment_complete"] = verified_complete
+    orch["clean_eligible"] = bool(verified_complete and plugin_health_ok and result_payload_ok and not skipped_details)
+    orch["completed_with_warnings"] = bool(verified_complete and (plugin_errors > 0 or bool(skipped_details)))
+    orch["hosts_attempted"] = attempted
+    orch["hosts_assessed"] = assessed
+    orch["report_id"] = effective_report_id
+    orch["skipped_hosts"] = skipped_details
+    orch["assessed_hosts"] = assessed_list
+    orch["reachable_target_count"] = required_count
+    orch["plugin_error_count"] = plugin_errors
+    orch["result_payload_ok"] = result_payload_ok
+    orch["report_result_count"] = result_count
+    orch["uploaded_vulnerability_rows"] = len(vulnerabilities or [])
+    if partial:
+        orch["partial"] = True
+        orch["partial_reason"] = (partial_reason or "")[:500]
+    else:
+        orch.pop("partial", None)
+        orch.pop("partial_reason", None)
+
+    execute(
+        db,
+        """UPDATE vuln_scan_jobs
+           SET status = :st,
+               external_scan_id = COALESCE(:eid, external_scan_id),
+               error = :err,
+               orchestration_json = CAST(:orch AS jsonb),
+               completed_at = NOW(),
+               updated_at = NOW()
+           WHERE id = CAST(:id AS uuid)""",
+        {
+            "st": final_status,
+            "eid": external_scan_id,
+            "err": (err_text[:2000] if err_text else None),
+            "orch": json.dumps(orch),
+            "id": job_id,
+        },
+    )
+
+    if final_status == "completed":
+        if plugin_errors > 0:
+            summary = (
+                f"Edge assessment completed with warnings: {assessed}/{target_count} target(s) assessed; "
+                f"{plugin_errors} plugin/scanner warning(s); {findings} finding(s) ingested"
+            )
+        else:
+            summary = (
+                f"Edge assessment verified: {assessed}/{target_count} target(s) assessed; "
+                f"{findings} finding(s) ingested"
+            )
+        event_type = "scan.completed"
+    else:
+        summary = (err_text or "Edge assessment incomplete")[:500]
+        event_type = "scan.cancelled" if final_status == "cancelled" else "scan.failed"
+
+    timeline(
+        db,
+        case_id=case_id,
+        source_type="scan_job",
+        source_id=job_id,
+        event_type=event_type,
+        actor="scanner-agent",
+        summary=summary,
+    )
+    log.info(
+        "Edge agent job %s ingested %s findings status=%s attempted=%s assessed=%s report=%s",
+        job_id,
+        findings,
+        final_status,
+        attempted,
+        assessed,
+        report_id,
+    )
+    return {
+        "status": final_status,
+        "findings": findings,
+        "partial": bool(partial),
+        "assessment_complete": verified_complete,
+        "clean_eligible": bool(verified_complete and plugin_health_ok and result_payload_ok and not skipped_details),
+        "completed_with_warnings": bool(verified_complete and (plugin_errors > 0 or bool(skipped_details))),
+        "plugin_error_count": plugin_errors,
+        "hosts_attempted": attempted,
+        "hosts_assessed": assessed,
+        "report_id": report_id,
+        "error": err_text,
+    }
+
+
+def ingest_agent_logs(db, *, scanner_id: str, entries: list[dict[str, Any]]) -> int:
+    """Persist log lines uploaded by a laptop/edge scanner-agent."""
+    row = fetchone(db, "SELECT to_regclass('scanner_agent_logs') AS r")
+    if not row or not row.get("r"):
+        return 0
+    stored = 0
+    for raw in (entries or [])[:200]:
+        if not isinstance(raw, dict):
+            continue
+        message = str(raw.get("message") or "").strip()[:2000]
+        if not message:
+            continue
+        level = str(raw.get("level") or "info").strip().lower()
+        if level in {"warn"}:
+            level = "warning"
+        if level not in {"debug", "info", "warning", "error"}:
+            level = "info"
+        job_id = str(raw.get("job_id") or "").strip() or None
+        if job_id:
+            try:
+                job_id = str(UUID(job_id))
+            except Exception:
+                job_id = None
+        ts = str(raw.get("ts") or "").strip() or None
+        try:
+            execute(
+                db,
+                """INSERT INTO scanner_agent_logs
+                     (scanner_id, job_id, level, logger, stage, message, created_at)
+                   VALUES (
+                     CAST(:scanner_id AS uuid),
+                     CASE WHEN :job_id IS NULL THEN NULL ELSE CAST(:job_id AS uuid) END,
+                     :level, :logger, :stage, :message,
+                     COALESCE(CAST(:ts AS timestamptz), NOW())
+                   )""",
+                {
+                    "scanner_id": scanner_id,
+                    "job_id": job_id,
+                    "level": level,
+                    "logger": str(raw.get("logger") or "")[:120] or None,
+                    "stage": str(raw.get("stage") or "")[:64] or None,
+                    "message": message,
+                    "ts": ts,
+                },
+            )
+            stored += 1
+        except Exception:
+            log.debug("skip malformed agent log row", exc_info=True)
+    return stored

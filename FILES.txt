@@ -1,0 +1,8 @@
+backend/app/services/host_evidence.py
+backend/tests/test_source_transport_isolation_v29_5.py
+frontend/src/lib/orchestrationStages.ts
+frontend/src/lib/jobUploadSession.ts
+frontend/src/components/forensic/HostEvidencePanel.tsx
+frontend/src/components/forensic/JobActivityPanel.tsx
+frontend/src/pages/forensic/JobDetailPage.tsx
+SOURCE_TRANSPORT_ISOLATION_V29_5_20260926.md

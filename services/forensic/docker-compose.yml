@@ -1,0 +1,8 @@
+# Disk forensics only — mobile Android/iOS run in independent stacks.
+# From repo root:
+#   docker compose -f services/forensic/docker-compose.yml --project-directory . up -d --build
+# UI is the gateway (http://localhost:3000). Do not start `frontend` — it shares :3001.
+name: aetheris-forensic
+
+include:
+  - docker-compose.yml

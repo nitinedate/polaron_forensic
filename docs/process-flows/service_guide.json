@@ -1,0 +1,1469 @@
+{
+  "filename": "Aetheris-Scanner-Service-Implementation-Guide-Updated.pdf",
+  "title": "Scanner Service\nImplementation Guide",
+  "short": "Scanner Service Guide",
+  "subtitle": "Version 2.1 \u2022 52 service families and IP forwarding\nImplemented policy, evidence, report flow and acceptance limits",
+  "accent": "#39BDB3",
+  "cover_notes": [
+    "Updated from the attached v2.0 service document after Laptop and central code changes.",
+    "Includes the complete service list, ports, credential/network boundaries and exact process diagrams.",
+    "Source build 1.5.3-v45.7. Native feed-backed checks and live acceptance are explicitly distinguished."
+  ],
+  "pages": [
+    {
+      "title": "Implementation / Scope and evidence contract",
+      "intro": "Updated from the supplied 18-page v2.0 service guide. This revision describes actual code changes in source build 1.5.3-v45.7 and preserves visible implementation limits.",
+      "headers": [
+        "Requirement",
+        "Implemented behavior / acceptance boundary"
+      ],
+      "rows": [
+        [
+          "52 services + configuration",
+          "All 52 ordered service/product entries are registered as SVC-01\u2026SVC-52. IP forwarding is CFG-IP-FORWARDING, an additional configuration family."
+        ],
+        [
+          "Scope and custom ports",
+          "Full TCP is default. Named catalog modes include 88 TCP ports; priority UDP includes 30 ports. Custom TCP/UDP ports add scope and can be configured per policy or locally."
+        ],
+        [
+          "Checks",
+          "Native Greenbone/OpenVAS feed performs protocol/product checks. This release adds routing/audit/evidence handling, not 52 independent custom vulnerability engines."
+        ],
+        [
+          "Credentials",
+          "Explicit local GMP UUIDs bind SSH, SMB, SNMP and ESXi credentials; optional SSH credential port is supported. Bound is distinct from successful authentication."
+        ],
+        [
+          "Evidence states",
+          "Family findings/observations require source references or native context. Missing evidence is not-tested; unsupported network collection is explicit. No pass is inferred from a quiet port."
+        ],
+        [
+          "Reporting",
+          "UI coverage detail; per-host 52-family CSV plus forwarding; JSON task policy audit; PDF/DOCX coverage appendix, including merged cases."
+        ],
+        [
+          "Live validation",
+          "Windows/Docker/Greenbone coverage/performance, credentialed product checks and raw Nessus parity still require real authorized target fixtures."
+        ]
+      ],
+      "widths": [
+        133,
+        374
+      ],
+      "notes": [],
+      "source": "Source guide v2.0; scanner_service_policy.py; service_catalog.json; scanner_agent_jobs.py"
+    },
+    {
+      "title": "Service policy / Request to actual target scope",
+      "intro": "A policy is snapshotted when the central job is created, so later policy edits cannot change the claimed job\u2019s request.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "p",
+            "text": "Scan policy settings\nNamed mode / custom ports",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "v",
+            "text": "Validate ports and UUIDs\nDrop raw secrets",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "j",
+            "text": "Store job policy request\nAuthenticated edge owner",
+            "r": 2,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "c",
+            "text": "Laptop computes scope\nBaseline + selected UDP",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "creds",
+            "text": "Local credentials\navailable?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "bind",
+            "text": "Bind supported GMP UUIDs\nSSH custom port if supplied",
+            "r": 5,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "gap",
+            "text": "Record binding gap\nContinue native detection",
+            "r": 5,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "start",
+            "text": "Create target and task\nCapture applied policy",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "p",
+            "b": "v"
+          },
+          {
+            "a": "v",
+            "b": "j"
+          },
+          {
+            "a": "j",
+            "b": "c"
+          },
+          {
+            "a": "c",
+            "b": "creds"
+          },
+          {
+            "a": "creds",
+            "b": "bind",
+            "label": "Yes"
+          },
+          {
+            "a": "creds",
+            "b": "gap",
+            "label": "No"
+          },
+          {
+            "a": "bind",
+            "b": "start"
+          },
+          {
+            "a": "gap",
+            "b": "start"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Credential boundary",
+          "Credentials must already exist in the local Greenbone vault. A central credential_ref is not a local GMP UUID. WMI/WinRM and product-specific authenticated inventory depend on supported native feed methods; no new universal collector is implied."
+        ]
+      ],
+      "source": "backend/app/routers/vuln.py; scanner_agent_jobs.py; agent/service_policy.py; gmp_local.py"
+    },
+    {
+      "title": "Service evidence / Native report to family status",
+      "intro": "A service label is a source-backed observation. Port numbers alone do not identify a product or establish vulnerability.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "raw",
+            "text": "All paged native results\nStable result IDs / context",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "e",
+            "text": "Endpoint context available?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "route",
+            "text": "Route protocol / product\nIncludes custom port evidence",
+            "r": 2,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "hint",
+            "text": "Port hint only\nPreserve low confidence",
+            "r": 2,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "rows",
+            "text": "Map source-backed references\n52 service families",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "state",
+            "text": "Finding or observation\nMissing \u2192 not-tested",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "net",
+            "text": "No network collector\nDHCP \u2192 unsupported",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "db",
+            "text": "Central recomputes + scopes\nDurable result and job JSON",
+            "r": 5,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "show",
+            "text": "UI / CSV / JSON / appendix\nNo per-rule pass from silence",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "raw",
+            "b": "e"
+          },
+          {
+            "a": "e",
+            "b": "route",
+            "label": "Yes"
+          },
+          {
+            "a": "e",
+            "b": "hint",
+            "label": "No"
+          },
+          {
+            "a": "route",
+            "b": "rows"
+          },
+          {
+            "a": "hint",
+            "b": "rows"
+          },
+          {
+            "a": "rows",
+            "b": "state"
+          },
+          {
+            "a": "rows",
+            "b": "net"
+          },
+          {
+            "a": "state",
+            "b": "db"
+          },
+          {
+            "a": "net",
+            "b": "db"
+          },
+          {
+            "a": "db",
+            "b": "show"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Evidence limit",
+          "Native plugin-name references can associate a family without proving a precise fingerprint; they remain references, not a fabricated version/CPE. Missing score is explicitly marked. Configuration IP forwarding requires source-backed role/configuration evidence."
+        ]
+      ],
+      "source": "agent/service_policy.py; gmp_local.py; backend/app/services/scanner_agent_jobs.py; vuln_report_export.py"
+    },
+    {
+      "title": "Execution / Detection and native check families",
+      "intro": "Registered scope reaches the same native Full and fast configuration. Endpoint context routes evidence to shared protocols and product families.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "target",
+            "text": "Explicit target range\nSafe-check configuration",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "engine",
+            "text": "Native discovery + NVTs\nFeed/config dependent",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "id",
+            "text": "Verified protocol / product\nVersion / CPE if present",
+            "r": 2,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "shared",
+            "text": "Shared transport checks\nSSH / TLS / HTTP / RPC",
+            "r": 3,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "product",
+            "text": "Native product rules\nWindows / data / appliances",
+            "r": 3,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "credential",
+            "text": "Authenticated native path\nSupplied vault references",
+            "r": 4,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "absence",
+            "text": "Absent evidence / failures\nNo fabricated pass",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "report",
+            "text": "Paged native evidence\nPer-IP coverage and source IDs",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "target",
+            "b": "engine"
+          },
+          {
+            "a": "engine",
+            "b": "id"
+          },
+          {
+            "a": "id",
+            "b": "shared"
+          },
+          {
+            "a": "id",
+            "b": "product"
+          },
+          {
+            "a": "shared",
+            "b": "credential"
+          },
+          {
+            "a": "product",
+            "b": "credential"
+          },
+          {
+            "a": "shared",
+            "b": "absence"
+          },
+          {
+            "a": "product",
+            "b": "absence"
+          },
+          {
+            "a": "credential",
+            "b": "report"
+          },
+          {
+            "a": "absence",
+            "b": "report"
+          }
+        ]
+      },
+      "height": 406,
+      "notes": [
+        [
+          "Shared checks",
+          "TLS/STARTTLS and SSH can support many products. The native feed controls check execution and deduplication. Per-SNI TLS cache or a new dedicated legacy-protocol engine was not added; target compatibility must be validated."
+        ],
+        [
+          "Device scope",
+          "Vendor, NAS or mail-vault support requires actual discovery and available native rules. A vendor name in the registry is not proof of validated product coverage."
+        ]
+      ],
+      "source": "gmp_local.py; service_policy.py; native Greenbone feed and configuration"
+    },
+    {
+      "title": "Policy / Inputs, defaults and immutable audit",
+      "intro": "The central launch stores sanitized policy settings in orchestration_json. The claimed job receives this request; each created native task records what was actually applied.",
+      "headers": [
+        "Setting / field",
+        "Meaning and limits"
+      ],
+      "rows": [
+        [
+          "port_profile / mode",
+          "full (default), fast, common, vuln, nessus or nexus. All named non-Full modes retain the guide baseline and versioned catalog."
+        ],
+        [
+          "udp_profile",
+          "priority (default), full or off. Off removes UDP for every mode; Full requests 1\u201365535 UDP. Priority is additive baseline + transport extensions + existing catalog."
+        ],
+        [
+          "custom_tcp_ports / custom_udp_ports",
+          "Comma-separated ports/ranges or lists. Validate 1\u201365535, reject malformed/reversed/Boolean values. More than 4096 custom ports requires Full mode."
+        ],
+        [
+          "Local defaults",
+          "SCAN_TCP_CUSTOM_PORTS and SCAN_UDP_CUSTOM_PORTS. Legacy UDP_PORT_RANGE adds ports and cannot erase the baseline."
+        ],
+        [
+          "gmp_credential_refs",
+          "Only ssh/smb/snmp/esxi UUIDs. Local vault lookup/binding failure is recorded; unauthenticated detection continues. Raw passwords/URLs/tokens are dropped from transport."
+        ],
+        [
+          "ssh_credential_port",
+          "One validated port, default 22. Set it when an authorized SSH account is bound on a nonstandard port."
+        ],
+        [
+          "Task snapshot",
+          "Task/target/config/scanner IDs, effective/excluded port range and counts, guide version, feed versions, applied preferences, credential status, start time and SHA-256."
+        ],
+        [
+          "Resume",
+          "Persist snapshots immediately in progress; restore only policies whose entire target list belongs to this job. Old tasks without recorded policies stay unknown, not reconstructed from current defaults."
+        ]
+      ],
+      "widths": [
+        133,
+        374
+      ],
+      "notes": [],
+      "source": "service_policy.py; gmp_local.py; main.py; backend/app/routers/vuln.py"
+    },
+    {
+      "title": "Service catalog / 01\u201306",
+      "intro": "Native feed-dependent scope. Hint ports assist discovery; an open port alone does not identify this service or prove that its requested checks passed.",
+      "headers": [
+        "ID / service and meaning",
+        "Hint ports / transport",
+        "Intended native check scope"
+      ],
+      "rows": [
+        [
+          "SVC-01\nSMB / CIFS\nServer Message Block / Common Internet File System",
+          "TCP: 139,445\nUDP: \u2014",
+          "Remote: SMBv1; signing; shares and permissions\nAuthenticated: supplied-user share permissions"
+        ],
+        [
+          "SVC-02\nRPC\nRemote Procedure Call",
+          "TCP: 135\nUDP: \u2014\nDiscovered RPC ports",
+          "Remote: Endpoint mapping; dynamic RPC services; build checks\nAuthenticated: authenticated Windows inventory"
+        ],
+        [
+          "SVC-03\nWMI\nWindows Management Instrumentation",
+          "TCP: 135\nUDP: \u2014\nDiscovered RPC ports",
+          "Remote: Route Windows RPC evidence\nAuthenticated: patch/configuration inventory"
+        ],
+        [
+          "SVC-04\nWinRM\nWindows Remote Management",
+          "TCP: 5985,5986\nUDP: \u2014",
+          "Remote: Authentication and endpoint TLS\nAuthenticated: Windows configuration/inventory"
+        ],
+        [
+          "SVC-05\nRDP\nRemote Desktop Protocol",
+          "TCP: 3389\nUDP: 3389",
+          "Remote: Security negotiation; TLS; NLA; version\nAuthenticated: host patch/configuration"
+        ],
+        [
+          "SVC-06\nSSH: OpenSSH / Dropbear\nSecure Shell server products",
+          "TCP: 22\nUDP: \u2014",
+          "Remote: Product/algorithms; exact vendor advisory checks\nAuthenticated: package/backport and SSH configuration"
+        ]
+      ],
+      "widths": [
+        151,
+        119,
+        237
+      ],
+      "notes": [
+        [
+          "Implementation status",
+          "Registered and routed in code. Actual native rule results require feed/configuration, protocol/product identity, access and report evidence. Credentialed/network coverage remains not-tested unless proven."
+        ]
+      ],
+      "source": "agent/service_catalog.json; service_policy.py; Aetheris-Service-Coverage-List.csv"
+    },
+    {
+      "title": "Service catalog / 07\u201312",
+      "intro": "Native feed-dependent scope. Hint ports assist discovery; an open port alone does not identify this service or prove that its requested checks passed.",
+      "headers": [
+        "ID / service and meaning",
+        "Hint ports / transport",
+        "Intended native check scope"
+      ],
+      "rows": [
+        [
+          "SVC-07\nFTP / FTPS\nFile Transfer Protocol / FTP secured with TLS",
+          "TCP: 20,21,990\nUDP: \u2014",
+          "Remote: Banner; bounded anonymous access; explicit/implicit TLS\nAuthenticated: server configuration/access policy"
+        ],
+        [
+          "SVC-08\nSFTP\nSSH File Transfer Protocol",
+          "TCP: 22\nUDP: \u2014",
+          "Remote: Reuse SSH transport evidence\nAuthenticated: SFTP permissions/configuration"
+        ],
+        [
+          "SVC-09\nHTTP\nHypertext Transfer Protocol",
+          "TCP: 80,8000,8080\nUDP: \u2014\nCustom endpoints supported",
+          "Remote: Web server/app identity; headers/exposure; route product checks\nAuthenticated: authenticated application checks"
+        ],
+        [
+          "SVC-10\nHTTPS / TLS\nHypertext Transfer Protocol Secure / Transport Layer Security",
+          "TCP: 443,8443\nUDP: \u2014\nCustom endpoints supported",
+          "Remote: Certificates; protocol/cipher acceptance; STARTTLS\nAuthenticated: configuration context where supplied"
+        ],
+        [
+          "SVC-11\nSMTP / SMTPS\nSimple Mail Transfer Protocol / SMTP secured with TLS",
+          "TCP: 25,465,587\nUDP: \u2014",
+          "Remote: Banner; authentication; relay policy; STARTTLS\nAuthenticated: mail configuration/access policy"
+        ],
+        [
+          "SVC-12\nPOP3 / POP3S\nPost Office Protocol v3 / POP3 secured with TLS",
+          "TCP: 110,995\nUDP: \u2014",
+          "Remote: Product; cleartext authentication; STARTTLS\nAuthenticated: mail configuration/access policy"
+        ]
+      ],
+      "widths": [
+        151,
+        119,
+        237
+      ],
+      "notes": [
+        [
+          "Implementation status",
+          "Registered and routed in code. Actual native rule results require feed/configuration, protocol/product identity, access and report evidence. Credentialed/network coverage remains not-tested unless proven."
+        ]
+      ],
+      "source": "agent/service_catalog.json; service_policy.py; Aetheris-Service-Coverage-List.csv"
+    },
+    {
+      "title": "Service catalog / 13\u201318",
+      "intro": "Native feed-dependent scope. Hint ports assist discovery; an open port alone does not identify this service or prove that its requested checks passed.",
+      "headers": [
+        "ID / service and meaning",
+        "Hint ports / transport",
+        "Intended native check scope"
+      ],
+      "rows": [
+        [
+          "SVC-13\nIMAP / IMAPS\nInternet Message Access Protocol / IMAP secured with TLS",
+          "TCP: 143,993\nUDP: \u2014",
+          "Remote: Product; authentication; STARTTLS\nAuthenticated: mail configuration/access policy"
+        ],
+        [
+          "SVC-14\nDNS\nDomain Name System",
+          "TCP: 53\nUDP: 53",
+          "Remote: Protocol; recursion/transfer policy; server identity\nAuthenticated: server configuration"
+        ],
+        [
+          "SVC-15\nSNMP\nSimple Network Management Protocol",
+          "TCP: Configured / none fixed\nUDP: 161",
+          "Remote: Version; configured community/access; firmware\nAuthenticated: approved device/community inventory"
+        ],
+        [
+          "SVC-16\nTelnet\nRemote terminal protocol",
+          "TCP: 23\nUDP: \u2014",
+          "Remote: Protocol/product; cleartext remote access\nAuthenticated: device access configuration"
+        ],
+        [
+          "SVC-17\nTFTP\nTrivial File Transfer Protocol",
+          "TCP: Configured / none fixed\nUDP: 69",
+          "Remote: Protocol; approved-file read policy\nAuthenticated: approved filename/access context"
+        ],
+        [
+          "SVC-18\nLDAP\nLightweight Directory Access Protocol",
+          "TCP: 389\nUDP: 389",
+          "Remote: Bind policy; anonymous access; STARTTLS\nAuthenticated: directory configuration"
+        ]
+      ],
+      "widths": [
+        151,
+        119,
+        237
+      ],
+      "notes": [
+        [
+          "Implementation status",
+          "Registered and routed in code. Actual native rule results require feed/configuration, protocol/product identity, access and report evidence. Credentialed/network coverage remains not-tested unless proven."
+        ]
+      ],
+      "source": "agent/service_catalog.json; service_policy.py; Aetheris-Service-Coverage-List.csv"
+    },
+    {
+      "title": "Service catalog / 19\u201324",
+      "intro": "Native feed-dependent scope. Hint ports assist discovery; an open port alone does not identify this service or prove that its requested checks passed.",
+      "headers": [
+        "ID / service and meaning",
+        "Hint ports / transport",
+        "Intended native check scope"
+      ],
+      "rows": [
+        [
+          "SVC-19\nLDAPS\nLDAP secured with TLS",
+          "TCP: 636\nUDP: \u2014",
+          "Remote: TLS and directory bind/access\nAuthenticated: directory configuration"
+        ],
+        [
+          "SVC-20\nKerberos\nNetwork authentication protocol",
+          "TCP: 88\nUDP: 88",
+          "Remote: Protocol/realm identity\nAuthenticated: credentialed AD policy"
+        ],
+        [
+          "SVC-21\nAD Global Catalog\nActive Directory Global Catalog",
+          "TCP: 3268,3269\nUDP: \u2014",
+          "Remote: Directory exposure/bind; secure endpoint TLS\nAuthenticated: directory configuration"
+        ],
+        [
+          "SVC-22\nMicrosoft SQL Server\nStructured Query Language database",
+          "TCP: 1433\nUDP: \u2014",
+          "Remote: TDS; build/version; encryption/access\nAuthenticated: patch/configuration/permissions"
+        ],
+        [
+          "SVC-23\nMySQL / MariaDB\nDatabase server products",
+          "TCP: 3306\nUDP: \u2014",
+          "Remote: Handshake; authentication/access; TLS; advisories\nAuthenticated: packages/settings/permissions"
+        ],
+        [
+          "SVC-24\nPostgreSQL\nDatabase server product",
+          "TCP: 5432\nUDP: \u2014",
+          "Remote: Protocol; SSL negotiation; authentication/patch context\nAuthenticated: packages/settings/permissions"
+        ]
+      ],
+      "widths": [
+        151,
+        119,
+        237
+      ],
+      "notes": [
+        [
+          "Implementation status",
+          "Registered and routed in code. Actual native rule results require feed/configuration, protocol/product identity, access and report evidence. Credentialed/network coverage remains not-tested unless proven."
+        ]
+      ],
+      "source": "agent/service_catalog.json; service_policy.py; Aetheris-Service-Coverage-List.csv"
+    },
+    {
+      "title": "Service catalog / 25\u201330",
+      "intro": "Native feed-dependent scope. Hint ports assist discovery; an open port alone does not identify this service or prove that its requested checks passed.",
+      "headers": [
+        "ID / service and meaning",
+        "Hint ports / transport",
+        "Intended native check scope"
+      ],
+      "rows": [
+        [
+          "SVC-25\nOracle Database\nOracle relational database",
+          "TCP: 1521\nUDP: \u2014",
+          "Remote: Listener/service identification; access/encryption\nAuthenticated: database/listener patch inventory"
+        ],
+        [
+          "SVC-26\nMongoDB\nDocument database",
+          "TCP: 27017\nUDP: \u2014",
+          "Remote: Authentication/authorization; TLS; version/exposure\nAuthenticated: server configuration/roles"
+        ],
+        [
+          "SVC-27\nRedis\nRemote Dictionary Server",
+          "TCP: 6379\nUDP: \u2014",
+          "Remote: Authentication/ACL; TLS; exposure/version\nAuthenticated: read-only config/inventory"
+        ],
+        [
+          "SVC-28\nElasticsearch\nSearch and analytics product",
+          "TCP: 9200,9300\nUDP: \u2014",
+          "Remote: HTTP/transport identity; authentication; TLS\nAuthenticated: security/build/patch context"
+        ],
+        [
+          "SVC-29\nVNC\nVirtual Network Computing",
+          "TCP: 5900\nUDP: \u2014\nCustom endpoints supported",
+          "Remote: RFB; authentication/encryption; product advisories\nAuthenticated: configured endpoint policy"
+        ],
+        [
+          "SVC-30\nVMware ESXi / vCenter\nHypervisor and management products",
+          "TCP: 443,902\nUDP: 902",
+          "Remote: Management/API identity; access; TLS; advisories\nAuthenticated: vendor patch/inventory"
+        ]
+      ],
+      "widths": [
+        151,
+        119,
+        237
+      ],
+      "notes": [
+        [
+          "Implementation status",
+          "Registered and routed in code. Actual native rule results require feed/configuration, protocol/product identity, access and report evidence. Credentialed/network coverage remains not-tested unless proven."
+        ]
+      ],
+      "source": "agent/service_catalog.json; service_policy.py; Aetheris-Service-Coverage-List.csv"
+    },
+    {
+      "title": "Service catalog / 31\u201336",
+      "intro": "Native feed-dependent scope. Hint ports assist discovery; an open port alone does not identify this service or prove that its requested checks passed.",
+      "headers": [
+        "ID / service and meaning",
+        "Hint ports / transport",
+        "Intended native check scope"
+      ],
+      "rows": [
+        [
+          "SVC-31\nDocker API\nDocker Application Programming Interface",
+          "TCP: 2375,2376\nUDP: \u2014",
+          "Remote: API exposure; auth/client certificates; version\nAuthenticated: daemon configuration"
+        ],
+        [
+          "SVC-32\nKubernetes API\nKubernetes Application Programming Interface",
+          "TCP: 6443\nUDP: \u2014",
+          "Remote: API identity; anonymous access; TLS\nAuthenticated: RBAC and authenticated context"
+        ],
+        [
+          "SVC-33\nkubelet\nKubernetes node agent",
+          "TCP: 10250\nUDP: \u2014",
+          "Remote: Node API exposure; authorization; TLS\nAuthenticated: node configuration"
+        ],
+        [
+          "SVC-34\nJenkins\nAutomation server",
+          "TCP: 8080\nUDP: \u2014\nCustom endpoints supported",
+          "Remote: Core/plugin identity; admin exposure; advisories\nAuthenticated: plugin/configuration inventory"
+        ],
+        [
+          "SVC-35\nGitLab / Git\nDevelopment platform / version control",
+          "TCP: 22,80,443,9418\nUDP: \u2014\nCustom endpoints supported",
+          "Remote: GitLab identity/access/advisories; Git exposure; reuse SSH/TLS\nAuthenticated: platform configuration"
+        ],
+        [
+          "SVC-36\nRabbitMQ\nMessage broker",
+          "TCP: 5672,15672\nUDP: \u2014\nCustom endpoints supported",
+          "Remote: AMQP/management; access; TLS; version\nAuthenticated: permissions/broker settings"
+        ]
+      ],
+      "widths": [
+        151,
+        119,
+        237
+      ],
+      "notes": [
+        [
+          "Implementation status",
+          "Registered and routed in code. Actual native rule results require feed/configuration, protocol/product identity, access and report evidence. Credentialed/network coverage remains not-tested unless proven."
+        ]
+      ],
+      "source": "agent/service_catalog.json; service_policy.py; Aetheris-Service-Coverage-List.csv"
+    },
+    {
+      "title": "Service catalog / 37\u201342",
+      "intro": "Native feed-dependent scope. Hint ports assist discovery; an open port alone does not identify this service or prove that its requested checks passed.",
+      "headers": [
+        "ID / service and meaning",
+        "Hint ports / transport",
+        "Intended native check scope"
+      ],
+      "rows": [
+        [
+          "SVC-37\nApache Kafka\nEvent streaming product",
+          "TCP: 9092\nUDP: \u2014",
+          "Remote: Broker identity; auth/ACLs; listener TLS\nAuthenticated: broker configuration"
+        ],
+        [
+          "SVC-38\nMemcached\nMemory caching service",
+          "TCP: 11211\nUDP: 11211",
+          "Remote: TCP/UDP identity; exposure; version\nAuthenticated: transport/access policy"
+        ],
+        [
+          "SVC-39\nApache Tomcat\nJava application server",
+          "TCP: 8080,8443\nUDP: \u2014\nCustom endpoints supported",
+          "Remote: Product/advisories; manager exposure; TLS\nAuthenticated: server/component patch context"
+        ],
+        [
+          "SVC-40\nJBoss / WildFly\nJava application servers",
+          "TCP: 8080,9990\nUDP: \u2014\nCustom endpoints supported",
+          "Remote: Application/admin identity; access; advisories\nAuthenticated: server/component patch context"
+        ],
+        [
+          "SVC-41\nIIS\nInternet Information Services",
+          "TCP: 80,443\nUDP: \u2014\nCustom endpoints supported",
+          "Remote: HTTP/TLS identity and exposure\nAuthenticated: Windows features/patches"
+        ],
+        [
+          "SVC-42\nApache HTTPD\nApache HTTP Server daemon",
+          "TCP: 80,443\nUDP: \u2014\nCustom endpoints supported",
+          "Remote: Version/modules; configuration/exposure; vendor patches\nAuthenticated: package/backport context"
+        ]
+      ],
+      "widths": [
+        151,
+        119,
+        237
+      ],
+      "notes": [
+        [
+          "Implementation status",
+          "Registered and routed in code. Actual native rule results require feed/configuration, protocol/product identity, access and report evidence. Credentialed/network coverage remains not-tested unless proven."
+        ]
+      ],
+      "source": "agent/service_catalog.json; service_policy.py; Aetheris-Service-Coverage-List.csv"
+    },
+    {
+      "title": "Service catalog / 43\u201348",
+      "intro": "Native feed-dependent scope. Hint ports assist discovery; an open port alone does not identify this service or prove that its requested checks passed.",
+      "headers": [
+        "ID / service and meaning",
+        "Hint ports / transport",
+        "Intended native check scope"
+      ],
+      "rows": [
+        [
+          "SVC-43\nnginx\nWeb server product",
+          "TCP: 80,443\nUDP: \u2014\nCustom endpoints supported",
+          "Remote: Version/build; configuration/exposure; vendor patches\nAuthenticated: package/backport context"
+        ],
+        [
+          "SVC-44\nOracle WebLogic\nOracle WebLogic Server",
+          "TCP: 7001,7002\nUDP: \u2014\nCustom endpoints supported",
+          "Remote: Version/patch; console exposure; auth/TLS\nAuthenticated: server patch/configuration"
+        ],
+        [
+          "SVC-45\nIBM WebSphere\nIBM WebSphere Application Server",
+          "TCP: Configured / none fixed\nUDP: \u2014\nCustom endpoints supported",
+          "Remote: Configured app/admin identity; version; auth/TLS\nAuthenticated: server patch/configuration"
+        ],
+        [
+          "SVC-46\nIPsec / IKE\nInternet Protocol Security / Internet Key Exchange",
+          "TCP: Configured / none fixed\nUDP: 500,4500",
+          "Remote: Negotiation; device identity; vendor/configuration\nAuthenticated: device configuration"
+        ],
+        [
+          "SVC-47\nNTP\nNetwork Time Protocol",
+          "TCP: Configured / none fixed\nUDP: 123",
+          "Remote: Protocol/version; permitted query policy\nAuthenticated: device configuration"
+        ],
+        [
+          "SVC-48\nDHCP\nDynamic Host Configuration Protocol",
+          "TCP: Configured / none fixed\nUDP: 67,68",
+          "Remote: Network-scoped server identity\nAuthenticated: network broadcast/relay collector"
+        ]
+      ],
+      "widths": [
+        151,
+        119,
+        237
+      ],
+      "notes": [
+        [
+          "Implementation status",
+          "Registered and routed in code. Actual native rule results require feed/configuration, protocol/product identity, access and report evidence. Credentialed/network coverage remains not-tested unless proven."
+        ]
+      ],
+      "source": "agent/service_catalog.json; service_policy.py; Aetheris-Service-Coverage-List.csv"
+    },
+    {
+      "title": "Service catalog / 49\u201352",
+      "intro": "Native feed-dependent scope. Hint ports assist discovery; an open port alone does not identify this service or prove that its requested checks passed.",
+      "headers": [
+        "ID / service and meaning",
+        "Hint ports / transport",
+        "Intended native check scope"
+      ],
+      "rows": [
+        [
+          "SVC-49\nIPP\nInternet Printing Protocol",
+          "TCP: 631\nUDP: \u2014",
+          "Remote: Printer identity/access; supported TLS\nAuthenticated: device/firmware inventory"
+        ],
+        [
+          "SVC-50\nJetDirect\nHP network printing technology",
+          "TCP: 9100\nUDP: \u2014",
+          "Remote: Device identity/exposure; no arbitrary raw print payload\nAuthenticated: device/firmware inventory"
+        ],
+        [
+          "SVC-51\nNFS\nNetwork File System",
+          "TCP: 2049\nUDP: 2049",
+          "Remote: RPC discovery; export/access policy; version\nAuthenticated: approved export permission context"
+        ],
+        [
+          "SVC-52\nrpcbind\nRemote Procedure Call binding service",
+          "TCP: 111\nUDP: 111\nDiscovered RPC ports",
+          "Remote: RPC program enumeration; auxiliary endpoints\nAuthenticated: host/RPC configuration"
+        ]
+      ],
+      "widths": [
+        151,
+        119,
+        237
+      ],
+      "notes": [
+        [
+          "Implementation status",
+          "Registered and routed in code. Actual native rule results require feed/configuration, protocol/product identity, access and report evidence. Credentialed/network coverage remains not-tested unless proven."
+        ]
+      ],
+      "source": "agent/service_catalog.json; service_policy.py; Aetheris-Service-Coverage-List.csv"
+    },
+    {
+      "title": "UDP / Baseline, extensions and network collection",
+      "intro": "Numeric ports are not service counts. Priority scanning is explicit scope; UDP timeout/filtering is not a passed vulnerability test.",
+      "headers": [
+        "Group",
+        "Ports / current behavior"
+      ],
+      "rows": [
+        [
+          "Guide baseline (17)",
+          "53, 67, 68, 69, 123, 137, 161, 162, 500, 514, 520, 623, 1434, 1900, 4500, 5353, 11211"
+        ],
+        [
+          "Guide transport extensions (6)",
+          "88 Kerberos; 111 rpcbind; 389 CLDAP; 902 VMware; 2049 NFS; 3389 RDP."
+        ],
+        [
+          "Existing additional scope (7)",
+          "138 NetBIOS; 1701 L2TP; 1812/1813 RADIUS; 4789 VXLAN; 5004 RTP; 5060 SIP. Union gives 30 default priority UDP ports."
+        ],
+        [
+          "Full / Off",
+          "Full UDP requests all 65,535 ports. Off disables UDP without silently changing TCP. Custom additions respect the selected mode."
+        ],
+        [
+          "Network collector gap",
+          "DHCP discovery needs broadcast/relay/network scope. SSDP/mDNS may also need network-scoped discovery. No separate DHCP/SSDP/mDNS collector was added to the per-IP agent."
+        ],
+        [
+          "RPC / custom listeners",
+          "Full TCP covers dynamic/custom TCP numbers; Fast/catalog mode needs supplied additions for ports outside its named list. Native RPC enumeration depends on reachable services and feed support."
+        ],
+        [
+          "Printing boundary",
+          "JetDirect 9100 remains a listed endpoint. No custom raw printing payload was added. Native printer-check behavior must be validated on authorized fixtures."
+        ]
+      ],
+      "widths": [
+        140,
+        367
+      ],
+      "notes": [],
+      "source": "service_catalog.json; effective_policy; gmp_local._effective_scan_policy"
+    },
+    {
+      "title": "Configuration / IP forwarding evaluation",
+      "intro": "This code evaluates supplied authenticated configuration; it does not acquire IPv4/IPv6 state by a new SSH/WMI/device collector.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "source",
+            "text": "IPv4 + IPv6 configuration\nSource reference / auth proof",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "valid",
+            "text": "Both states valid\nand authenticated?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "role",
+            "text": "Device-role policy known?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "gap",
+            "text": "Not tested / unknown\nPreserve the evidence gap",
+            "r": 2,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "enabled",
+            "text": "Unexpected\nforwarding?",
+            "r": 3,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "finding",
+            "text": "Unexpected forwarding\nSource-backed finding",
+            "r": 4,
+            "c": 0,
+            "kind": "data"
+          },
+          {
+            "id": "allowed",
+            "text": "Permitted by role\nPassed configuration rule",
+            "r": 4,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "out",
+            "text": "CFG-IP-FORWARDING result\nNo automatic router defect",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "source",
+            "b": "valid"
+          },
+          {
+            "a": "valid",
+            "b": "role",
+            "label": "Yes"
+          },
+          {
+            "a": "valid",
+            "b": "gap",
+            "label": "No"
+          },
+          {
+            "a": "role",
+            "b": "gap",
+            "label": "No"
+          },
+          {
+            "a": "role",
+            "b": "enabled",
+            "label": "Yes"
+          },
+          {
+            "a": "enabled",
+            "b": "finding",
+            "label": "Unexpected"
+          },
+          {
+            "a": "enabled",
+            "b": "allowed",
+            "label": "Permitted"
+          },
+          {
+            "a": "finding",
+            "b": "out"
+          },
+          {
+            "a": "allowed",
+            "b": "out"
+          }
+        ]
+      },
+      "height": 406,
+      "notes": [
+        [
+          "Collector limit",
+          "The ordinary per-IP service export reports forwarding not-tested without configuration evidence. The evaluator is available for a supported source-backed collector; no title-only or credential-free configuration claim is made."
+        ]
+      ],
+      "source": "service_policy.evaluate_ip_forwarding; service_catalog.json"
+    },
+    {
+      "title": "Reference findings / Eight guide families",
+      "intro": "These are labels and comparator cases from the supplied guide, not independently verified vulnerability declarations. Raw scanner/plugin evidence is required for exact parity.",
+      "headers": [
+        "Guide reference",
+        "Evidence needed before a finding / parity claim"
+      ],
+      "rows": [
+        [
+          "SSLv2 / SSLv3",
+          "Protocol negotiation on the actual endpoint/SNI or STARTTLS context; record unsupported legacy runtime separately. Native feed evidence must identify the condition."
+        ],
+        [
+          "OpenSSH < 7.2 X11",
+          "Actual product version/build, enabled condition, vendor backport/advisory applicability, native plugin/CVE and source output."
+        ],
+        [
+          "Dropbear < 2016.72",
+          "Product/version plus applicable vendor advisory/build evidence; do not classify from TCP 22 alone."
+        ],
+        [
+          "SMB unprivileged shares",
+          "Share and permission evidence for the tested supplied user/access context, not merely an open SMB port."
+        ],
+        [
+          "SWEET32",
+          "Supported 64-bit block cipher negotiation and relevant endpoint context. Retain cipher and protocol evidence."
+        ],
+        [
+          "OpenSSH prior to 10.3 label",
+          "Treat the supplied export title as a comparison label. Obtain raw plugin/advisory/version applicability; do not invent a universal fixed version or severity."
+        ],
+        [
+          "Dropbear < 2013.59",
+          "Exact native plugin, product/build/version, vendor advisory/CVE and detection proof."
+        ],
+        [
+          "IP forwarding",
+          "Authenticated IPv4/IPv6 state and device-role policy, or verified native network evidence. Legitimate routing is not automatically a defect."
+        ]
+      ],
+      "widths": [
+        141,
+        366
+      ],
+      "notes": [
+        [
+          "Missing original material",
+          "The source guide notes that raw Nessus export/plugin IDs, CVEs, ports/vectors and policy details were absent. Exact accuracy/severity parity remains unverified."
+        ]
+      ],
+      "source": "Supplied guide v2.0; native finding payload and scanner_service_policy.py"
+    },
+    {
+      "title": "Evidence / States, confidence and score provenance",
+      "intro": "A native Done status is engine completion, not a universal pass for every service or authenticated configuration.",
+      "headers": [
+        "Evidence item",
+        "Implemented treatment"
+      ],
+      "rows": [
+        [
+          "Finding / observation",
+          "Positive native score with a matching source-backed family reference \u2192 finding; native context/reference without a scored condition \u2192 observation."
+        ],
+        [
+          "Missing / unsupported",
+          "No matching native evidence \u2192 not-tested. DHCP without network collection \u2192 unsupported. The family rollup does not imply independent per-check success."
+        ],
+        [
+          "Endpoint confidence",
+          "Port-only hints remain port_hint_only. Actual explicit service/product/CPE yields native_engine_context. No product/version is guessed from a default port."
+        ],
+        [
+          "Source identity",
+          "Result IDs, NVT OIDs/families, host, transport, port, supplied product/version/CPE and raw description remain linked. Central recomputes and scopes service rollups."
+        ],
+        [
+          "Scores",
+          "Finite numeric CVSS v2/v3/v4 candidates and raw native severity retained. Missing numeric score is marked score_available=false; it is distinct from a measured zero."
+        ],
+        [
+          "Severity",
+          "Central configured CVSS basis determines technical severity; default v3.1 bands use Critical \u22659, High \u22657, Medium \u22654, Low >0. Finding titles do not impose floors."
+        ],
+        [
+          "Contextual priority",
+          "Published custom weighted score is separate from native Tenable VPR. Native VPR/EPSS are preserved when supplied; missing threat data is not fabricated from CVSS."
+        ],
+        [
+          "Execution vs rule coverage",
+          "Host warnings/degraded port scans cannot become clean from partial=false. Family coverage_complete stays false unless actual rule success is established; a quiet report is not a 52-family clean certificate."
+        ]
+      ],
+      "widths": [
+        135,
+        372
+      ],
+      "notes": [],
+      "source": "gmp_local.py; scanner_agent_jobs.py; aetheris_severity.py; vuln_risk.py"
+    },
+    {
+      "title": "Reporting / Evidence to client output",
+      "intro": "The same persisted job evidence feeds Scan Details and the client appendix. Finding-only solution exports retain their approved layout.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "db",
+            "text": "Persist native findings\nHost / family / task evidence",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "scope",
+            "text": "Load current case jobs\nMerge retains job identities",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "review",
+            "text": "Review assessment and gaps\nNative references / credentials",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "ctx",
+            "text": "Report context\nFindings + coverage appendix",
+            "r": 3,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "pdf",
+            "text": "Gap HTML \u2192 PDF\nOr DOCX renderer",
+            "r": 4,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "structured",
+            "text": "Coverage CSV / JSON\n52 families + forwarding",
+            "r": 4,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "solution",
+            "text": "Approved eight-column\nFinding CSV / XLSX",
+            "r": 5,
+            "c": 0,
+            "kind": "data"
+          },
+          {
+            "id": "audit",
+            "text": "Exact task policy / feed\nApplied preferences / hash",
+            "r": 5,
+            "c": 2,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "db",
+            "b": "scope"
+          },
+          {
+            "a": "scope",
+            "b": "review"
+          },
+          {
+            "a": "review",
+            "b": "ctx"
+          },
+          {
+            "a": "ctx",
+            "b": "pdf"
+          },
+          {
+            "a": "ctx",
+            "b": "structured"
+          },
+          {
+            "a": "pdf",
+            "b": "solution"
+          },
+          {
+            "a": "structured",
+            "b": "audit"
+          }
+        ]
+      },
+      "height": 406,
+      "notes": [
+        [
+          "Interpretation",
+          "Appendix summaries show findings/observations/not-tested/unsupported counts. CSV lists every family per host; JSON retains source references and policy snapshots. Reports remain exportable for incomplete scans with visible limitations."
+        ]
+      ],
+      "source": "vuln_report_export.py; gap_assessment_report.py; gap_report_template.py; ReportsExportPage.tsx"
+    },
+    {
+      "title": "Performance / Throughput and bounded recovery",
+      "intro": "The guide\u2019s 15\u201318 IP/hour figure is a benchmark target, not a guaranteed three-minute scan. Preserve service scope and evidence while tuning hardware admission.",
+      "headers": [
+        "Control",
+        "Code behavior / measurement"
+      ],
+      "rows": [
+        [
+          "Global IP capacity",
+          "Five-worker operational floor with adaptive ceiling (default up to six). Critical CPU/RAM/thermal pressure pauses new admissions; already running native tasks finish."
+        ],
+        [
+          "Per-IP engine budget",
+          "Separate one-host tasks. Honor configured checks (default eight, capped at sixteen), native VT timeout 320 s and scanner-plugin budget 36,000 s."
+        ],
+        [
+          "Discovery",
+          "Parallel connect probes are observational and do not narrow mandatory scope. No answering ports does not delete SSH/TLS or other target services."
+        ],
+        [
+          "Report harvest",
+          "Metadata first, paged native results; stable source-ID deduplication only. Parser/count/report failures remain visible instead of discarding low/informational evidence."
+        ],
+        [
+          "Progress",
+          "Complete assigned-IP snapshots with restored monotonic event sequence. Job row lock and owner fencing prevent overwrites or delayed previous-task regressions."
+        ],
+        [
+          "Capacity estimate",
+          "Throughput \u2248 60 \u00d7 concurrent IPs / mean scan minutes. Five\u2013six workers need roughly 16.7\u201324 mean minutes per IP for 15\u201318 IP/hour, assuming sustained workload and no overhead bottleneck."
+        ],
+        [
+          "Measure on target",
+          "Record feed/config/hash, per-IP runtime, CPU/RAM/thermal pressure, native row counts, timeout/plugin errors and credential gaps. Avoid lowering scope or forcing 100% to hit the rate."
+        ]
+      ],
+      "widths": [
+        138,
+        369
+      ],
+      "notes": [],
+      "source": "agent/capacity.py; ip_semaphore.py; main.py; gmp_local.py; target_progress.py"
+    },
+    {
+      "title": "Deployment / Updated source and commands",
+      "intro": "Extract the supplied updated archives into their existing project/scanner folders while preserving local environment, runtime identity and acquired evidence.",
+      "headers": [
+        "Where",
+        "Action / result"
+      ],
+      "rows": [
+        [
+          "Central source",
+          "Use updated polaron-disk-mobile-serial.zip. From the project root run powershell -ExecutionPolicy Bypass -File .\\scripts\\Apply-Scanner-Integration.ps1"
+        ],
+        [
+          "Laptop source",
+          "Use Aetheris-Laptop-Scanner-v1.5.3.zip. From laptop-scanner run powershell -ExecutionPolicy Bypass -File .\\Apply-Scanner-v1.5.3.ps1"
+        ],
+        [
+          "Preserved data",
+          "Update rebuilds/recreates application or agent containers. It does not delete Greenbone/feed/database volumes, local .env, tokens or existing LAN fingerprint."
+        ],
+        [
+          "Policy example",
+          "settings_json: port_profile=\"fast\", udp_profile=\"priority\", custom_tcp_ports=[2222,9443], gmp_credential_refs={ssh:\"local-GMP-UUID\"}, ssh_credential_port=2222."
+        ],
+        [
+          "Readiness fix",
+          "Launch query now selects openvas_ready and agent_status_detail. A ready edge scanner launches; a false/unknown readiness is blocked with its specific detail."
+        ],
+        [
+          "Coverage exports",
+          "Scan Details shows service status and task policy. Reports page adds Service coverage CSV. API: /api/cases/{case_id}/service-coverage (JSON) or .csv."
+        ],
+        [
+          "Old source cleanup",
+          "Delivered packages exclude backup trees, caches, logs, compiled/dist dependencies, real scanner secrets and runtime identities. Current release files are authoritative."
+        ]
+      ],
+      "widths": [
+        139,
+        368
+      ],
+      "notes": [],
+      "source": "Apply-Scanner-v1.5.3.ps1; scripts/Apply-Scanner-Integration.ps1; release manifests"
+    },
+    {
+      "title": "Validation / Completed and target-host acceptance",
+      "intro": "Source tests and document inspection are complete release checks. Live acquisition and scanner behavior require the real authorized hardware/network.",
+      "headers": [
+        "Area",
+        "Status / acceptance work"
+      ],
+      "rows": [
+        [
+          "Automated regressions",
+          "Guide scope/custom ports, UDP modes, invalid scope, secret filtering, credential references, immutable task audit, evidence routing, forwarding role, progress sequence, readiness launch and export/appendix fixtures. Final counts are in the release manifest."
+        ],
+        [
+          "Central integration",
+          "PostgreSQL-compatible WASM tests exercise migrations, heartbeat isolation, target ownership/exclusions and progress/severity SQL. TypeScript/Vite Vuln and Unified builds validate the UI."
+        ],
+        [
+          "Syntax / packages",
+          "Python 3.11 AST and changed PowerShell grammar checks; canonical agent JSON/Python parity; ZIP integrity and secret/cache exclusion; PDF bounds/bookmarks/text and visual review."
+        ],
+        [
+          "Windows / Greenbone",
+          "Run native PowerShell/Docker deploy and real feed-backed scans; confirm feed readiness, source version, all configured ports, dynamic/custom services and native errors."
+        ],
+        [
+          "All 52 families",
+          "Use authorized positive/negative/product-version/permission fixtures and supplied credentials. Match plugin IDs/CVEs and source evidence, not just port-open status."
+        ],
+        [
+          "Raw Nessus parity",
+          "Obtain the original scanner export and policy settings; compare exact host/port/product/plugin/vector/severity evidence before claiming parity."
+        ],
+        [
+          "Forensic live acceptance",
+          "Separate Disk/Mobile flow PDFs describe current source paths. Live phone/GPU verification remains pending; encrypted WhatsApp backups still require a matching validated key."
+        ],
+        [
+          "Known external gaps",
+          "No new DHCP/SSDP/mDNS network collector, dedicated IPv4/IPv6 configuration acquisition, per-SNI TLS cache/legacy engine, or independently validated 52-rule suite is claimed."
+        ]
+      ],
+      "widths": [
+        136,
+        371
+      ],
+      "notes": [],
+      "source": "SCANNER-INTEGRATION-V153-RELEASE.md; SCANNER-INTEGRATION-V153-MANIFEST.json"
+    },
+    {
+      "title": "References / Source and protocol documentation",
+      "intro": "The supplied guide defines required service scope. Official protocol/metric references support the implementation boundaries; they do not certify a live target scan.",
+      "headers": [
+        "Source",
+        "Reference / trace"
+      ],
+      "rows": [
+        [
+          "Supplied service guide",
+          "Aetheris_Scanner_Service_Implementation_Guide(1).pdf, v2.0, 18 pages; 52 ordered service rows plus IP forwarding. Updated here as v2.1 implementation status."
+        ],
+        [
+          "Machine-readable registry",
+          "agent/service_catalog.json and matching backend/app/services/service_catalog.json; agent/service_policy.py and scanner_service_policy.py."
+        ],
+        [
+          "GMP target API",
+          "https://greenbone.github.io/python-gvm/api/gmpv227.html \u2014 create_target credential UUID and SSH-port parameters; get_credential and feed methods."
+        ],
+        [
+          "Greenbone GMP",
+          "https://docs.greenbone.net/API/GMP/gmp-22.7.html"
+        ],
+        [
+          "Nmap version detection",
+          "https://nmap.org/book/vscan.html"
+        ],
+        [
+          "CVSS v3.1",
+          "https://www.first.org/cvss/v3-1/specification-document"
+        ],
+        [
+          "Tenable severity / metrics",
+          "https://docs.tenable.com/nessus/Content/ConfigureIndividualScanSeverity.htm\nhttps://docs.tenable.com/nessus/Content/RiskMetrics.htm"
+        ],
+        [
+          "Separate flow references",
+          "Disk-Process-Flows.pdf; Mobile-Process-Flows.pdf; Vulnerability-Scanner-Process-Flows.pdf; companion editable scanner .odt."
+        ]
+      ],
+      "widths": [
+        137,
+        370
+      ],
+      "notes": [],
+      "source": "docs/process-flows / reproducible JSON and vector diagram generator"
+    }
+  ]
+}

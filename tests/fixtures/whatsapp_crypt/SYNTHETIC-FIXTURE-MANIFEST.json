@@ -1,0 +1,30 @@
+{
+  "synthetic_test_data": true,
+  "keys_are_public_qa_fixtures": true,
+  "key_can_be_extracted_from_ciphertext": false,
+  "legacy_account": "whatsapp-qa@example.test",
+  "expected_key_offset": [
+    126,
+    158
+  ],
+  "expected_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "expected_sqlite_sha256": "9e5b27d1d3d1b0ebd1386ab5fbef45b736baaf854add96ae807db934fb9adbbb",
+  "files_sha256": {
+    "WhatsApp/Databases/msgstore.db.crypt": "94883b8761f519e906a047d7a3aff00671b8c8be6602ebf30497739f4a1e0b47",
+    "WhatsApp/Databases/msgstore.db.crypt5": "890ba807f2e1da0d601cf23ffe5a1082f83948c2d81e0ab416883835fd377ccb",
+    "WhatsApp/Databases/msgstore.db.crypt7": "8c662c583f222c7bad11a3099539feb3a33100ab27336d682fa7b3af8e0bdb7c",
+    "WhatsApp/Databases/msgstore.db.crypt8": "4008d162649ed1d59278eab20a8a961d93e96587e5992e35568b227beca70714",
+    "WhatsApp/Databases/msgstore.db.crypt9": "4e95bf0ca264d4ba152dfc03704d8f6c9eea299944b131a8eb20e167bb33962b",
+    "WhatsApp/Databases/msgstore.db.crypt10": "4e95bf0ca264d4ba152dfc03704d8f6c9eea299944b131a8eb20e167bb33962b",
+    "WhatsApp/Databases/msgstore.db.crypt11": "4e95bf0ca264d4ba152dfc03704d8f6c9eea299944b131a8eb20e167bb33962b",
+    "WhatsApp/Databases/msgstore.db.crypt12": "e41ed52dc416497b12ba726185eedef8261f194172be4b6448cd5d209b5811d6",
+    "WhatsApp/Databases/msgstore.db.crypt14": "994e70e991226ac6da6adc03fd15f9ee65abba340666ca0814fda52177f28ec5",
+    "WhatsApp/Databases/msgstore.db.crypt15": "660b536caa32b5e71d10d58f7a62ca482c3fad4fb7ba718f65baa596d6dc5a1a",
+    "data/data/com.whatsapp/files/key": "a169a79901199a2ad7d9f19914856f566fedfa88bfcd51ad693ad6864b23c5ef",
+    "data/data/com.whatsapp/files/encrypted_backup.key": "72dbb7336c76780023f83da4c355f2eeea85733b13d3477697917790c1229084",
+    "WhatsApp/Backups/settings.json.crypt14": "ad3ebd4b3673682c1b33fc47cb65881dd2466639a117107be78a7add9e576a74",
+    "WhatsApp/Backups/msgstore-increment.crypt15": "fa2feaa48375af19d2e2d94b69719e61ae0b9666ced57f9933134dc30da69c23",
+    "WhatsApp/Backups/fixture.png.crypt15": "0d9e2ecd5cb9aa885dbe3eb9331c9e99c39e9e25299e4d88a11e7941bf067fca",
+    "WhatsApp/Backups/fixture.bin.crypt12": "27f291ec1ced68a4f3891f19195896f2d64cc925d32f8e5bc856c13c95e8671d"
+  }
+}

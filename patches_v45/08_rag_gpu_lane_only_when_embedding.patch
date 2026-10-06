@@ -1,0 +1,112 @@
+--- a/backend/app/services/dual_rag_index.py	2026-10-04 14:54:21.211951358 +0000
++++ b/backend/app/services/dual_rag_index.py	2026-10-04 14:54:21.255079384 +0000
+@@ -884,7 +884,24 @@
+     from app.services.job_locks import gpu_heavy_slot
+ 
+     reset_embed_duty_counter()
+-    use_cuda = (settings.rag_embedding_device or "").lower() in ("cuda", "gpu", "auto")
++    # V45.1: only reserve the exclusive GPU lane when this pass will actually embed.
++    # With RAG_EMBEDDING_ENABLED=false the pass is CPU chunking only, but the old
++    # test (device == cuda) still took the single GPU permit, collided with OCR,
++    # failed the one-shot acquire and re-queued itself every 120 s:
++    #   "RAG deferred — GPU slot busy (GPU local slot wait timed out ... after 0s)"
++    embed_enabled = bool(getattr(settings, "rag_embedding_enabled", False))
++    use_cuda = embed_enabled and (settings.rag_embedding_device or "").lower() in ("cuda", "gpu", "auto")
++    if not embed_enabled:
++        write_disk_log(
++            db,
++            job_id,
++            "RAG chunking on CPU — embeddings disabled (RAG_EMBEDDING_ENABLED=false); no GPU lane needed, "
++            "runs alongside OCR",
++            stage="rag_index",
++        )
++        db.commit()
++        if schema_name:
++            apply_firm_search_path(db, schema_name)
+ 
+     with ExitStack() as stack:
+         if use_cuda:
+--- a/backend/app/services/job_locks.py	2026-10-04 14:54:21.212331919 +0000
++++ b/backend/app/services/job_locks.py	2026-10-04 14:54:21.255751877 +0000
+@@ -538,6 +538,49 @@
+         return 1
+ 
+ 
++def describe_gpu_lane_state() -> str:
++    """Human-readable reason the GPU lane could not be taken (V45.1).
++
++    Distinguishes the three cases that previously all read "timed out after 0s":
++    held by another GPU task (who / how long), thermal pause (capacity 0), or a
++    stale lease that is about to be reclaimed.
++    """
++    try:
++        cap = _gpu_heavy_max_slots()
++    except Exception:
++        cap = -1
++    parts: list[str] = []
++    try:
++        for key in _gpu_slot_keys():
++            holder = _lock_held(key)
++            if not holder:
++                continue
++            age = time.time() - float(holder.get("started") or time.time())
++            stale = heavy_holder_is_stale(holder)
++            parts.append(
++                f"lane held by {holder.get('reason') or '?'} (pid {holder.get('pid') or '?'}, "
++                f"{age:.0f}s{', STALE — will be reclaimed' if stale else ''})"
++            )
++    except Exception:
++        pass
++    if cap == 0:
++        temp = None
++        try:
++            from app.services.adaptive_semaphore import _host_snapshot
++
++            temp = getattr(_host_snapshot(), "gpu_temp_c", None)
++        except Exception:
++            pass
++        parts.append(
++            f"GPU admission paused by thermal guard (capacity 0"
++            + (f", temp {int(temp)}°C ≥ GPU_THERMAL_PAUSE_C" if temp is not None else "")
++            + ")"
++        )
++    if not parts:
++        parts.append(f"no holder visible, capacity={cap} — likely released between checks; retry will succeed")
++    return "; ".join(parts)
++
++
+ def _gpu_heavy_max_slots() -> int:
+     """Live GPU admission capacity (may be zero at the thermal pause point)."""
+     configured = _gpu_heavy_configured_slots()
+@@ -1098,6 +1141,7 @@
+ 
+         if local_lease is None:
+             msg = f"GPU local slot wait timed out for {reason} after {wait_budget:.0f}s"
++            msg += f" — {describe_gpu_lane_state()}"
+             if fail_closed:
+                 raise GpuHeavySlotTimeout(msg)
+             log.warning("%s", msg)
+--- a/.env	2026-10-04 14:54:21.212614456 +0000
++++ b/.env	2026-10-04 14:54:21.255998451 +0000
+@@ -91,7 +91,9 @@
+ RAG_BACKGROUND_AFTER_BASELINE=true
+ RAG_EMBEDDING_ENABLED=false
+ # Independent GPU slots: OCR and background RAG may run together.
+-DEFER_BACKGROUND_RAG_WHILE_OCR=false
++# V45.1: with embeddings ON, RAG yields to OCR by pending-count (one log line, then OCR drain
++# kicks RAG when it finishes) instead of colliding on the GPU lane every 120 s.
++DEFER_BACKGROUND_RAG_WHILE_OCR=true
+ # Balanced thermal: fast when cool, hard caps before OEM trip (~95-100C GPU / ~100C CPU).
+ GPU_THERMAL_ENABLED=true
+ GPU_THERMAL_START_MAX_C=90
+@@ -117,7 +119,9 @@
+ # Two independent GPU slots so OCR and RAG can run at the same time.
+ # V45: one heavy GPU resident at a time on a 12 GB RTX 3060 (OCR -> embeddings -> LLM)
+ GPU_HEAVY_MAX_CONCURRENT=1
+-GPU_HEAVY_LOCK_WAIT_SEC=0
++# V45.1: RAG/OCR run on dedicated solo workers; a real wait budget avoids one-shot failures
++# when the other task is seconds from releasing the lane.
++GPU_HEAVY_LOCK_WAIT_SEC=180
+ GPU_HEAVY_LOCK_TTL_SEC=600
+ CPU_THERMAL_THROTTLE_C=86
+ CPU_THERMAL_PAUSE_C=94

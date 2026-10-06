@@ -1,0 +1,15 @@
+backend/app/services/drive_mount_agent.py
+backend/app/services/host_evidence.py
+backend/tests/test_drive_mount_agent.py
+backend/tests/test_server_source_mode_mount_v29_5.py
+frontend/src/components/forensic/HostEvidencePanel.tsx
+frontend/src/components/forensic/JobActivityPanel.tsx
+frontend/src/lib/hostDriveHelper.ts
+frontend/src/lib/jobUploadSession.ts
+frontend/src/lib/orchestrationStages.ts
+frontend/src/pages/forensic/JobDetailPage.tsx
+scripts/generate-drive-mounts.ps1
+scripts/refresh-drive-mounts-job.ps1
+scripts/resolve-docker-drive-source.ps1
+scripts/repair-server-evidence-path.ps1
+SERVER_SOURCE_MODE_MOUNT_FIX_V29_5_20260926.md

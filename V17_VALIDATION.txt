@@ -1,0 +1,19 @@
+Aetheris V17 mobile USB validation
+=================================
+
+Backend/mobile tests:
+26 passed
+
+Tested files:
+- backend/tests/test_mobile_usb_bootstrap_scripts.py
+- backend/tests/test_mobile_acquire_acceptance.py
+- backend/tests/test_acquisition_registry.py
+- backend/tests/test_hostdrive_agent_refresh.py
+- backend/tests/test_drive_mount_agent.py
+
+Python compile validation passed for the touched backend report/mobile modules.
+
+Frontend changed-file TypeScript syntax check produced no TS1xxx parse/syntax errors.
+The full frontend dependency build could not be completed in this packaging environment because the copied node_modules directory did not contain the project's npm dependencies and the environment could not fetch the missing packages. The source-level syntax checks passed.
+
+Windows hardware verification must be run on the examiner PC because this build environment does not expose Windows USB/WPD/ADB devices.

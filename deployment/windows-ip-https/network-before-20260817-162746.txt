@@ -1,0 +1,2916 @@
+﻿=== Get-NetAdapter ===
+
+
+MacAddress                                       : A0-47-D7-74-3A-DA
+Status                                           : Disconnected
+LinkSpeed                                        : 0 bps
+MediaType                                        : Native 802.11
+PhysicalMediaType                                : Native 802.11
+AdminStatus                                      : Up
+MediaConnectionState                             : Disconnected
+DriverInformation                                : Driver Date 2006-06-21 Version 10.0.26100.8972 NDIS 6.40
+DriverFileName                                   : vwifimp.sys
+NdisVersion                                      : 6.40
+ifOperStatus                                     : Down
+ifAlias                                          : Local Area Connection* 15
+InterfaceAlias                                   : Local Area Connection* 15
+ifIndex                                          : 25
+ifDesc                                           : Microsoft Wi-Fi Direct Virtual Adapter #6
+ifName                                           : wireless_32776
+DriverVersion                                    : 10.0.26100.8972
+LinkLayerAddress                                 : A0-47-D7-74-3A-DA
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {FB9D5629-140C-4790-BE8B-4F5445586C30}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Local Area Connection* 15
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {FB9D5629-140C-4790-BE8B-4F5445586C30}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 1500
+AutoSense                                        : 
+FullDuplex                                       : True
+LinkTechnology                                   : 
+NetworkAddresses                                 : {A047D7743ADA}
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : A047D7743ADA
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : {5d624f94-8850-40c3-a3fa-a4fd2080baf3}\vwifimp_wfd
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{FB9D5629-140C-4790-BE8B-4F5445586C30}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2006-06-21
+DriverDateData                                   : 127953216000000000
+DriverDescription                                : Microsoft Wi-Fi Direct Virtual Adapter
+DriverMajorNdisVersion                           : 6
+DriverMinorNdisVersion                           : 40
+DriverName                                       : \SystemRoot\System32\DriverStore\FileRepository\netvwifimp.inf_amd64
+                                                   _2b7a99c97634cfaa\vwifimp.sys
+DriverProvider                                   : Microsoft
+DriverVersionString                              : 10.0.26100.8972
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : True
+HigherLayerInterfaceIndices                      : {56}
+IMFilter                                         : False
+InterfaceAdminStatus                             : 1
+InterfaceDescription                             : Microsoft Wi-Fi Direct Virtual Adapter #6
+InterfaceGuid                                    : {FB9D5629-140C-4790-BE8B-4F5445586C30}
+InterfaceIndex                                   : 25
+InterfaceName                                    : wireless_32776
+InterfaceOperationalStatus                       : 2
+InterfaceType                                    : 71
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 1
+MediaConnectState                                : 2
+MediaDuplexState                                 : 2
+MinorDriverVersion                               : 1
+MtuSize                                          : 1500
+NdisMedium                                       : 16
+NdisPhysicalMedium                               : 9
+NetLuid                                          : 19985273236488192
+NetLuidIndex                                     : 32776
+NotUserRemovable                                 : False
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : True
+PnPDeviceID                                      : {5d624f94-8850-40c3-a3fa-a4fd2080baf3}\vwifimp_wfd\6&e28b537&0&16
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 
+State                                            : 2
+TransmitLinkSpeed                                : 
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 
+Status                                           : Disconnected
+LinkSpeed                                        : 0 bps
+MediaType                                        : Connection Oriented WAN
+PhysicalMediaType                                : Unspecified
+AdminStatus                                      : Up
+MediaConnectionState                             : Unknown
+DriverInformation                                : Driver Date 2006-06-21 Version 10.0.26100.1 NDIS 6.30
+DriverFileName                                   : rasl2tp.sys
+NdisVersion                                      : 6.30
+ifOperStatus                                     : Down
+ifAlias                                          : Local Area Connection* 5
+InterfaceAlias                                   : Local Area Connection* 5
+ifIndex                                          : 24
+ifDesc                                           : WAN Miniport (L2TP)
+ifName                                           : tunnel_32770
+DriverVersion                                    : 10.0.26100.1
+LinkLayerAddress                                 : 
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {F5A7E871-CABC-4518-8E5F-3FA18CF2FD3A}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Local Area Connection* 5
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {F5A7E871-CABC-4518-8E5F-3FA18CF2FD3A}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 1460
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : 
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : ms_l2tpminiport
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{F5A7E871-CABC-4518-8E5F-3FA18CF2FD3A}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2006-06-21
+DriverDateData                                   : 127953216000000000
+DriverDescription                                : WAN Miniport (L2TP)
+DriverMajorNdisVersion                           : 6
+DriverMinorNdisVersion                           : 30
+DriverName                                       : \SystemRoot\System32\drivers\rasl2tp.sys
+DriverProvider                                   : Microsoft
+DriverVersionString                              : 10.0.26100.1
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : True
+HigherLayerInterfaceIndices                      : 
+IMFilter                                         : False
+InterfaceAdminStatus                             : 1
+InterfaceDescription                             : WAN Miniport (L2TP)
+InterfaceGuid                                    : {F5A7E871-CABC-4518-8E5F-3FA18CF2FD3A}
+InterfaceIndex                                   : 24
+InterfaceName                                    : tunnel_32770
+InterfaceOperationalStatus                       : 2
+InterfaceType                                    : 131
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 1
+MediaConnectState                                : 0
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 0
+MtuSize                                          : 1460
+NdisMedium                                       : 12
+NdisPhysicalMedium                               : 0
+NetLuid                                          : 36873771738464256
+NetLuidIndex                                     : 32770
+NotUserRemovable                                 : True
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : True
+PnPDeviceID                                      : SWD\MSRRAS\MS_L2TPMINIPORT
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 
+State                                            : 2
+TransmitLinkSpeed                                : 
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : A0-47-D7-74-3A-D9
+Status                                           : Disconnected
+LinkSpeed                                        : 0 bps
+MediaType                                        : Native 802.11
+PhysicalMediaType                                : Native 802.11
+AdminStatus                                      : Up
+MediaConnectionState                             : Disconnected
+DriverInformation                                : Driver Date 2006-06-21 Version 10.0.26100.8972 NDIS 6.40
+DriverFileName                                   : vwifimp.sys
+NdisVersion                                      : 6.40
+ifOperStatus                                     : Down
+ifAlias                                          : Local Area Connection* 14
+InterfaceAlias                                   : Local Area Connection* 14
+ifIndex                                          : 23
+ifDesc                                           : Microsoft Wi-Fi Direct Virtual Adapter #5
+ifName                                           : wireless_32775
+DriverVersion                                    : 10.0.26100.8972
+LinkLayerAddress                                 : A0-47-D7-74-3A-D9
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {ED6A877B-CD03-495E-926D-F548DAE39CE8}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Local Area Connection* 14
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {ED6A877B-CD03-495E-926D-F548DAE39CE8}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 1500
+AutoSense                                        : 
+FullDuplex                                       : True
+LinkTechnology                                   : 
+NetworkAddresses                                 : {A047D7743AD9}
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : A047D7743AD9
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : {5d624f94-8850-40c3-a3fa-a4fd2080baf3}\vwifimp_wfd
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{ED6A877B-CD03-495E-926D-F548DAE39CE8}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2006-06-21
+DriverDateData                                   : 127953216000000000
+DriverDescription                                : Microsoft Wi-Fi Direct Virtual Adapter
+DriverMajorNdisVersion                           : 6
+DriverMinorNdisVersion                           : 40
+DriverName                                       : \SystemRoot\System32\DriverStore\FileRepository\netvwifimp.inf_amd64
+                                                   _2b7a99c97634cfaa\vwifimp.sys
+DriverProvider                                   : Microsoft
+DriverVersionString                              : 10.0.26100.8972
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : True
+HigherLayerInterfaceIndices                      : {36}
+IMFilter                                         : False
+InterfaceAdminStatus                             : 1
+InterfaceDescription                             : Microsoft Wi-Fi Direct Virtual Adapter #5
+InterfaceGuid                                    : {ED6A877B-CD03-495E-926D-F548DAE39CE8}
+InterfaceIndex                                   : 23
+InterfaceName                                    : wireless_32775
+InterfaceOperationalStatus                       : 2
+InterfaceType                                    : 71
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 1
+MediaConnectState                                : 2
+MediaDuplexState                                 : 2
+MinorDriverVersion                               : 1
+MtuSize                                          : 1500
+NdisMedium                                       : 16
+NdisPhysicalMedium                               : 9
+NetLuid                                          : 19985273219710976
+NetLuidIndex                                     : 32775
+NotUserRemovable                                 : False
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : True
+PnPDeviceID                                      : {5d624f94-8850-40c3-a3fa-a4fd2080baf3}\vwifimp_wfd\6&e28b537&0&15
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 
+State                                            : 2
+TransmitLinkSpeed                                : 
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 
+Status                                           : Disconnected
+LinkSpeed                                        : 0 bps
+MediaType                                        : Connection Oriented WAN
+PhysicalMediaType                                : Unspecified
+AdminStatus                                      : Up
+MediaConnectionState                             : Unknown
+DriverInformation                                : Driver Date 2006-06-21 Version 10.0.26100.1 NDIS 6.30
+DriverFileName                                   : AgileVpn.sys
+NdisVersion                                      : 6.30
+ifOperStatus                                     : Down
+ifAlias                                          : Local Area Connection* 4
+InterfaceAlias                                   : Local Area Connection* 4
+ifIndex                                          : 20
+ifDesc                                           : WAN Miniport (IKEv2)
+ifName                                           : tunnel_32769
+DriverVersion                                    : 10.0.26100.1
+LinkLayerAddress                                 : 
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {AF0AD3C1-2D0D-4A20-84A4-829BE08B30E9}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Local Area Connection* 4
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {AF0AD3C1-2D0D-4A20-84A4-829BE08B30E9}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 1480
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : 
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : ms_agilevpnminiport
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{AF0AD3C1-2D0D-4A20-84A4-829BE08B30E9}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2006-06-21
+DriverDateData                                   : 127953216000000000
+DriverDescription                                : WAN Miniport (IKEv2)
+DriverMajorNdisVersion                           : 6
+DriverMinorNdisVersion                           : 30
+DriverName                                       : \SystemRoot\System32\drivers\AgileVpn.sys
+DriverProvider                                   : Microsoft
+DriverVersionString                              : 10.0.26100.1
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : True
+HigherLayerInterfaceIndices                      : 
+IMFilter                                         : False
+InterfaceAdminStatus                             : 1
+InterfaceDescription                             : WAN Miniport (IKEv2)
+InterfaceGuid                                    : {AF0AD3C1-2D0D-4A20-84A4-829BE08B30E9}
+InterfaceIndex                                   : 20
+InterfaceName                                    : tunnel_32769
+InterfaceOperationalStatus                       : 2
+InterfaceType                                    : 131
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 1
+MediaConnectState                                : 0
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 0
+MtuSize                                          : 1480
+NdisMedium                                       : 12
+NdisPhysicalMedium                               : 0
+NetLuid                                          : 36873771721687040
+NetLuidIndex                                     : 32769
+NotUserRemovable                                 : True
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : True
+PnPDeviceID                                      : SWD\MSRRAS\MS_AGILEVPNMINIPORT
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 
+State                                            : 2
+TransmitLinkSpeed                                : 
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 
+Status                                           : Up
+LinkSpeed                                        : 0 bps
+MediaType                                        : 802.3
+PhysicalMediaType                                : Unspecified
+AdminStatus                                      : Up
+MediaConnectionState                             : Connected
+DriverInformation                                : Driver Date 2006-06-21 Version 10.0.26100.1 NDIS 6.30
+DriverFileName                                   : ndiswan.sys
+NdisVersion                                      : 6.30
+ifOperStatus                                     : Up
+ifAlias                                          : Local Area Connection* 10
+InterfaceAlias                                   : Local Area Connection* 10
+ifIndex                                          : 19
+ifDesc                                           : WAN Miniport (Network Monitor)
+ifName                                           : ethernet_32773
+DriverVersion                                    : 10.0.26100.1
+LinkLayerAddress                                 : 
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {A0BE5935-E53B-4830-9ABA-FB1A1DDA66D5}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Local Area Connection* 10
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {A0BE5935-E53B-4830-9ABA-FB1A1DDA66D5}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 1500
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : 
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : ms_ndiswanbh
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{A0BE5935-E53B-4830-9ABA-FB1A1DDA66D5}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2006-06-21
+DriverDateData                                   : 127953216000000000
+DriverDescription                                : WAN Miniport (Network Monitor)
+DriverMajorNdisVersion                           : 6
+DriverMinorNdisVersion                           : 30
+DriverName                                       : \SystemRoot\System32\drivers\ndiswan.sys
+DriverProvider                                   : Microsoft
+DriverVersionString                              : 10.0.26100.1
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : True
+HigherLayerInterfaceIndices                      : {65}
+IMFilter                                         : False
+InterfaceAdminStatus                             : 1
+InterfaceDescription                             : WAN Miniport (Network Monitor)
+InterfaceGuid                                    : {A0BE5935-E53B-4830-9ABA-FB1A1DDA66D5}
+InterfaceIndex                                   : 19
+InterfaceName                                    : ethernet_32773
+InterfaceOperationalStatus                       : 1
+InterfaceType                                    : 6
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 1
+MediaConnectState                                : 1
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 1
+MtuSize                                          : 1500
+NdisMedium                                       : 0
+NdisPhysicalMedium                               : 0
+NetLuid                                          : 1689399699963904
+NetLuidIndex                                     : 32773
+NotUserRemovable                                 : True
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : False
+PnPDeviceID                                      : SWD\MSRRAS\MS_NDISWANBH
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 
+State                                            : 2
+TransmitLinkSpeed                                : 
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 18-C0-4D-2C-46-3B
+Status                                           : Disabled
+LinkSpeed                                        : 2.5 Gbps
+MediaType                                        : 802.3
+PhysicalMediaType                                : 802.3
+AdminStatus                                      : Down
+MediaConnectionState                             : Unknown
+DriverInformation                                : Driver Date 2020-11-08 Version 1.0.2.8 NDIS 6.84
+DriverFileName                                   : e2f68.sys
+NdisVersion                                      : 6.84
+ifOperStatus                                     : Down
+ifAlias                                          : Ethernet
+InterfaceAlias                                   : Ethernet
+ifIndex                                          : 18
+ifDesc                                           : Intel(R) Ethernet Controller (2) I225-V
+ifName                                           : ethernet_32768
+DriverVersion                                    : 1.0.2.8
+LinkLayerAddress                                 : 18-C0-4D-2C-46-3B
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {94AB84A2-B929-4D21-9064-69CE5308F648}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Ethernet
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {94AB84A2-B929-4D21-9064-69CE5308F648}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 2500000000
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 1500
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : {18C04D2C463B}
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 18C04D2C463B
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : PCI\VEN_8086&DEV_15F3&REV_02
+ConnectorPresent                                 : True
+DeviceName                                       : \Device\{94AB84A2-B929-4D21-9064-69CE5308F648}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2020-11-08
+DriverDateData                                   : 132492672000000000
+DriverDescription                                : Intel(R) Ethernet Controller (2) I225-V
+DriverMajorNdisVersion                           : 6
+DriverMinorNdisVersion                           : 84
+DriverName                                       : \SystemRoot\System32\drivers\e2f68.sys
+DriverProvider                                   : Intel
+DriverVersionString                              : 1.0.2.8
+EndPointInterface                                : False
+HardwareInterface                                : True
+Hidden                                           : False
+HigherLayerInterfaceIndices                      : 
+IMFilter                                         : False
+InterfaceAdminStatus                             : 2
+InterfaceDescription                             : Intel(R) Ethernet Controller (2) I225-V
+InterfaceGuid                                    : {94AB84A2-B929-4D21-9064-69CE5308F648}
+InterfaceIndex                                   : 18
+InterfaceName                                    : ethernet_32768
+InterfaceOperationalStatus                       : 2
+InterfaceType                                    : 6
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 1
+MediaConnectState                                : 0
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 0
+MtuSize                                          : 1500
+NdisMedium                                       : 0
+NdisPhysicalMedium                               : 14
+NetLuid                                          : 1689399616077824
+NetLuidIndex                                     : 32768
+NotUserRemovable                                 : False
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : False
+PnPDeviceID                                      : PCI\VEN_8086&DEV_15F3&SUBSYS_E0001458&REV_02\4&1ba68f3e&0&00E3
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 2500000000
+State                                            : 3
+TransmitLinkSpeed                                : 2500000000
+Virtual                                          : False
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 
+Status                                           : Not Present
+LinkSpeed                                        : 0 bps
+MediaType                                        : Tunnel
+PhysicalMediaType                                : Unspecified
+AdminStatus                                      : Down
+MediaConnectionState                             : Unknown
+DriverInformation                                : Driver Date  Version 
+DriverFileName                                   : 
+NdisVersion                                      : 
+ifOperStatus                                     : NotPresent
+ifAlias                                          : Teredo Tunneling Pseudo-Interface
+InterfaceAlias                                   : Teredo Tunneling Pseudo-Interface
+ifIndex                                          : 17
+ifDesc                                           : 
+ifName                                           : tunnel_32512
+DriverVersion                                    : 
+LinkLayerAddress                                 : 
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {93123211-9629-4E04-82F0-EA2E4F221468}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Teredo Tunneling Pseudo-Interface
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {93123211-9629-4E04-82F0-EA2E4F221468}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 0
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 0
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : 
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : 
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{93123211-9629-4E04-82F0-EA2E4F221468}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 
+DriverDateData                                   : 
+DriverDescription                                : 
+DriverMajorNdisVersion                           : 
+DriverMinorNdisVersion                           : 
+DriverName                                       : 
+DriverProvider                                   : 
+DriverVersionString                              : 
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : True
+HigherLayerInterfaceIndices                      : 
+IMFilter                                         : False
+InterfaceAdminStatus                             : 2
+InterfaceDescription                             : 
+InterfaceGuid                                    : {93123211-9629-4E04-82F0-EA2E4F221468}
+InterfaceIndex                                   : 17
+InterfaceName                                    : tunnel_32512
+InterfaceOperationalStatus                       : 6
+InterfaceType                                    : 131
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 
+MediaConnectState                                : 0
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 
+MtuSize                                          : 0
+NdisMedium                                       : 15
+NdisPhysicalMedium                               : 0
+NetLuid                                          : 36873767409942528
+NetLuidIndex                                     : 32512
+NotUserRemovable                                 : False
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : False
+PnPDeviceID                                      : 
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 0
+State                                            : 1
+TransmitLinkSpeed                                : 0
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 
+Status                                           : Up
+LinkSpeed                                        : 10 Gbps
+MediaType                                        : 802.3
+PhysicalMediaType                                : Unspecified
+AdminStatus                                      : Up
+MediaConnectionState                             : Connected
+DriverInformation                                : Driver Date 2006-06-21 Version 10.0.26100.1 NDIS 6.83
+DriverFileName                                   : vmswitch.sys
+NdisVersion                                      : 6.83
+ifOperStatus                                     : Up
+ifAlias                                          : vSwitch (Default Switch)
+InterfaceAlias                                   : vSwitch (Default Switch)
+ifIndex                                          : 41
+ifDesc                                           : Hyper-V Virtual Switch Extension Adapter
+ifName                                           : ethernet_32770
+DriverVersion                                    : 10.0.26100.1
+LinkLayerAddress                                 : 
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {7F366CB4-D5E8-4BD5-8B8D-6EB97A885B1E}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : vSwitch (Default Switch)
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {7F366CB4-D5E8-4BD5-8B8D-6EB97A885B1E}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 10000000000
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 1500
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : 
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : vms_vsmp
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{7F366CB4-D5E8-4BD5-8B8D-6EB97A885B1E}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2006-06-21
+DriverDateData                                   : 127953216000000000
+DriverDescription                                : Hyper-V Virtual Switch Extension Adapter
+DriverMajorNdisVersion                           : 6
+DriverMinorNdisVersion                           : 83
+DriverName                                       : \SystemRoot\System32\drivers\vmswitch.sys
+DriverProvider                                   : Microsoft
+DriverVersionString                              : 10.0.26100.1
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : True
+HigherLayerInterfaceIndices                      : {42}
+IMFilter                                         : False
+InterfaceAdminStatus                             : 1
+InterfaceDescription                             : Hyper-V Virtual Switch Extension Adapter
+InterfaceGuid                                    : {7F366CB4-D5E8-4BD5-8B8D-6EB97A885B1E}
+InterfaceIndex                                   : 41
+InterfaceName                                    : ethernet_32770
+InterfaceOperationalStatus                       : 1
+InterfaceType                                    : 6
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 19
+MediaConnectState                                : 1
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 0
+MtuSize                                          : 1500
+NdisMedium                                       : 0
+NdisPhysicalMedium                               : 0
+NetLuid                                          : 1689399649632256
+NetLuidIndex                                     : 32770
+NotUserRemovable                                 : True
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : False
+PnPDeviceID                                      : ROOT\VMS_VSMP\0000
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 10000000000
+State                                            : 2
+TransmitLinkSpeed                                : 10000000000
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 
+Status                                           : Up
+LinkSpeed                                        : 0 bps
+MediaType                                        : 802.3
+PhysicalMediaType                                : Unspecified
+AdminStatus                                      : Up
+MediaConnectionState                             : Connected
+DriverInformation                                : Driver Date 2006-06-21 Version 10.0.26100.1 NDIS 6.30
+DriverFileName                                   : ndiswan.sys
+NdisVersion                                      : 6.30
+ifOperStatus                                     : Up
+ifAlias                                          : Local Area Connection* 9
+InterfaceAlias                                   : Local Area Connection* 9
+ifIndex                                          : 14
+ifDesc                                           : WAN Miniport (IPv6)
+ifName                                           : ethernet_32772
+DriverVersion                                    : 10.0.26100.1
+LinkLayerAddress                                 : 
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {7A8AE0E6-3482-46F5-972A-F1D1D4B4D15A}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Local Area Connection* 9
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {7A8AE0E6-3482-46F5-972A-F1D1D4B4D15A}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 1500
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : 
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : ms_ndiswanipv6
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{7A8AE0E6-3482-46F5-972A-F1D1D4B4D15A}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2006-06-21
+DriverDateData                                   : 127953216000000000
+DriverDescription                                : WAN Miniport (IPv6)
+DriverMajorNdisVersion                           : 6
+DriverMinorNdisVersion                           : 30
+DriverName                                       : \SystemRoot\System32\drivers\ndiswan.sys
+DriverProvider                                   : Microsoft
+DriverVersionString                              : 10.0.26100.1
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : True
+HigherLayerInterfaceIndices                      : {63}
+IMFilter                                         : False
+InterfaceAdminStatus                             : 1
+InterfaceDescription                             : WAN Miniport (IPv6)
+InterfaceGuid                                    : {7A8AE0E6-3482-46F5-972A-F1D1D4B4D15A}
+InterfaceIndex                                   : 14
+InterfaceName                                    : ethernet_32772
+InterfaceOperationalStatus                       : 1
+InterfaceType                                    : 6
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 1
+MediaConnectState                                : 1
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 1
+MtuSize                                          : 1500
+NdisMedium                                       : 0
+NdisPhysicalMedium                               : 0
+NetLuid                                          : 1689399683186688
+NetLuidIndex                                     : 32772
+NotUserRemovable                                 : True
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : False
+PnPDeviceID                                      : SWD\MSRRAS\MS_NDISWANIPV6
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 
+State                                            : 2
+TransmitLinkSpeed                                : 
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 00-15-5D-9C-71-20
+Status                                           : Up
+LinkSpeed                                        : 10 Gbps
+MediaType                                        : 802.3
+PhysicalMediaType                                : Unspecified
+AdminStatus                                      : Up
+MediaConnectionState                             : Connected
+DriverInformation                                : Driver Date  Version 
+DriverFileName                                   : 
+NdisVersion                                      : 
+ifOperStatus                                     : Up
+ifAlias                                          : vEthernet (Default Switch)
+InterfaceAlias                                   : vEthernet (Default Switch)
+ifIndex                                          : 43
+ifDesc                                           : Hyper-V Virtual Ethernet Adapter
+ifName                                           : ethernet_32774
+DriverVersion                                    : 
+LinkLayerAddress                                 : 00-15-5D-9C-71-20
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {5FAD2BE7-D50A-4118-ADC6-739E2312A886}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : vEthernet (Default Switch)
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {5FAD2BE7-D50A-4118-ADC6-739E2312A886}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 10000000000
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 1500
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : {00155D9C7120}
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 00155DDB235C
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : 
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{5FAD2BE7-D50A-4118-ADC6-739E2312A886}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 
+DriverDateData                                   : 
+DriverDescription                                : 
+DriverMajorNdisVersion                           : 
+DriverMinorNdisVersion                           : 
+DriverName                                       : 
+DriverProvider                                   : 
+DriverVersionString                              : 
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : False
+HigherLayerInterfaceIndices                      : {52}
+IMFilter                                         : False
+InterfaceAdminStatus                             : 1
+InterfaceDescription                             : Hyper-V Virtual Ethernet Adapter
+InterfaceGuid                                    : {5FAD2BE7-D50A-4118-ADC6-739E2312A886}
+InterfaceIndex                                   : 43
+InterfaceName                                    : ethernet_32774
+InterfaceOperationalStatus                       : 1
+InterfaceType                                    : 6
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : {42}
+MajorDriverVersion                               : 
+MediaConnectState                                : 1
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 
+MtuSize                                          : 1500
+NdisMedium                                       : 0
+NdisPhysicalMedium                               : 0
+NetLuid                                          : 1689399716741120
+NetLuidIndex                                     : 32774
+NotUserRemovable                                 : True
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : False
+PnPDeviceID                                      : 
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 10000000000
+State                                            : 1
+TransmitLinkSpeed                                : 10000000000
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : CC-F9-E4-2D-52-03
+Status                                           : Not Present
+LinkSpeed                                        : 0 bps
+MediaType                                        : Native 802.11
+PhysicalMediaType                                : Native 802.11
+AdminStatus                                      : Down
+MediaConnectionState                             : Unknown
+DriverInformation                                : Driver Date 2021-01-20 Version 22.30.0.11 NDIS 6.60
+DriverFileName                                   : Netwtw10.sys
+NdisVersion                                      : 6.60
+ifOperStatus                                     : NotPresent
+ifAlias                                          : Wi-Fi
+InterfaceAlias                                   : Wi-Fi
+ifIndex                                          : 11
+ifDesc                                           : Intel(R) Wi-Fi 6 AX201 160MHz
+ifName                                           : wireless_32768
+DriverVersion                                    : 22.30.0.11
+LinkLayerAddress                                 : CC-F9-E4-2D-52-03
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {5C6FD16B-CA0A-4026-904F-03593DBF348E}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Wi-Fi
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {5C6FD16B-CA0A-4026-904F-03593DBF348E}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 0
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 0
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : {CCF9E42D5203}
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : CCF9E42D5203
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : PCI\VEN_8086&DEV_06F0&SUBSYS_00748086
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{5C6FD16B-CA0A-4026-904F-03593DBF348E}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2021-01-20
+DriverDateData                                   : 132555744000000000
+DriverDescription                                : Intel(R) Wi-Fi 6 AX201 160MHz
+DriverMajorNdisVersion                           : 6
+DriverMinorNdisVersion                           : 60
+DriverName                                       : \SystemRoot\System32\drivers\Netwtw10.sys
+DriverProvider                                   : Intel
+DriverVersionString                              : 22.30.0.11
+EndPointInterface                                : False
+HardwareInterface                                : True
+Hidden                                           : False
+HigherLayerInterfaceIndices                      : 
+IMFilter                                         : False
+InterfaceAdminStatus                             : 2
+InterfaceDescription                             : Intel(R) Wi-Fi 6 AX201 160MHz
+InterfaceGuid                                    : {5C6FD16B-CA0A-4026-904F-03593DBF348E}
+InterfaceIndex                                   : 11
+InterfaceName                                    : wireless_32768
+InterfaceOperationalStatus                       : 6
+InterfaceType                                    : 71
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 0
+MediaConnectState                                : 0
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 11
+MtuSize                                          : 0
+NdisMedium                                       : 16
+NdisPhysicalMedium                               : 9
+NetLuid                                          : 19985273102270464
+NetLuidIndex                                     : 32768
+NotUserRemovable                                 : False
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : False
+PnPDeviceID                                      : PCI\VEN_8086&DEV_06F0&SUBSYS_00748086&REV_00\3&11583659&0&A3
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 0
+State                                            : 3
+TransmitLinkSpeed                                : 0
+Virtual                                          : False
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 
+Status                                           : Not Present
+LinkSpeed                                        : 0 bps
+MediaType                                        : 802.3
+PhysicalMediaType                                : 802.3
+AdminStatus                                      : Down
+MediaConnectionState                             : Unknown
+DriverInformation                                : Driver Date 2006-06-21 Version 10.0.26100.8521
+DriverFileName                                   : kdnic.sys
+NdisVersion                                      : 
+ifOperStatus                                     : NotPresent
+ifAlias                                          : Ethernet (Kernel Debugger)
+InterfaceAlias                                   : Ethernet (Kernel Debugger)
+ifIndex                                          : 10
+ifDesc                                           : Microsoft Kernel Debug Network Adapter
+ifName                                           : ethernet_32769
+DriverVersion                                    : 10.0.26100.8521
+LinkLayerAddress                                 : 
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {5744F756-45B3-463E-B9A5-8BA3EE02B6D6}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Ethernet (Kernel Debugger)
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {5744F756-45B3-463E-B9A5-8BA3EE02B6D6}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 0
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 0
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : 
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : root\kdnic
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{5744F756-45B3-463E-B9A5-8BA3EE02B6D6}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2006-06-21
+DriverDateData                                   : 127953216000000000
+DriverDescription                                : Microsoft Kernel Debug Network Adapter
+DriverMajorNdisVersion                           : 
+DriverMinorNdisVersion                           : 
+DriverName                                       : \SystemRoot\System32\drivers\kdnic.sys
+DriverProvider                                   : Microsoft
+DriverVersionString                              : 10.0.26100.8521
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : True
+HigherLayerInterfaceIndices                      : 
+IMFilter                                         : False
+InterfaceAdminStatus                             : 2
+InterfaceDescription                             : Microsoft Kernel Debug Network Adapter
+InterfaceGuid                                    : {5744F756-45B3-463E-B9A5-8BA3EE02B6D6}
+InterfaceIndex                                   : 10
+InterfaceName                                    : ethernet_32769
+InterfaceOperationalStatus                       : 6
+InterfaceType                                    : 6
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 
+MediaConnectState                                : 0
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 
+MtuSize                                          : 0
+NdisMedium                                       : 0
+NdisPhysicalMedium                               : 14
+NetLuid                                          : 1689399632855040
+NetLuidIndex                                     : 32769
+NotUserRemovable                                 : False
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : False
+PnPDeviceID                                      : ROOT\KDNIC\0000
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 0
+State                                            : 2
+TransmitLinkSpeed                                : 0
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : A0-47-D7-74-3A-DF
+Status                                           : Up
+LinkSpeed                                        : 13 Mbps
+MediaType                                        : Native 802.11
+PhysicalMediaType                                : Native 802.11
+AdminStatus                                      : Up
+MediaConnectionState                             : Connected
+DriverInformation                                : Driver Date 2007-08-14 Version 5.1.22.0 NDIS 6.70
+DriverFileName                                   : netr28ux.sys
+NdisVersion                                      : 6.70
+ifOperStatus                                     : Up
+ifAlias                                          : Wi-Fi 3
+InterfaceAlias                                   : Wi-Fi 3
+ifIndex                                          : 9
+ifDesc                                           : 802.11n USB Wireless LAN Card
+ifName                                           : wireless_32774
+DriverVersion                                    : 5.1.22.0
+LinkLayerAddress                                 : A0-47-D7-74-3A-DF
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {56463CC1-D53A-4C79-A048-47119DB99415}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Wi-Fi 3
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {56463CC1-D53A-4C79-A048-47119DB99415}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 13000000
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 1500
+AutoSense                                        : 
+FullDuplex                                       : True
+LinkTechnology                                   : 
+NetworkAddresses                                 : {A047D7743ADF}
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : A047D7743ADF
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : USB\VID_148F&PID_7601
+ConnectorPresent                                 : True
+DeviceName                                       : \Device\{56463CC1-D53A-4C79-A048-47119DB99415}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2007-08-14
+DriverDateData                                   : 128315232000000000
+DriverDescription                                : 802.11n USB Wireless LAN Card
+DriverMajorNdisVersion                           : 6
+DriverMinorNdisVersion                           : 70
+DriverName                                       : \SystemRoot\System32\drivers\netr28ux.sys
+DriverProvider                                   : Microsoft
+DriverVersionString                              : 5.1.22.0
+EndPointInterface                                : False
+HardwareInterface                                : True
+Hidden                                           : False
+HigherLayerInterfaceIndices                      : {22}
+IMFilter                                         : False
+InterfaceAdminStatus                             : 1
+InterfaceDescription                             : 802.11n USB Wireless LAN Card
+InterfaceGuid                                    : {56463CC1-D53A-4C79-A048-47119DB99415}
+InterfaceIndex                                   : 9
+InterfaceName                                    : wireless_32774
+InterfaceOperationalStatus                       : 1
+InterfaceType                                    : 71
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 1
+MediaConnectState                                : 1
+MediaDuplexState                                 : 2
+MinorDriverVersion                               : 1
+MtuSize                                          : 1500
+NdisMedium                                       : 16
+NdisPhysicalMedium                               : 9
+NetLuid                                          : 19985273202933760
+NetLuidIndex                                     : 32774
+NotUserRemovable                                 : False
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : False
+PnPDeviceID                                      : USB\VID_148F&PID_7601\1.0
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 600000000
+State                                            : 2
+TransmitLinkSpeed                                : 13000000
+Virtual                                          : False
+VlanID                                           : 
+WdmInterface                                     : True
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 
+Status                                           : Up
+LinkSpeed                                        : 0 bps
+MediaType                                        : 802.3
+PhysicalMediaType                                : Unspecified
+AdminStatus                                      : Up
+MediaConnectionState                             : Connected
+DriverInformation                                : Driver Date 2006-06-21 Version 10.0.26100.1 NDIS 6.30
+DriverFileName                                   : ndiswan.sys
+NdisVersion                                      : 6.30
+ifOperStatus                                     : Up
+ifAlias                                          : Local Area Connection* 8
+InterfaceAlias                                   : Local Area Connection* 8
+ifIndex                                          : 8
+ifDesc                                           : WAN Miniport (IP)
+ifName                                           : ethernet_32771
+DriverVersion                                    : 10.0.26100.1
+LinkLayerAddress                                 : 
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {54AEEDC7-09B9-4318-94ED-B6993BC02DF9}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Local Area Connection* 8
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {54AEEDC7-09B9-4318-94ED-B6993BC02DF9}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 1500
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : 
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : ms_ndiswanip
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{54AEEDC7-09B9-4318-94ED-B6993BC02DF9}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2006-06-21
+DriverDateData                                   : 127953216000000000
+DriverDescription                                : WAN Miniport (IP)
+DriverMajorNdisVersion                           : 6
+DriverMinorNdisVersion                           : 30
+DriverName                                       : \SystemRoot\System32\drivers\ndiswan.sys
+DriverProvider                                   : Microsoft
+DriverVersionString                              : 10.0.26100.1
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : True
+HigherLayerInterfaceIndices                      : {61}
+IMFilter                                         : False
+InterfaceAdminStatus                             : 1
+InterfaceDescription                             : WAN Miniport (IP)
+InterfaceGuid                                    : {54AEEDC7-09B9-4318-94ED-B6993BC02DF9}
+InterfaceIndex                                   : 8
+InterfaceName                                    : ethernet_32771
+InterfaceOperationalStatus                       : 1
+InterfaceType                                    : 6
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 1
+MediaConnectState                                : 1
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 1
+MtuSize                                          : 1500
+NdisMedium                                       : 0
+NdisPhysicalMedium                               : 0
+NetLuid                                          : 1689399666409472
+NetLuidIndex                                     : 32771
+NotUserRemovable                                 : True
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : False
+PnPDeviceID                                      : SWD\MSRRAS\MS_NDISWANIP
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 
+State                                            : 2
+TransmitLinkSpeed                                : 
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 0A-00-27-00-00-08
+Status                                           : Not Present
+LinkSpeed                                        : 0 bps
+MediaType                                        : 802.3
+PhysicalMediaType                                : 802.3
+AdminStatus                                      : Down
+MediaConnectionState                             : Unknown
+DriverInformation                                : Driver Date 2026-04-18 Version 7.2.8.23730 NDIS 6.30
+DriverFileName                                   : VBoxNetAdp6.sys
+NdisVersion                                      : 6.30
+ifOperStatus                                     : NotPresent
+ifAlias                                          : Ethernet 3
+InterfaceAlias                                   : Ethernet 3
+ifIndex                                          : 7
+ifDesc                                           : VirtualBox Host-Only Ethernet Adapter
+ifName                                           : ethernet_32775
+DriverVersion                                    : 7.2.8.23730
+LinkLayerAddress                                 : 0A-00-27-00-00-08
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {51268BD0-6845-43FC-A918-A9FCE52E1047}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Ethernet 3
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {51268BD0-6845-43FC-A918-A9FCE52E1047}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 0
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 0
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : {0A0027000008}
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 0A0027000008
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : sun_vboxnetadp
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{51268BD0-6845-43FC-A918-A9FCE52E1047}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2026-04-18
+DriverDateData                                   : 134209440000000000
+DriverDescription                                : VirtualBox Host-Only Ethernet Adapter
+DriverMajorNdisVersion                           : 6
+DriverMinorNdisVersion                           : 30
+DriverName                                       : \SystemRoot\system32\DRIVERS\VBoxNetAdp6.sys
+DriverProvider                                   : Oracle Corporation
+DriverVersionString                              : 7.2.8.23730
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : False
+HigherLayerInterfaceIndices                      : 
+IMFilter                                         : False
+InterfaceAdminStatus                             : 2
+InterfaceDescription                             : VirtualBox Host-Only Ethernet Adapter
+InterfaceGuid                                    : {51268BD0-6845-43FC-A918-A9FCE52E1047}
+InterfaceIndex                                   : 7
+InterfaceName                                    : ethernet_32775
+InterfaceOperationalStatus                       : 6
+InterfaceType                                    : 6
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 1
+MediaConnectState                                : 0
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 0
+MtuSize                                          : 0
+NdisMedium                                       : 0
+NdisPhysicalMedium                               : 14
+NetLuid                                          : 1689399733518336
+NetLuidIndex                                     : 32775
+NotUserRemovable                                 : False
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : False
+PnPDeviceID                                      : ROOT\NET\0000
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 0
+State                                            : 3
+TransmitLinkSpeed                                : 0
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 
+Status                                           : Disconnected
+LinkSpeed                                        : 0 bps
+MediaType                                        : Connection Oriented WAN
+PhysicalMediaType                                : Unspecified
+AdminStatus                                      : Up
+MediaConnectionState                             : Unknown
+DriverInformation                                : Driver Date 2006-06-21 Version 10.0.26100.1 NDIS 6.30
+DriverFileName                                   : raspptp.sys
+NdisVersion                                      : 6.30
+ifOperStatus                                     : Down
+ifAlias                                          : Local Area Connection* 6
+InterfaceAlias                                   : Local Area Connection* 6
+ifIndex                                          : 6
+ifDesc                                           : WAN Miniport (PPTP)
+ifName                                           : tunnel_32771
+DriverVersion                                    : 10.0.26100.1
+LinkLayerAddress                                 : 
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {46366D78-413A-4F36-82C3-566D8CC721EB}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Local Area Connection* 6
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {46366D78-413A-4F36-82C3-566D8CC721EB}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 1464
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : 
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : ms_pptpminiport
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{46366D78-413A-4F36-82C3-566D8CC721EB}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2006-06-21
+DriverDateData                                   : 127953216000000000
+DriverDescription                                : WAN Miniport (PPTP)
+DriverMajorNdisVersion                           : 6
+DriverMinorNdisVersion                           : 30
+DriverName                                       : \SystemRoot\System32\drivers\raspptp.sys
+DriverProvider                                   : Microsoft
+DriverVersionString                              : 10.0.26100.1
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : True
+HigherLayerInterfaceIndices                      : 
+IMFilter                                         : False
+InterfaceAdminStatus                             : 1
+InterfaceDescription                             : WAN Miniport (PPTP)
+InterfaceGuid                                    : {46366D78-413A-4F36-82C3-566D8CC721EB}
+InterfaceIndex                                   : 6
+InterfaceName                                    : tunnel_32771
+InterfaceOperationalStatus                       : 2
+InterfaceType                                    : 131
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 1
+MediaConnectState                                : 0
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 0
+MtuSize                                          : 1464
+NdisMedium                                       : 12
+NdisPhysicalMedium                               : 0
+NetLuid                                          : 36873771755241472
+NetLuidIndex                                     : 32771
+NotUserRemovable                                 : True
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : True
+PnPDeviceID                                      : SWD\MSRRAS\MS_PPTPMINIPORT
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 
+State                                            : 2
+TransmitLinkSpeed                                : 
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 00-15-5D-D1-15-29
+Status                                           : Up
+LinkSpeed                                        : 10 Gbps
+MediaType                                        : 802.3
+PhysicalMediaType                                : Unspecified
+AdminStatus                                      : Up
+MediaConnectionState                             : Connected
+DriverInformation                                : Driver Date  Version 
+DriverFileName                                   : 
+NdisVersion                                      : 
+ifOperStatus                                     : Up
+ifAlias                                          : vEthernet (WSL (Hyper-V firewall))
+InterfaceAlias                                   : vEthernet (WSL (Hyper-V firewall))
+ifIndex                                          : 51
+ifDesc                                           : Hyper-V Virtual Ethernet Adapter #2
+ifName                                           : ethernet_32777
+DriverVersion                                    : 
+LinkLayerAddress                                 : 00-15-5D-D1-15-29
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {383D3DFE-17F5-44C3-B7CE-03584F0DA7EB}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : vEthernet (WSL (Hyper-V firewall))
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {383D3DFE-17F5-44C3-B7CE-03584F0DA7EB}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 10000000000
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 1500
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : {00155DD11529}
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 00155D964755
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : 
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{383D3DFE-17F5-44C3-B7CE-03584F0DA7EB}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 
+DriverDateData                                   : 
+DriverDescription                                : 
+DriverMajorNdisVersion                           : 
+DriverMinorNdisVersion                           : 
+DriverName                                       : 
+DriverProvider                                   : 
+DriverVersionString                              : 
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : False
+HigherLayerInterfaceIndices                      : {44}
+IMFilter                                         : False
+InterfaceAdminStatus                             : 1
+InterfaceDescription                             : Hyper-V Virtual Ethernet Adapter #2
+InterfaceGuid                                    : {383D3DFE-17F5-44C3-B7CE-03584F0DA7EB}
+InterfaceIndex                                   : 51
+InterfaceName                                    : ethernet_32777
+InterfaceOperationalStatus                       : 1
+InterfaceType                                    : 6
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : {50}
+MajorDriverVersion                               : 
+MediaConnectState                                : 1
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 
+MtuSize                                          : 1500
+NdisMedium                                       : 0
+NdisPhysicalMedium                               : 0
+NetLuid                                          : 1689399767072768
+NetLuidIndex                                     : 32777
+NotUserRemovable                                 : True
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : False
+PnPDeviceID                                      : 
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 10000000000
+State                                            : 1
+TransmitLinkSpeed                                : 10000000000
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 
+Status                                           : Not Present
+LinkSpeed                                        : 0 bps
+MediaType                                        : Tunnel
+PhysicalMediaType                                : Unspecified
+AdminStatus                                      : Down
+MediaConnectionState                             : Unknown
+DriverInformation                                : Driver Date  Version 
+DriverFileName                                   : 
+NdisVersion                                      : 
+ifOperStatus                                     : NotPresent
+ifAlias                                          : Microsoft IP-HTTPS Platform Interface
+InterfaceAlias                                   : Microsoft IP-HTTPS Platform Interface
+ifIndex                                          : 5
+ifDesc                                           : 
+ifName                                           : tunnel_32513
+DriverVersion                                    : 
+LinkLayerAddress                                 : 
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {2EE2C70C-A092-4D88-A654-98C8D7645CD5}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Microsoft IP-HTTPS Platform Interface
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {2EE2C70C-A092-4D88-A654-98C8D7645CD5}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 0
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 0
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : 
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : 
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{2EE2C70C-A092-4D88-A654-98C8D7645CD5}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 
+DriverDateData                                   : 
+DriverDescription                                : 
+DriverMajorNdisVersion                           : 
+DriverMinorNdisVersion                           : 
+DriverName                                       : 
+DriverProvider                                   : 
+DriverVersionString                              : 
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : True
+HigherLayerInterfaceIndices                      : 
+IMFilter                                         : False
+InterfaceAdminStatus                             : 2
+InterfaceDescription                             : 
+InterfaceGuid                                    : {2EE2C70C-A092-4D88-A654-98C8D7645CD5}
+InterfaceIndex                                   : 5
+InterfaceName                                    : tunnel_32513
+InterfaceOperationalStatus                       : 6
+InterfaceType                                    : 131
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 
+MediaConnectState                                : 0
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 
+MtuSize                                          : 0
+NdisMedium                                       : 15
+NdisPhysicalMedium                               : 0
+NetLuid                                          : 36873767426719744
+NetLuidIndex                                     : 32513
+NotUserRemovable                                 : False
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : False
+PnPDeviceID                                      : 
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 0
+State                                            : 1
+TransmitLinkSpeed                                : 0
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 
+Status                                           : Up
+LinkSpeed                                        : 10 Gbps
+MediaType                                        : 802.3
+PhysicalMediaType                                : Unspecified
+AdminStatus                                      : Up
+MediaConnectionState                             : Connected
+DriverInformation                                : Driver Date 2006-06-21 Version 10.0.26100.1 NDIS 6.83
+DriverFileName                                   : vmswitch.sys
+NdisVersion                                      : 6.83
+ifOperStatus                                     : Up
+ifAlias                                          : vSwitch (WSL (Hyper-V firewall))
+InterfaceAlias                                   : vSwitch (WSL (Hyper-V firewall))
+ifIndex                                          : 48
+ifDesc                                           : Hyper-V Virtual Switch Extension Adapter #2
+ifName                                           : ethernet_32776
+DriverVersion                                    : 10.0.26100.1
+LinkLayerAddress                                 : 
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {1055DDF3-F9B4-4F2A-B6A9-88D85EE18B41}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : vSwitch (WSL (Hyper-V firewall))
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {1055DDF3-F9B4-4F2A-B6A9-88D85EE18B41}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 10000000000
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 1500
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : 
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : vms_vsmp
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{1055DDF3-F9B4-4F2A-B6A9-88D85EE18B41}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2006-06-21
+DriverDateData                                   : 127953216000000000
+DriverDescription                                : Hyper-V Virtual Switch Extension Adapter
+DriverMajorNdisVersion                           : 6
+DriverMinorNdisVersion                           : 83
+DriverName                                       : \SystemRoot\System32\drivers\vmswitch.sys
+DriverProvider                                   : Microsoft
+DriverVersionString                              : 10.0.26100.1
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : True
+HigherLayerInterfaceIndices                      : {49}
+IMFilter                                         : False
+InterfaceAdminStatus                             : 1
+InterfaceDescription                             : Hyper-V Virtual Switch Extension Adapter #2
+InterfaceGuid                                    : {1055DDF3-F9B4-4F2A-B6A9-88D85EE18B41}
+InterfaceIndex                                   : 48
+InterfaceName                                    : ethernet_32776
+InterfaceOperationalStatus                       : 1
+InterfaceType                                    : 6
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 19
+MediaConnectState                                : 1
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 0
+MtuSize                                          : 1500
+NdisMedium                                       : 0
+NdisPhysicalMedium                               : 0
+NetLuid                                          : 1689399750295552
+NetLuidIndex                                     : 32776
+NotUserRemovable                                 : True
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : False
+PnPDeviceID                                      : ROOT\VMS_VSMP\0001
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 10000000000
+State                                            : 2
+TransmitLinkSpeed                                : 10000000000
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 
+Status                                           : Disconnected
+LinkSpeed                                        : 0 bps
+MediaType                                        : Connection Oriented WAN
+PhysicalMediaType                                : Unspecified
+AdminStatus                                      : Up
+MediaConnectionState                             : Unknown
+DriverInformation                                : Driver Date 2006-06-21 Version 10.0.26100.1 NDIS 6.30
+DriverFileName                                   : raspppoe.sys
+NdisVersion                                      : 6.30
+ifOperStatus                                     : Down
+ifAlias                                          : Local Area Connection* 7
+InterfaceAlias                                   : Local Area Connection* 7
+ifIndex                                          : 4
+ifDesc                                           : WAN Miniport (PPPOE)
+ifName                                           : ppp_32768
+DriverVersion                                    : 10.0.26100.1
+LinkLayerAddress                                 : 
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {0E89714C-50D4-41BE-B575-707343A18562}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Local Area Connection* 7
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {0E89714C-50D4-41BE-B575-707343A18562}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 1494
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : 
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : ms_pppoeminiport
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{0E89714C-50D4-41BE-B575-707343A18562}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2006-06-21
+DriverDateData                                   : 127953216000000000
+DriverDescription                                : WAN Miniport (PPPOE)
+DriverMajorNdisVersion                           : 6
+DriverMinorNdisVersion                           : 30
+DriverName                                       : System32\DRIVERS\raspppoe.sys
+DriverProvider                                   : Microsoft
+DriverVersionString                              : 10.0.26100.1
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : True
+HigherLayerInterfaceIndices                      : 
+IMFilter                                         : False
+InterfaceAdminStatus                             : 1
+InterfaceDescription                             : WAN Miniport (PPPOE)
+InterfaceGuid                                    : {0E89714C-50D4-41BE-B575-707343A18562}
+InterfaceIndex                                   : 4
+InterfaceName                                    : ppp_32768
+InterfaceOperationalStatus                       : 2
+InterfaceType                                    : 23
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 1
+MediaConnectState                                : 0
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 0
+MtuSize                                          : 1494
+NdisMedium                                       : 12
+NdisPhysicalMedium                               : 0
+NetLuid                                          : 6474474220158976
+NetLuidIndex                                     : 32768
+NotUserRemovable                                 : True
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : True
+PnPDeviceID                                      : SWD\MSRRAS\MS_PPPOEMINIPORT
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 
+State                                            : 2
+TransmitLinkSpeed                                : 
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 
+Status                                           : Disconnected
+LinkSpeed                                        : 0 bps
+MediaType                                        : Connection Oriented WAN
+PhysicalMediaType                                : Unspecified
+AdminStatus                                      : Up
+MediaConnectionState                             : Unknown
+DriverInformation                                : Driver Date 2006-06-21 Version 10.0.26100.1 NDIS 6.30
+DriverFileName                                   : rassstp.sys
+NdisVersion                                      : 6.30
+ifOperStatus                                     : Down
+ifAlias                                          : Local Area Connection* 3
+InterfaceAlias                                   : Local Area Connection* 3
+ifIndex                                          : 3
+ifDesc                                           : WAN Miniport (SSTP)
+ifName                                           : tunnel_32768
+DriverVersion                                    : 10.0.26100.1
+LinkLayerAddress                                 : 
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {0A458A28-7713-4826-A9C9-CEC71BD4D2F4}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : Local Area Connection* 3
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {0A458A28-7713-4826-A9C9-CEC71BD4D2F4}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 4091
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : 
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : ms_sstpminiport
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{0A458A28-7713-4826-A9C9-CEC71BD4D2F4}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 2006-06-21
+DriverDateData                                   : 127953216000000000
+DriverDescription                                : WAN Miniport (SSTP)
+DriverMajorNdisVersion                           : 6
+DriverMinorNdisVersion                           : 30
+DriverName                                       : \SystemRoot\System32\drivers\rassstp.sys
+DriverProvider                                   : Microsoft
+DriverVersionString                              : 10.0.26100.1
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : True
+HigherLayerInterfaceIndices                      : 
+IMFilter                                         : False
+InterfaceAdminStatus                             : 1
+InterfaceDescription                             : WAN Miniport (SSTP)
+InterfaceGuid                                    : {0A458A28-7713-4826-A9C9-CEC71BD4D2F4}
+InterfaceIndex                                   : 3
+InterfaceName                                    : tunnel_32768
+InterfaceOperationalStatus                       : 2
+InterfaceType                                    : 131
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 1
+MediaConnectState                                : 0
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 0
+MtuSize                                          : 4091
+NdisMedium                                       : 12
+NdisPhysicalMedium                               : 0
+NetLuid                                          : 36873771704909824
+NetLuidIndex                                     : 32768
+NotUserRemovable                                 : True
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : True
+PnPDeviceID                                      : SWD\MSRRAS\MS_SSTPMINIPORT
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 
+State                                            : 2
+TransmitLinkSpeed                                : 
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+MacAddress                                       : 
+Status                                           : Not Present
+LinkSpeed                                        : 0 bps
+MediaType                                        : Tunnel
+PhysicalMediaType                                : Unspecified
+AdminStatus                                      : Down
+MediaConnectionState                             : Unknown
+DriverInformation                                : Driver Date  Version 
+DriverFileName                                   : 
+NdisVersion                                      : 
+ifOperStatus                                     : NotPresent
+ifAlias                                          : 6to4 Adapter
+InterfaceAlias                                   : 6to4 Adapter
+ifIndex                                          : 2
+ifDesc                                           : 
+ifName                                           : tunnel_32514
+DriverVersion                                    : 
+LinkLayerAddress                                 : 
+Caption                                          : 
+Description                                      : 
+ElementName                                      : 
+InstanceID                                       : {07374750-E68B-490E-9330-9FD785CD71B6}
+CommunicationStatus                              : 
+DetailedStatus                                   : 
+HealthState                                      : 
+InstallDate                                      : 
+Name                                             : 6to4 Adapter
+OperatingStatus                                  : 
+OperationalStatus                                : 
+PrimaryStatus                                    : 
+StatusDescriptions                               : 
+AvailableRequestedStates                         : 
+EnabledDefault                                   : 2
+EnabledState                                     : 5
+OtherEnabledState                                : 
+RequestedState                                   : 12
+TimeOfLastStateChange                            : 
+TransitioningToState                             : 12
+AdditionalAvailability                           : 
+Availability                                     : 
+CreationClassName                                : MSFT_NetAdapter
+DeviceID                                         : {07374750-E68B-490E-9330-9FD785CD71B6}
+ErrorCleared                                     : 
+ErrorDescription                                 : 
+IdentifyingDescriptions                          : 
+LastErrorCode                                    : 
+MaxQuiesceTime                                   : 
+OtherIdentifyingInfo                             : 
+PowerManagementCapabilities                      : 
+PowerManagementSupported                         : 
+PowerOnHours                                     : 
+StatusInfo                                       : 
+SystemCreationClassName                          : CIM_NetworkPort
+SystemName                                       : Aetheris
+TotalPowerOnHours                                : 
+MaxSpeed                                         : 
+OtherPortType                                    : 
+PortType                                         : 
+RequestedSpeed                                   : 
+Speed                                            : 0
+UsageRestriction                                 : 
+ActiveMaximumTransmissionUnit                    : 0
+AutoSense                                        : 
+FullDuplex                                       : 
+LinkTechnology                                   : 
+NetworkAddresses                                 : 
+OtherLinkTechnology                              : 
+OtherNetworkPortType                             : 
+PermanentAddress                                 : 
+PortNumber                                       : 0
+SupportedMaximumTransmissionUnit                 : 
+AdminLocked                                      : False
+ComponentID                                      : 
+ConnectorPresent                                 : False
+DeviceName                                       : \Device\{07374750-E68B-490E-9330-9FD785CD71B6}
+DeviceWakeUpEnable                               : False
+DriverDate                                       : 
+DriverDateData                                   : 
+DriverDescription                                : 
+DriverMajorNdisVersion                           : 
+DriverMinorNdisVersion                           : 
+DriverName                                       : 
+DriverProvider                                   : 
+DriverVersionString                              : 
+EndPointInterface                                : False
+HardwareInterface                                : False
+Hidden                                           : True
+HigherLayerInterfaceIndices                      : 
+IMFilter                                         : False
+InterfaceAdminStatus                             : 2
+InterfaceDescription                             : 
+InterfaceGuid                                    : {07374750-E68B-490E-9330-9FD785CD71B6}
+InterfaceIndex                                   : 2
+InterfaceName                                    : tunnel_32514
+InterfaceOperationalStatus                       : 6
+InterfaceType                                    : 131
+iSCSIInterface                                   : False
+LowerLayerInterfaceIndices                       : 
+MajorDriverVersion                               : 
+MediaConnectState                                : 0
+MediaDuplexState                                 : 0
+MinorDriverVersion                               : 
+MtuSize                                          : 0
+NdisMedium                                       : 15
+NdisPhysicalMedium                               : 0
+NetLuid                                          : 36873767443496960
+NetLuidIndex                                     : 32514
+NotUserRemovable                                 : False
+OperationalStatusDownDefaultPortNotAuthenticated : False
+OperationalStatusDownInterfacePaused             : False
+OperationalStatusDownLowPowerState               : False
+OperationalStatusDownMediaDisconnected           : False
+PnPDeviceID                                      : 
+PromiscuousMode                                  : False
+ReceiveLinkSpeed                                 : 0
+State                                            : 1
+TransmitLinkSpeed                                : 0
+Virtual                                          : True
+VlanID                                           : 
+WdmInterface                                     : False
+PSComputerName                                   : 
+CimClass                                         : ROOT/StandardCimv2:MSFT_NetAdapter
+CimInstanceProperties                            : {Caption, Description, ElementName, InstanceID...}
+CimSystemProperties                              : Microsoft.Management.Infrastructure.CimSystemProperties
+
+
+
+
+=== Get-NetIPConfiguration ===
+
+
+ComputerName         : AETHERIS
+InterfaceAlias       : vEthernet (Default Switch)
+InterfaceIndex       : 43
+InterfaceDescription : Hyper-V Virtual Ethernet Adapter
+CompartmentId        : 1
+NetAdapter           : MSFT_NetAdapter (CreationClassName = "MSFT_NetAdapter", DeviceID = 
+                       "{5FAD2BE7-D50A-4118-ADC6-739E2312A886}", SystemCreationClassName = "CIM_NetworkPort", 
+                       SystemName = "Aetheris")
+NetCompartment       : MSFT_NetCompartment (InstanceID = ";55;")
+NetIPv6Interface     : MSFT_NetIPInterface (Name = "??55??55;", CreationClassName = "", SystemCreationClassName = "", 
+                       SystemName = "")
+NetIPv4Interface     : MSFT_NetIPInterface (Name = "??55?55;", CreationClassName = "", SystemCreationClassName = "", 
+                       SystemName = "")
+NetProfile           : 
+AllIPAddresses       : {172.31.176.1, fe80::e9bc:aad2:17b:19c2%43}
+IPv6Address          : {}
+IPv6TemporaryAddress : {}
+IPv6LinkLocalAddress : {fe80::e9bc:aad2:17b:19c2%43}
+IPv4Address          : {172.31.176.1}
+IPv6DefaultGateway   : 
+IPv4DefaultGateway   : 
+DNSServer            : {MSFT_DNSClientServerAddress (Name = "43", CreationClassName = "", SystemCreationClassName = 
+                       "", SystemName = "23"), MSFT_DNSClientServerAddress (Name = "43", CreationClassName = "", 
+                       SystemCreationClassName = "", SystemName = "2")}
+Detailed             : False
+
+ComputerName         : AETHERIS
+InterfaceAlias       : vEthernet (WSL (Hyper-V firewall))
+InterfaceIndex       : 51
+InterfaceDescription : Hyper-V Virtual Ethernet Adapter #2
+CompartmentId        : 1
+NetAdapter           : MSFT_NetAdapter (CreationClassName = "MSFT_NetAdapter", DeviceID = 
+                       "{383D3DFE-17F5-44C3-B7CE-03584F0DA7EB}", SystemCreationClassName = "CIM_NetworkPort", 
+                       SystemName = "Aetheris")
+NetCompartment       : MSFT_NetCompartment (InstanceID = ";55;")
+NetIPv6Interface     : MSFT_NetIPInterface (Name = "?;55??55;", CreationClassName = "", SystemCreationClassName = "", 
+                       SystemName = "")
+NetIPv4Interface     : MSFT_NetIPInterface (Name = "?;55?55;", CreationClassName = "", SystemCreationClassName = "", 
+                       SystemName = "")
+NetProfile           : 
+AllIPAddresses       : {172.31.144.1, fe80::e:bb8d:92ae:9966%51}
+IPv6Address          : {}
+IPv6TemporaryAddress : {}
+IPv6LinkLocalAddress : {fe80::e:bb8d:92ae:9966%51}
+IPv4Address          : {172.31.144.1}
+IPv6DefaultGateway   : 
+IPv4DefaultGateway   : 
+DNSServer            : {MSFT_DNSClientServerAddress (Name = "51", CreationClassName = "", SystemCreationClassName = 
+                       "", SystemName = "23"), MSFT_DNSClientServerAddress (Name = "51", CreationClassName = "", 
+                       SystemCreationClassName = "", SystemName = "2")}
+Detailed             : False
+
+ComputerName         : AETHERIS
+InterfaceAlias       : Wi-Fi 3
+InterfaceIndex       : 9
+InterfaceDescription : 802.11n USB Wireless LAN Card
+CompartmentId        : 1
+NetAdapter           : MSFT_NetAdapter (CreationClassName = "MSFT_NetAdapter", DeviceID = 
+                       "{56463CC1-D53A-4C79-A048-47119DB99415}", SystemCreationClassName = "CIM_NetworkPort", 
+                       SystemName = "Aetheris")
+NetCompartment       : MSFT_NetCompartment (InstanceID = ";55;")
+NetIPv6Interface     : MSFT_NetIPInterface (Name = "C55??55;", CreationClassName = "", SystemCreationClassName = "", 
+                       SystemName = "")
+NetIPv4Interface     : MSFT_NetIPInterface (Name = "C55?55;", CreationClassName = "", SystemCreationClassName = "", 
+                       SystemName = "")
+NetProfile           : MSFT_NetConnectionProfile (InstanceID = "{56463CC1-D53A-4C79-A048-47119DB99415}")
+AllIPAddresses       : {192.168.1.56, fe80::a683:8aaf:ee98:7072%9}
+IPv6Address          : {}
+IPv6TemporaryAddress : {}
+IPv6LinkLocalAddress : {fe80::a683:8aaf:ee98:7072%9}
+IPv4Address          : {192.168.1.56}
+IPv6DefaultGateway   : 
+IPv4DefaultGateway   : {MSFT_NetRoute (InstanceID = ":8:8:8:9:55C55;C?8;@B8;8;55;")}
+DNSServer            : {MSFT_DNSClientServerAddress (Name = "9", CreationClassName = "", SystemCreationClassName = "", 
+                       SystemName = "23"), MSFT_DNSClientServerAddress (Name = "9", CreationClassName = "", 
+                       SystemCreationClassName = "", SystemName = "2")}
+Detailed             : False
+
+
+
+
+=== Get-NetRoute IPv4 ===
+
+ifIndex DestinationPrefix  NextHop     RouteMetric ifMetric PolicyStore
+------- -----------------  -------     ----------- -------- -----------
+9       0.0.0.0/0          192.168.1.1           5 10       ActiveStore
+1       127.0.0.0/8        0.0.0.0             256 75       ActiveStore
+1       127.0.0.1/32       0.0.0.0             256 75       ActiveStore
+1       127.255.255.255/32 0.0.0.0             256 75       ActiveStore
+51      172.31.144.0/20    0.0.0.0             256 15       ActiveStore
+51      172.31.144.1/32    0.0.0.0             256 15       ActiveStore
+51      172.31.159.255/32  0.0.0.0             256 15       ActiveStore
+43      172.31.176.0/20    0.0.0.0             256 15       ActiveStore
+43      172.31.176.1/32    0.0.0.0             256 15       ActiveStore
+43      172.31.191.255/32  0.0.0.0             256 15       ActiveStore
+9       192.168.1.0/24     0.0.0.0             256 10       ActiveStore
+9       192.168.1.255/32   0.0.0.0             256 10       ActiveStore
+9       192.168.1.56/32    0.0.0.0             256 10       ActiveStore
+9       224.0.0.0/4        0.0.0.0             256 10       ActiveStore
+23      224.0.0.0/4        0.0.0.0             256 25       ActiveStore
+25      224.0.0.0/4        0.0.0.0             256 25       ActiveStore
+1       224.0.0.0/4        0.0.0.0             256 75       ActiveStore
+51      224.0.0.0/4        0.0.0.0             256 15       ActiveStore
+43      224.0.0.0/4        0.0.0.0             256 15       ActiveStore
+9       255.255.255.255/32 0.0.0.0             256 10       ActiveStore
+23      255.255.255.255/32 0.0.0.0             256 25       ActiveStore
+25      255.255.255.255/32 0.0.0.0             256 25       ActiveStore
+1       255.255.255.255/32 0.0.0.0             256 75       ActiveStore
+51      255.255.255.255/32 0.0.0.0             256 15       ActiveStore
+43      255.255.255.255/32 0.0.0.0             256 15       ActiveStore
+
+
+
+=== route print -4 ===
+===========================================================================
+Interface List
+  9...a0 47 d7 74 3a df ......802.11n USB Wireless LAN Card
+ 43...00 15 5d 9c 71 20 ......Hyper-V Virtual Ethernet Adapter
+ 51...00 15 5d d1 15 29 ......Hyper-V Virtual Ethernet Adapter #2
+ 23...a0 47 d7 74 3a d9 ......Microsoft Wi-Fi Direct Virtual Adapter #5
+ 25...a0 47 d7 74 3a da ......Microsoft Wi-Fi Direct Virtual Adapter #6
+  1...........................Software Loopback Interface 1
+===========================================================================
+
+IPv4 Route Table
+===========================================================================
+Active Routes:
+Network Destination        Netmask          Gateway       Interface  Metric
+          0.0.0.0          0.0.0.0      192.168.1.1     192.168.1.56     15
+        127.0.0.0        255.0.0.0         On-link         127.0.0.1    331
+        127.0.0.1  255.255.255.255         On-link         127.0.0.1    331
+  127.255.255.255  255.255.255.255         On-link         127.0.0.1    331
+     172.31.144.0    255.255.240.0         On-link      172.31.144.1    271
+     172.31.144.1  255.255.255.255         On-link      172.31.144.1    271
+   172.31.159.255  255.255.255.255         On-link      172.31.144.1    271
+     172.31.176.0    255.255.240.0         On-link      172.31.176.1    271
+     172.31.176.1  255.255.255.255         On-link      172.31.176.1    271
+   172.31.191.255  255.255.255.255         On-link      172.31.176.1    271
+      192.168.1.0    255.255.255.0         On-link      192.168.1.56    266
+     192.168.1.56  255.255.255.255         On-link      192.168.1.56    266
+    192.168.1.255  255.255.255.255         On-link      192.168.1.56    266
+        224.0.0.0        240.0.0.0         On-link         127.0.0.1    331
+        224.0.0.0        240.0.0.0         On-link      172.31.144.1    271
+        224.0.0.0        240.0.0.0         On-link      172.31.176.1    271
+        224.0.0.0        240.0.0.0         On-link      192.168.1.56    266
+  255.255.255.255  255.255.255.255         On-link         127.0.0.1    331
+  255.255.255.255  255.255.255.255         On-link      172.31.144.1    271
+  255.255.255.255  255.255.255.255         On-link      172.31.176.1    271
+  255.255.255.255  255.255.255.255         On-link      192.168.1.56    266
+===========================================================================
+Persistent Routes:
+  Network Address          Netmask  Gateway Address  Metric
+          0.0.0.0          0.0.0.0      192.168.1.1  Default 
+          0.0.0.0          0.0.0.0      192.168.1.1       5
+===========================================================================

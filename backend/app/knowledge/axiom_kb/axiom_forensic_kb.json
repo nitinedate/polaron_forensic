@@ -1,0 +1,5746 @@
+{
+  "procedures": [
+    {
+      "id": "P01_EVIDENCE_INTEGRITY",
+      "name": "Evidence Integrity",
+      "purpose": "Establish evidence identity, acquisition scope and available integrity metadata.",
+      "steps": [
+        "Identify each evidence source and acquisition type.",
+        "Record source and device identifiers.",
+        "Review acquisition metadata and available hashes.",
+        "Record timezone and processing scope.",
+        "Document verification result and limitations without inventing missing verification data."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P02_DEVICE_SYSTEM",
+      "name": "Device and System Identification",
+      "purpose": "Identify the examined device, operating system and stable identifiers.",
+      "steps": [
+        "Review device information artifacts.",
+        "Review operating system and hardware metadata.",
+        "Collect hostname, serial, UDID or other stable identifiers where available.",
+        "Correlate user accounts and timezone.",
+        "Deduplicate repeated representations of the same device."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P03_FILES_DOCUMENTS",
+      "name": "Files and Documents",
+      "purpose": "Identify and validate files, documents and metadata relevant to the report objective.",
+      "steps": [
+        "Select file and document artifact families required by the report.",
+        "Collect full path, size, timestamps and hashes where available.",
+        "Determine allocation, deletion and recovery state.",
+        "Validate significant records against the source file system or source link.",
+        "Deduplicate according to file occurrence or content hash as defined by the report."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P04_APPLICATION_EXECUTION",
+      "name": "Application and Execution",
+      "purpose": "Separate software presence, installation and execution evidence.",
+      "steps": [
+        "Review installed application evidence.",
+        "Review execution-specific artifacts such as Prefetch, UserAssist, BAM/DAM and event logs where applicable.",
+        "Review supporting inventory metadata such as Amcache with correct forensic interpretation.",
+        "Correlate executable path, user and timestamps.",
+        "Do not infer execution from installation or file presence alone."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P05_BROWSER_WEB",
+      "name": "Browser and Web",
+      "purpose": "Identify browser activity while preserving browser/profile/event identity.",
+      "steps": [
+        "Identify browser and profile.",
+        "Review history, searches, downloads, bookmarks and other report-relevant browser artifacts.",
+        "Normalize URLs and domains.",
+        "Correlate files or account data when required.",
+        "Prevent Refined Results or parent artifacts from double-counting the same underlying activity."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P06_COMMUNICATIONS",
+      "name": "Communications",
+      "purpose": "Identify communications, participants, direction, timestamps and attachments.",
+      "steps": [
+        "Identify communication application and local account.",
+        "Recover messages, calls or emails relevant to the report.",
+        "Collect participants, direction, timestamp and thread/conversation identifiers.",
+        "Associate attachments without counting attachments as messages.",
+        "Separate parsed, deleted, carved and partial records.",
+        "Count unique communications using native identifiers where available."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P07_ACCOUNT_AUTH",
+      "name": "Accounts and Authentication",
+      "purpose": "Identify accounts and authentication events without conflating account presence with login activity.",
+      "steps": [
+        "Identify system or application accounts.",
+        "Review authentication and logon artifacts.",
+        "Collect timestamps, source device/IP and result where available.",
+        "Distinguish account existence from actual authentication.",
+        "Correlate relevant event logs and application records."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P08_NETWORK_EXTERNAL",
+      "name": "Network and External Devices",
+      "purpose": "Identify network, remote access and external-device activity.",
+      "steps": [
+        "Review the report-specific network or device artifacts.",
+        "Collect stable identifiers such as IP, hostname, SSID, serial number, VID/PID or MAC where available.",
+        "Collect user and timestamps where available.",
+        "Correlate Registry, event logs, LNK/Jump List or application evidence when relevant.",
+        "Count unique devices, sessions or events according to the report definition."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P09_DELETION_RECOVERY",
+      "name": "Deletion and Recovery",
+      "purpose": "Identify deleted and recovered evidence and clearly state recovery quality.",
+      "steps": [
+        "Review Recycle Bin/Trash, deleted file-system records and carved evidence.",
+        "Collect original path, deletion state, timestamps, source offsets and hashes where available.",
+        "Separate intact, parsed, carved and partial recovery.",
+        "Deduplicate overlapping deleted and carved representations.",
+        "Use qualified language for incomplete artifacts."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P10_PERSISTENCE_SECURITY",
+      "name": "Persistence and Security",
+      "purpose": "Identify persistence, security detections and related configuration.",
+      "steps": [
+        "Review persistence or security artifact families relevant to the report.",
+        "Collect configuration source, executable path, user and timestamps.",
+        "Correlate execution/log evidence where available.",
+        "Distinguish configured persistence from confirmed execution.",
+        "Report concrete evidence rather than inferred intent."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P11_TIMELINE_LOCATION",
+      "name": "Timeline and Location",
+      "purpose": "Reconstruct chronology or location while avoiding timestamp-row inflation.",
+      "steps": [
+        "Collect timestamped records relevant to the objective.",
+        "Normalize timezone.",
+        "Identify the underlying action or event represented by each timestamp.",
+        "Collapse duplicate timestamps that describe the same underlying event.",
+        "Correlate events across artifact families.",
+        "Count normalized events, not raw Timeline rows."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P12_MOBILE_ACTIVITY",
+      "name": "Mobile System and App Activity",
+      "purpose": "Analyze mobile device, application and system activity.",
+      "steps": [
+        "Identify device and operating system.",
+        "Review report-relevant accounts and applications.",
+        "Review system activity sources such as KnowledgeC, Biome, Digital Wellbeing or supported equivalents where applicable.",
+        "Correlate application, user, timestamp and device context.",
+        "Separate direct activity evidence from contextual application presence."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P13_CLOUD_EVIDENCE",
+      "name": "Cloud Evidence",
+      "purpose": "Analyze provider, account, object and cloud activity records.",
+      "steps": [
+        "Identify provider and account.",
+        "Identify collection/source type.",
+        "Review report-relevant files, messages or events.",
+        "Collect actor, action, object and timestamp.",
+        "Correlate local and cloud evidence where available.",
+        "Treat evidence containers separately from the activity records they contain."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P14_MEMORY",
+      "name": "Memory Analysis",
+      "purpose": "Analyze volatile evidence while separating memory-only observations from persistent disk evidence.",
+      "steps": [
+        "Validate memory source and analysis profile/plugin.",
+        "Review processes, connections, modules or other report-specific artifacts.",
+        "Collect PID, process, endpoint and command-line information as applicable.",
+        "Correlate volatile evidence with disk artifacts where useful.",
+        "Document volatile-source limitations."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P15_OS_LOGS",
+      "name": "Operating System Logs",
+      "purpose": "Analyze event and audit logs using unique event identifiers.",
+      "steps": [
+        "Identify log provider, channel or source.",
+        "Filter event IDs/categories relevant to the objective.",
+        "Collect event timestamp, user, computer, process and result where available.",
+        "Normalize duplicate representations.",
+        "Count unique log records or normalized events according to the report definition."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P16_MEDIA",
+      "name": "Media Analysis",
+      "purpose": "Identify media files and metadata with separate occurrence and unique-content counts.",
+      "steps": [
+        "Identify picture, video or audio artifacts.",
+        "Collect path, hash and media metadata.",
+        "Review EXIF/geolocation where within scope.",
+        "Record allocation/deletion state.",
+        "Report file occurrences separately from unique content when useful."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P17_ENCRYPTION_CREDENTIALS",
+      "name": "Encryption and Credentials",
+      "purpose": "Identify protected/encrypted evidence while protecting secrets.",
+      "steps": [
+        "Identify encryption or credential-related artifact families.",
+        "Collect source, owner/account and protection mechanism.",
+        "Correlate tool/configuration evidence where relevant.",
+        "Redact recovered passwords, tokens and secrets from narrative output.",
+        "Do not expose credential material unnecessarily."
+      ],
+      "version": "1.0",
+      "active": true
+    },
+    {
+      "id": "P18_SEARCH_HASH_IOC",
+      "name": "Search, Hash and IOC",
+      "purpose": "Interpret search and indicator matches in context.",
+      "steps": [
+        "Apply defined search, hash or IOC scope.",
+        "Identify the underlying source object for each hit.",
+        "Deduplicate repeated hits within the same source object.",
+        "Validate surrounding context.",
+        "Distinguish a keyword occurrence from a meaningful forensic finding.",
+        "Correlate with report-relevant artifacts."
+      ],
+      "version": "1.0",
+      "active": true
+    }
+  ],
+  "artifact_catalog": [
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Device Information",
+      "platform": "CROSS_PLATFORM",
+      "category": "SYSTEM",
+      "aliases": [
+        "Device Info",
+        "Mobile Device Information"
+      ],
+      "description": "Canonical Aetheris artifact family for Device Information.",
+      "expected_fields": [
+        "device_serial",
+        "model",
+        "manufacturer",
+        "hostname"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Operating System Information",
+      "platform": "CROSS_PLATFORM",
+      "category": "SYSTEM",
+      "aliases": [
+        "OS Information",
+        "System Information"
+      ],
+      "description": "Canonical Aetheris artifact family for Operating System Information.",
+      "expected_fields": [
+        "os_name",
+        "os_version",
+        "build",
+        "hostname",
+        "timezone"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "User Accounts",
+      "platform": "CROSS_PLATFORM",
+      "category": "ACCOUNT",
+      "aliases": [
+        "Accounts",
+        "Users"
+      ],
+      "description": "Canonical Aetheris artifact family for User Accounts.",
+      "expected_fields": [
+        "username",
+        "sid",
+        "uid",
+        "email"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Volume Information",
+      "platform": "CROSS_PLATFORM",
+      "category": "FILESYSTEM",
+      "aliases": [
+        "Partitions",
+        "Volumes"
+      ],
+      "description": "Canonical Aetheris artifact family for Volume Information.",
+      "expected_fields": [
+        "volume_id",
+        "label",
+        "filesystem",
+        "size"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Installed Applications",
+      "platform": "CROSS_PLATFORM",
+      "category": "APPLICATION",
+      "aliases": [
+        "Installed Programs",
+        "Applications"
+      ],
+      "description": "Canonical Aetheris artifact family for Installed Applications.",
+      "expected_fields": [
+        "application",
+        "package_id",
+        "version",
+        "install_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Prefetch Files",
+      "platform": "WINDOWS",
+      "category": "EXECUTION",
+      "aliases": [
+        "Prefetch"
+      ],
+      "description": "Canonical Aetheris artifact family for Prefetch Files.",
+      "expected_fields": [
+        "executable",
+        "run_count",
+        "event_time",
+        "source_path"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Amcache",
+      "platform": "WINDOWS",
+      "category": "APPLICATION",
+      "aliases": [
+        "Amcache.hve",
+        "Amcache Entries"
+      ],
+      "description": "Canonical Aetheris artifact family for Amcache.",
+      "expected_fields": [
+        "executable",
+        "file_path",
+        "sha256",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "UserAssist",
+      "platform": "WINDOWS",
+      "category": "EXECUTION",
+      "aliases": [
+        "UserAssist Entries"
+      ],
+      "description": "Canonical Aetheris artifact family for UserAssist.",
+      "expected_fields": [
+        "username",
+        "executable",
+        "run_count",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "BAM/DAM",
+      "platform": "WINDOWS",
+      "category": "EXECUTION",
+      "aliases": [
+        "BAM",
+        "DAM"
+      ],
+      "description": "Canonical Aetheris artifact family for BAM/DAM.",
+      "expected_fields": [
+        "username",
+        "executable",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "SRUM",
+      "platform": "WINDOWS",
+      "category": "ACTIVITY",
+      "aliases": [
+        "System Resource Usage Monitor"
+      ],
+      "description": "Canonical Aetheris artifact family for SRUM.",
+      "expected_fields": [
+        "application",
+        "username",
+        "event_time",
+        "bytes_sent",
+        "bytes_received"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Windows Event Log",
+      "platform": "WINDOWS",
+      "category": "LOG",
+      "aliases": [
+        "Event Logs",
+        "Windows Events"
+      ],
+      "description": "Canonical Aetheris artifact family for Windows Event Log.",
+      "expected_fields": [
+        "event_id",
+        "record_id",
+        "provider",
+        "channel",
+        "username",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "RDP Activity",
+      "platform": "WINDOWS",
+      "category": "NETWORK",
+      "aliases": [
+        "Remote Desktop",
+        "Terminal Services Events",
+        "Terminal Server Client"
+      ],
+      "description": "Canonical Aetheris artifact family for RDP Activity.",
+      "expected_fields": [
+        "session_id",
+        "remote_ip",
+        "hostname",
+        "username",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "USB Devices",
+      "platform": "WINDOWS",
+      "category": "DEVICE",
+      "aliases": [
+        "USB Device",
+        "External Devices"
+      ],
+      "description": "Canonical Aetheris artifact family for USB Devices.",
+      "expected_fields": [
+        "device_serial",
+        "vid",
+        "pid",
+        "manufacturer",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Wi-Fi Networks",
+      "platform": "CROSS_PLATFORM",
+      "category": "NETWORK",
+      "aliases": [
+        "WiFi",
+        "Wireless Networks",
+        "Network Profiles"
+      ],
+      "description": "Canonical Aetheris artifact family for Wi-Fi Networks.",
+      "expected_fields": [
+        "ssid",
+        "bssid",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Bluetooth Devices",
+      "platform": "CROSS_PLATFORM",
+      "category": "DEVICE",
+      "aliases": [
+        "Bluetooth",
+        "Paired Bluetooth Devices"
+      ],
+      "description": "Canonical Aetheris artifact family for Bluetooth Devices.",
+      "expected_fields": [
+        "device_name",
+        "mac",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Scheduled Tasks",
+      "platform": "WINDOWS",
+      "category": "PERSISTENCE",
+      "aliases": [
+        "Task Scheduler",
+        "Tasks"
+      ],
+      "description": "Canonical Aetheris artifact family for Scheduled Tasks.",
+      "expected_fields": [
+        "task_name",
+        "command",
+        "username",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Autoruns and Startup",
+      "platform": "WINDOWS",
+      "category": "PERSISTENCE",
+      "aliases": [
+        "Run Keys",
+        "Startup Items",
+        "Autoruns"
+      ],
+      "description": "Canonical Aetheris artifact family for Autoruns and Startup.",
+      "expected_fields": [
+        "mechanism",
+        "name",
+        "command",
+        "username"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "LNK Files",
+      "platform": "WINDOWS",
+      "category": "FILE_ACTIVITY",
+      "aliases": [
+        "Shortcut Files",
+        "LNK"
+      ],
+      "description": "Canonical Aetheris artifact family for LNK Files.",
+      "expected_fields": [
+        "file_path",
+        "target_path",
+        "event_time",
+        "volume_serial"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Jump Lists",
+      "platform": "WINDOWS",
+      "category": "FILE_ACTIVITY",
+      "aliases": [
+        "Automatic Destinations",
+        "Custom Destinations"
+      ],
+      "description": "Canonical Aetheris artifact family for Jump Lists.",
+      "expected_fields": [
+        "application",
+        "target_path",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Recent Documents",
+      "platform": "WINDOWS",
+      "category": "FILE_ACTIVITY",
+      "aliases": [
+        "RecentDocs",
+        "MRU"
+      ],
+      "description": "Canonical Aetheris artifact family for Recent Documents.",
+      "expected_fields": [
+        "username",
+        "file_path",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Shellbags",
+      "platform": "WINDOWS",
+      "category": "FILE_ACTIVITY",
+      "aliases": [
+        "Shell Bags"
+      ],
+      "description": "Canonical Aetheris artifact family for Shellbags.",
+      "expected_fields": [
+        "username",
+        "folder_path",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Recycle Bin",
+      "platform": "WINDOWS",
+      "category": "DELETION",
+      "aliases": [
+        "RecycleBin"
+      ],
+      "description": "Canonical Aetheris artifact family for Recycle Bin.",
+      "expected_fields": [
+        "file_path",
+        "original_path",
+        "deletion_time",
+        "sha256"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Browser History",
+      "platform": "CROSS_PLATFORM",
+      "category": "WEB",
+      "aliases": [
+        "Chrome Web Visits",
+        "Edge Web Visits",
+        "Firefox Web Visits",
+        "Safari History",
+        "Web Visits"
+      ],
+      "description": "Canonical Aetheris artifact family for Browser History.",
+      "expected_fields": [
+        "browser",
+        "profile",
+        "url",
+        "domain",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Web Searches",
+      "platform": "CROSS_PLATFORM",
+      "category": "WEB",
+      "aliases": [
+        "Google Searches",
+        "Search Queries",
+        "Parsed Search Queries"
+      ],
+      "description": "Canonical Aetheris artifact family for Web Searches.",
+      "expected_fields": [
+        "browser",
+        "profile",
+        "query",
+        "url",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Browser Downloads",
+      "platform": "CROSS_PLATFORM",
+      "category": "WEB",
+      "aliases": [
+        "Chrome Downloads",
+        "Edge Downloads",
+        "Firefox Downloads",
+        "Safari Downloads",
+        "Web Downloads"
+      ],
+      "description": "Canonical Aetheris artifact family for Browser Downloads.",
+      "expected_fields": [
+        "browser",
+        "profile",
+        "url",
+        "file_path",
+        "event_time",
+        "sha256"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Browser Bookmarks",
+      "platform": "CROSS_PLATFORM",
+      "category": "WEB",
+      "aliases": [
+        "Bookmarks",
+        "Favorites"
+      ],
+      "description": "Canonical Aetheris artifact family for Browser Bookmarks.",
+      "expected_fields": [
+        "browser",
+        "profile",
+        "url",
+        "title"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Browser Cookies",
+      "platform": "CROSS_PLATFORM",
+      "category": "WEB",
+      "aliases": [
+        "Cookies"
+      ],
+      "description": "Canonical Aetheris artifact family for Browser Cookies.",
+      "expected_fields": [
+        "browser",
+        "profile",
+        "domain",
+        "cookie_name",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Browser Cache",
+      "platform": "CROSS_PLATFORM",
+      "category": "WEB",
+      "aliases": [
+        "Web Cache",
+        "Cache"
+      ],
+      "description": "Canonical Aetheris artifact family for Browser Cache.",
+      "expected_fields": [
+        "browser",
+        "profile",
+        "url",
+        "event_time",
+        "content_hash"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Email Messages",
+      "platform": "CROSS_PLATFORM",
+      "category": "COMMUNICATION",
+      "aliases": [
+        "Email",
+        "Outlook Mail",
+        "Apple Mail"
+      ],
+      "description": "Canonical Aetheris artifact family for Email Messages.",
+      "expected_fields": [
+        "message_id",
+        "sender",
+        "recipients",
+        "subject",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Chat Messages",
+      "platform": "CROSS_PLATFORM",
+      "category": "COMMUNICATION",
+      "aliases": [
+        "WhatsApp Messages",
+        "Signal Messages",
+        "Telegram Messages",
+        "Teams Messages",
+        "Slack Messages",
+        "Instant Messages"
+      ],
+      "description": "Canonical Aetheris artifact family for Chat Messages.",
+      "expected_fields": [
+        "application",
+        "account",
+        "conversation_id",
+        "message_id",
+        "sender",
+        "recipients",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Call Logs",
+      "platform": "CROSS_PLATFORM",
+      "category": "COMMUNICATION",
+      "aliases": [
+        "Calls",
+        "Call History"
+      ],
+      "description": "Canonical Aetheris artifact family for Call Logs.",
+      "expected_fields": [
+        "application",
+        "call_id",
+        "caller",
+        "recipient",
+        "direction",
+        "event_time",
+        "duration"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Contacts",
+      "platform": "CROSS_PLATFORM",
+      "category": "COMMUNICATION",
+      "aliases": [
+        "Address Book",
+        "Contact List"
+      ],
+      "description": "Canonical Aetheris artifact family for Contacts.",
+      "expected_fields": [
+        "account",
+        "contact_id",
+        "name",
+        "phone",
+        "email"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Communication Attachments",
+      "platform": "CROSS_PLATFORM",
+      "category": "COMMUNICATION",
+      "aliases": [
+        "Message Attachments",
+        "Email Attachments"
+      ],
+      "description": "Canonical Aetheris artifact family for Communication Attachments.",
+      "expected_fields": [
+        "message_id",
+        "attachment_id",
+        "file_path",
+        "sha256"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Files",
+      "platform": "CROSS_PLATFORM",
+      "category": "FILESYSTEM",
+      "aliases": [
+        "File System",
+        "Filesystem"
+      ],
+      "description": "Canonical Aetheris artifact family for Files.",
+      "expected_fields": [
+        "file_path",
+        "filename",
+        "size",
+        "sha256",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Documents",
+      "platform": "CROSS_PLATFORM",
+      "category": "DOCUMENT",
+      "aliases": [
+        "Office Documents",
+        "PDF Documents",
+        "Documents"
+      ],
+      "description": "Canonical Aetheris artifact family for Documents.",
+      "expected_fields": [
+        "file_path",
+        "filename",
+        "sha256",
+        "event_time",
+        "author"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Pictures",
+      "platform": "CROSS_PLATFORM",
+      "category": "MEDIA",
+      "aliases": [
+        "Images",
+        "Photos"
+      ],
+      "description": "Canonical Aetheris artifact family for Pictures.",
+      "expected_fields": [
+        "file_path",
+        "filename",
+        "sha256",
+        "event_time",
+        "latitude",
+        "longitude"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Videos",
+      "platform": "CROSS_PLATFORM",
+      "category": "MEDIA",
+      "aliases": [
+        "Video Files"
+      ],
+      "description": "Canonical Aetheris artifact family for Videos.",
+      "expected_fields": [
+        "file_path",
+        "filename",
+        "sha256",
+        "event_time",
+        "duration"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Audio",
+      "platform": "CROSS_PLATFORM",
+      "category": "MEDIA",
+      "aliases": [
+        "Audio Files"
+      ],
+      "description": "Canonical Aetheris artifact family for Audio.",
+      "expected_fields": [
+        "file_path",
+        "filename",
+        "sha256",
+        "event_time",
+        "duration"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Deleted Files",
+      "platform": "CROSS_PLATFORM",
+      "category": "DELETION",
+      "aliases": [
+        "Deleted File Records"
+      ],
+      "description": "Canonical Aetheris artifact family for Deleted Files.",
+      "expected_fields": [
+        "file_path",
+        "filename",
+        "sha256",
+        "deletion_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Carved Files",
+      "platform": "CROSS_PLATFORM",
+      "category": "RECOVERY",
+      "aliases": [
+        "Carved Artifacts",
+        "Carved File"
+      ],
+      "description": "Canonical Aetheris artifact family for Carved Files.",
+      "expected_fields": [
+        "filename",
+        "sha256",
+        "source_offset",
+        "recovery_status"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Hash Matches",
+      "platform": "CROSS_PLATFORM",
+      "category": "SEARCH",
+      "aliases": [
+        "Known Hash Matches",
+        "Hash Set Matches"
+      ],
+      "description": "Canonical Aetheris artifact family for Hash Matches.",
+      "expected_fields": [
+        "sha256",
+        "hash_set",
+        "file_path"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Keyword Hits",
+      "platform": "CROSS_PLATFORM",
+      "category": "SEARCH",
+      "aliases": [
+        "Keyword Search Results",
+        "Search Hits"
+      ],
+      "description": "Canonical Aetheris artifact family for Keyword Hits.",
+      "expected_fields": [
+        "keyword",
+        "source_object_id",
+        "file_path",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Mobile App Usage",
+      "platform": "MOBILE",
+      "category": "ACTIVITY",
+      "aliases": [
+        "KnowledgeC",
+        "Biome",
+        "Digital Wellbeing",
+        "Application Usage"
+      ],
+      "description": "Canonical Aetheris artifact family for Mobile App Usage.",
+      "expected_fields": [
+        "application",
+        "action",
+        "event_id",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Mobile Location",
+      "platform": "MOBILE",
+      "category": "LOCATION",
+      "aliases": [
+        "Locations",
+        "Significant Locations",
+        "GPS Locations"
+      ],
+      "description": "Canonical Aetheris artifact family for Mobile Location.",
+      "expected_fields": [
+        "location_id",
+        "latitude",
+        "longitude",
+        "place",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Cloud Files",
+      "platform": "CLOUD",
+      "category": "CLOUD",
+      "aliases": [
+        "OneDrive Files",
+        "Google Drive Files",
+        "Dropbox Files",
+        "Box Files",
+        "iCloud Files"
+      ],
+      "description": "Canonical Aetheris artifact family for Cloud Files.",
+      "expected_fields": [
+        "provider",
+        "account",
+        "file_id",
+        "file_path",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Cloud Activity",
+      "platform": "CLOUD",
+      "category": "CLOUD",
+      "aliases": [
+        "Cloud Events",
+        "Audit Activity",
+        "Drive Activity"
+      ],
+      "description": "Canonical Aetheris artifact family for Cloud Activity.",
+      "expected_fields": [
+        "provider",
+        "account",
+        "event_id",
+        "action",
+        "object_id",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Memory Processes",
+      "platform": "MEMORY",
+      "category": "MEMORY",
+      "aliases": [
+        "Processes",
+        "pslist",
+        "psscan"
+      ],
+      "description": "Canonical Aetheris artifact family for Memory Processes.",
+      "expected_fields": [
+        "pid",
+        "process_name",
+        "parent_pid",
+        "command_line",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Memory Network Connections",
+      "platform": "MEMORY",
+      "category": "MEMORY",
+      "aliases": [
+        "netscan",
+        "Network Connections"
+      ],
+      "description": "Canonical Aetheris artifact family for Memory Network Connections.",
+      "expected_fields": [
+        "pid",
+        "protocol",
+        "local_ip",
+        "local_port",
+        "remote_ip",
+        "remote_port"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Memory Modules",
+      "platform": "MEMORY",
+      "category": "MEMORY",
+      "aliases": [
+        "DLLs",
+        "Loaded Modules"
+      ],
+      "description": "Canonical Aetheris artifact family for Memory Modules.",
+      "expected_fields": [
+        "pid",
+        "module_path",
+        "base_address"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Linux Authentication",
+      "platform": "LINUX",
+      "category": "LOG",
+      "aliases": [
+        "auth.log",
+        "secure",
+        "auditd authentication"
+      ],
+      "description": "Canonical Aetheris artifact family for Linux Authentication.",
+      "expected_fields": [
+        "event_id",
+        "username",
+        "remote_ip",
+        "result",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Linux Audit",
+      "platform": "LINUX",
+      "category": "LOG",
+      "aliases": [
+        "auditd",
+        "Linux Audit Events"
+      ],
+      "description": "Canonical Aetheris artifact family for Linux Audit.",
+      "expected_fields": [
+        "event_id",
+        "username",
+        "action",
+        "object",
+        "result",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Shell History",
+      "platform": "CROSS_PLATFORM",
+      "category": "LOG",
+      "aliases": [
+        "Bash History",
+        "Zsh History",
+        "Shell Commands"
+      ],
+      "description": "Canonical Aetheris artifact family for Shell History.",
+      "expected_fields": [
+        "username",
+        "command",
+        "event_id",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "SSH Activity",
+      "platform": "LINUX",
+      "category": "NETWORK",
+      "aliases": [
+        "SSH Logs",
+        "known_hosts",
+        "authorized_keys"
+      ],
+      "description": "Canonical Aetheris artifact family for SSH Activity.",
+      "expected_fields": [
+        "session_id",
+        "username",
+        "remote_ip",
+        "hostname",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Encrypted Files",
+      "platform": "CROSS_PLATFORM",
+      "category": "SECURITY",
+      "aliases": [
+        "Encrypted File",
+        "Encrypted Containers"
+      ],
+      "description": "Canonical Aetheris artifact family for Encrypted Files.",
+      "expected_fields": [
+        "file_path",
+        "sha256",
+        "encryption_type"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Security Detections",
+      "platform": "CROSS_PLATFORM",
+      "category": "SECURITY",
+      "aliases": [
+        "Windows Defender",
+        "AV Detections",
+        "Security Alerts"
+      ],
+      "description": "Canonical Aetheris artifact family for Security Detections.",
+      "expected_fields": [
+        "detection_id",
+        "detection_name",
+        "file_path",
+        "action",
+        "event_time"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    },
+    {
+      "axiom_version": "GENERIC",
+      "canonical_name": "Timeline Events",
+      "platform": "CROSS_PLATFORM",
+      "category": "TIMELINE",
+      "aliases": [
+        "Timeline",
+        "Timeline Explorer"
+      ],
+      "description": "Canonical Aetheris artifact family for Timeline Events.",
+      "expected_fields": [
+        "underlying_event_id",
+        "event_type",
+        "event_time",
+        "source_artifact_id"
+      ],
+      "source_types": [],
+      "parent_child_behavior": {}
+    }
+  ],
+  "reports": [
+    {
+      "id": "EVIDENCE_SOURCE_SUMMARY",
+      "title": "Evidence Source Summary",
+      "category": "EVIDENCE",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify the evidence sources examined and preserve acquisition/source identity.",
+      "procedure_id": "P01_EVIDENCE_INTEGRITY",
+      "required_fields": [],
+      "optional_fields": [
+        "hostname",
+        "device_serial"
+      ],
+      "count_rule": {
+        "unit": "EVIDENCE_SOURCE",
+        "key_fields": [
+          "evidence_source_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "hostname",
+          "device_serial"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "REPORT_NEGATIVE_FINDING",
+        "title": "No recoverable evidence source summary identified",
+        "finding": "No artifacts matching the defined examination criteria for Evidence Source Summary were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Device Information",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Volume Information",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "DEVICE_INFORMATION",
+      "title": "Device Information",
+      "category": "SYSTEM",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify the examined device and available stable device identifiers.",
+      "procedure_id": "P02_DEVICE_SYSTEM",
+      "required_fields": [],
+      "optional_fields": [
+        "hostname",
+        "device_serial",
+        "model",
+        "manufacturer"
+      ],
+      "count_rule": {
+        "unit": "DEVICE",
+        "key_fields": [
+          "device_serial"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "device_serial"
+          ],
+          [
+            "hostname",
+            "model"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "hostname",
+          "device_serial",
+          "model",
+          "manufacturer"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "REPORT_NEGATIVE_FINDING",
+        "title": "No recoverable device information identified",
+        "finding": "No artifacts matching the defined examination criteria for Device Information were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Device Information",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Operating System Information",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "OPERATING_SYSTEM_INFORMATION",
+      "title": "Operating System Information",
+      "category": "SYSTEM",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify the operating system, version/build, hostname and related system metadata.",
+      "procedure_id": "P02_DEVICE_SYSTEM",
+      "required_fields": [],
+      "optional_fields": [
+        "os_name",
+        "os_version",
+        "build",
+        "hostname",
+        "timezone"
+      ],
+      "count_rule": {
+        "unit": "OS_INSTALLATION",
+        "key_fields": [
+          "evidence_source_id",
+          "os_name",
+          "os_version",
+          "build"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "os_name",
+            "os_version",
+            "build"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "os_name",
+          "os_version",
+          "build",
+          "hostname",
+          "timezone"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "REPORT_NEGATIVE_FINDING",
+        "title": "No recoverable operating system information identified",
+        "finding": "No artifacts matching the defined examination criteria for Operating System Information were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Operating System Information",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Device Information",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "USER_ACCOUNTS",
+      "title": "User Accounts",
+      "category": "ACCOUNT",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify system accounts and stable account identifiers.",
+      "procedure_id": "P07_ACCOUNT_AUTH",
+      "required_fields": [],
+      "optional_fields": [
+        "username",
+        "sid",
+        "uid",
+        "email"
+      ],
+      "count_rule": {
+        "unit": "ACCOUNT",
+        "key_fields": [
+          "platform",
+          "username",
+          "sid"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "sid"
+          ],
+          [
+            "uid"
+          ],
+          [
+            "platform",
+            "username"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "username",
+          "sid",
+          "uid",
+          "email"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable user accounts identified",
+        "finding": "No artifacts matching the defined examination criteria for User Accounts were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "User Accounts",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "VOLUME_INFORMATION",
+      "title": "Volume and Partition Information",
+      "category": "FILESYSTEM",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify volumes/partitions and their file-system metadata.",
+      "procedure_id": "P01_EVIDENCE_INTEGRITY",
+      "required_fields": [],
+      "optional_fields": [
+        "volume_id",
+        "label",
+        "filesystem",
+        "size"
+      ],
+      "count_rule": {
+        "unit": "VOLUME",
+        "key_fields": [
+          "evidence_source_id",
+          "volume_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "volume_id"
+          ],
+          [
+            "evidence_source_id",
+            "label",
+            "filesystem"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "volume_id",
+          "label",
+          "filesystem",
+          "size"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable volume and partition information identified",
+        "finding": "No artifacts matching the defined examination criteria for Volume and Partition Information were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Volume Information",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "INSTALLED_APPLICATIONS",
+      "title": "Installed Applications",
+      "category": "APPLICATION",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify software recorded as installed while avoiding claims of execution based only on installation data.",
+      "procedure_id": "P04_APPLICATION_EXECUTION",
+      "required_fields": [],
+      "optional_fields": [
+        "application",
+        "package_id",
+        "version",
+        "install_time"
+      ],
+      "count_rule": {
+        "unit": "APPLICATION",
+        "key_fields": [
+          "application",
+          "package_id",
+          "version"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "package_id",
+            "version"
+          ],
+          [
+            "application",
+            "version"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "application",
+          "package_id",
+          "version",
+          "install_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable installed applications identified",
+        "finding": "No artifacts matching the defined examination criteria for Installed Applications were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Installed Applications",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "PROGRAM_EXECUTION",
+      "title": "Program Execution",
+      "category": "EXECUTION",
+      "platforms": [
+        "WINDOWS"
+      ],
+      "objective": "Identify evidence consistent with program execution and distinguish it from installation or file presence.",
+      "procedure_id": "P04_APPLICATION_EXECUTION",
+      "required_fields": [],
+      "optional_fields": [
+        "executable",
+        "username",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "EXECUTION_EVENT",
+        "key_fields": [
+          "evidence_source_id",
+          "executable",
+          "event_time",
+          "artifact_family"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "executable",
+            "event_time",
+            "artifact_family"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "executable",
+          "username",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable program execution identified",
+        "finding": "No artifacts matching the defined examination criteria for Program Execution were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Prefetch Files",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "UserAssist",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "BAM/DAM",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Windows Event Log",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Amcache",
+          "relationship": "CONTEXTUAL",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Installed Applications",
+          "relationship": "CONTEXTUAL",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "PREFETCH_ANALYSIS",
+      "title": "Prefetch Analysis",
+      "category": "EXECUTION",
+      "platforms": [
+        "WINDOWS"
+      ],
+      "objective": "Analyze Windows Prefetch evidence for program execution context and available run metadata.",
+      "procedure_id": "P04_APPLICATION_EXECUTION",
+      "required_fields": [],
+      "optional_fields": [
+        "executable",
+        "run_count",
+        "event_time",
+        "source_path"
+      ],
+      "count_rule": {
+        "unit": "PREFETCH_PROGRAM",
+        "key_fields": [
+          "evidence_source_id",
+          "source_path"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "source_path"
+          ],
+          [
+            "evidence_source_id",
+            "executable"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "executable",
+          "run_count",
+          "event_time",
+          "source_path"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable prefetch analysis identified",
+        "finding": "No artifacts matching the defined examination criteria for Prefetch Analysis were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Prefetch Files",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "AMCACHE_ANALYSIS",
+      "title": "Amcache Analysis",
+      "category": "APPLICATION",
+      "platforms": [
+        "WINDOWS"
+      ],
+      "objective": "Analyze Amcache application/file inventory as supporting application metadata without assuming every record proves execution.",
+      "procedure_id": "P04_APPLICATION_EXECUTION",
+      "required_fields": [],
+      "optional_fields": [
+        "executable",
+        "file_path",
+        "sha256",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "AMCACHE_RECORD",
+        "key_fields": [
+          "evidence_source_id",
+          "file_path",
+          "sha256"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "sha256",
+            "file_path"
+          ],
+          [
+            "file_path"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "executable",
+          "file_path",
+          "sha256",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable amcache analysis identified",
+        "finding": "No artifacts matching the defined examination criteria for Amcache Analysis were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Amcache",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Prefetch Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "UserAssist",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "USERASSIST_ANALYSIS",
+      "title": "UserAssist Analysis",
+      "category": "EXECUTION",
+      "platforms": [
+        "WINDOWS"
+      ],
+      "objective": "Identify UserAssist evidence relating to GUI application interaction.",
+      "procedure_id": "P04_APPLICATION_EXECUTION",
+      "required_fields": [],
+      "optional_fields": [
+        "username",
+        "executable",
+        "run_count",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "USERASSIST_RECORD",
+        "key_fields": [
+          "evidence_source_id",
+          "username",
+          "executable"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "username",
+            "executable"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "username",
+          "executable",
+          "run_count",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable userassist analysis identified",
+        "finding": "No artifacts matching the defined examination criteria for UserAssist Analysis were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "UserAssist",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "SRUM_ANALYSIS",
+      "title": "SRUM Analysis",
+      "category": "ACTIVITY",
+      "platforms": [
+        "WINDOWS"
+      ],
+      "objective": "Analyze Windows SRUM application and resource/network usage relevant to the examination.",
+      "procedure_id": "P04_APPLICATION_EXECUTION",
+      "required_fields": [],
+      "optional_fields": [
+        "application",
+        "username",
+        "event_time",
+        "bytes_sent",
+        "bytes_received"
+      ],
+      "count_rule": {
+        "unit": "SRUM_EVENT",
+        "key_fields": [
+          "evidence_source_id",
+          "application",
+          "username",
+          "event_time"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "application",
+            "username",
+            "event_time"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "application",
+          "username",
+          "event_time",
+          "bytes_sent",
+          "bytes_received"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable srum analysis identified",
+        "finding": "No artifacts matching the defined examination criteria for SRUM Analysis were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "SRUM",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "WINDOWS_EVENT_LOGS",
+      "title": "Windows Event Logs",
+      "category": "LOG",
+      "platforms": [
+        "WINDOWS"
+      ],
+      "objective": "Identify Windows events relevant to the defined report scope using unique provider/channel/record identifiers.",
+      "procedure_id": "P15_OS_LOGS",
+      "required_fields": [],
+      "optional_fields": [
+        "provider",
+        "channel",
+        "event_id",
+        "record_id",
+        "username"
+      ],
+      "count_rule": {
+        "unit": "LOG_EVENT",
+        "key_fields": [
+          "evidence_source_id",
+          "channel",
+          "record_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "channel",
+            "record_id"
+          ],
+          [
+            "provider",
+            "event_id",
+            "event_time",
+            "username"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "provider",
+          "channel",
+          "event_id",
+          "record_id",
+          "username"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable windows event logs identified",
+        "finding": "No artifacts matching the defined examination criteria for Windows Event Logs were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Windows Event Log",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "LOGON_LOGOFF_ACTIVITY",
+      "title": "Logon and Logoff Activity",
+      "category": "AUTHENTICATION",
+      "platforms": [
+        "WINDOWS"
+      ],
+      "objective": "Identify recorded authentication session activity and available account/source information.",
+      "procedure_id": "P07_ACCOUNT_AUTH",
+      "required_fields": [],
+      "optional_fields": [
+        "event_id",
+        "username",
+        "remote_ip",
+        "result",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "AUTH_EVENT",
+        "key_fields": [
+          "evidence_source_id",
+          "channel",
+          "record_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "channel",
+            "record_id"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "event_id",
+          "username",
+          "remote_ip",
+          "result",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable logon and logoff activity identified",
+        "finding": "No artifacts matching the defined examination criteria for Logon and Logoff Activity were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Windows Event Log",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "User Accounts",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "RDP_ACTIVITY",
+      "title": "Remote Desktop Protocol (RDP) Activity",
+      "category": "NETWORK",
+      "platforms": [
+        "WINDOWS"
+      ],
+      "objective": "Identify recoverable Remote Desktop activity and available remote host, account, session and timestamp information.",
+      "procedure_id": "P08_NETWORK_EXTERNAL",
+      "required_fields": [],
+      "optional_fields": [
+        "remote_ip",
+        "hostname",
+        "username",
+        "session_id"
+      ],
+      "count_rule": {
+        "unit": "RDP_SESSION",
+        "key_fields": [
+          "evidence_source_id",
+          "session_id"
+        ],
+        "secondary_counts": {
+          "unique_remote_hosts": [
+            "remote_ip"
+          ],
+          "unique_users": [
+            "username"
+          ]
+        }
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "session_id"
+          ],
+          [
+            "evidence_source_id",
+            "remote_ip",
+            "username",
+            "event_time"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "remote_ip",
+          "hostname",
+          "username",
+          "session_id"
+        ],
+        "positive_title": "RDP activity: {count} distinct {unit} identified",
+        "simple_explanation": "Remote Desktop-related records were recovered. The session count is calculated from normalized connection/session evidence and is not a sum of every Registry, event-log, Prefetch or Jump List hit.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "REPORT_NEGATIVE_FINDING",
+        "title": "No recoverable remote desktop protocol (rdp) activity identified",
+        "finding": "No artifacts matching the defined examination criteria for Remote Desktop Protocol (RDP) Activity were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "RDP Activity",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Windows Event Log",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Prefetch Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Jump Lists",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "LNK Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Recent Documents",
+          "relationship": "CONTEXTUAL",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "USB_DEVICES",
+      "title": "USB Devices",
+      "category": "DEVICE",
+      "platforms": [
+        "WINDOWS"
+      ],
+      "objective": "Identify distinct removable USB devices associated with the examined system.",
+      "procedure_id": "P08_NETWORK_EXTERNAL",
+      "required_fields": [],
+      "optional_fields": [
+        "device_serial",
+        "vid",
+        "pid",
+        "manufacturer"
+      ],
+      "count_rule": {
+        "unit": "USB_DEVICE",
+        "key_fields": [
+          "device_serial",
+          "vid",
+          "pid"
+        ],
+        "secondary_counts": {
+          "unique_serials": [
+            "device_serial"
+          ]
+        }
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "device_serial"
+          ],
+          [
+            "vid",
+            "pid",
+            "manufacturer"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "device_serial",
+          "vid",
+          "pid",
+          "manufacturer"
+        ],
+        "positive_title": "{count} distinct USB devices identified",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable usb devices identified",
+        "finding": "No artifacts matching the defined examination criteria for USB Devices were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "USB Devices",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "LNK Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Recent Documents",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Windows Event Log",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "WIFI_ACTIVITY",
+      "title": "Wi-Fi Activity",
+      "category": "NETWORK",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify configured or recorded wireless network activity and distinct networks/events.",
+      "procedure_id": "P08_NETWORK_EXTERNAL",
+      "required_fields": [],
+      "optional_fields": [
+        "ssid",
+        "bssid",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "WIFI_NETWORK",
+        "key_fields": [
+          "ssid",
+          "bssid"
+        ],
+        "secondary_counts": {
+          "unique_ssids": [
+            "ssid"
+          ]
+        }
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "ssid",
+            "bssid"
+          ],
+          [
+            "ssid"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "ssid",
+          "bssid",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable wi-fi activity identified",
+        "finding": "No artifacts matching the defined examination criteria for Wi-Fi Activity were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Wi-Fi Networks",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "BLUETOOTH_DEVICES",
+      "title": "Bluetooth Devices",
+      "category": "DEVICE",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify paired or known Bluetooth devices and available activity timestamps.",
+      "procedure_id": "P08_NETWORK_EXTERNAL",
+      "required_fields": [],
+      "optional_fields": [
+        "device_name",
+        "mac",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "BLUETOOTH_DEVICE",
+        "key_fields": [
+          "mac"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "mac"
+          ],
+          [
+            "device_name"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "device_name",
+          "mac",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable bluetooth devices identified",
+        "finding": "No artifacts matching the defined examination criteria for Bluetooth Devices were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Bluetooth Devices",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "SCHEDULED_TASKS",
+      "title": "Scheduled Tasks",
+      "category": "PERSISTENCE",
+      "platforms": [
+        "WINDOWS"
+      ],
+      "objective": "Identify configured scheduled tasks, commands, users and triggers relevant to the examination.",
+      "procedure_id": "P10_PERSISTENCE_SECURITY",
+      "required_fields": [],
+      "optional_fields": [
+        "task_name",
+        "command",
+        "username",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "SCHEDULED_TASK",
+        "key_fields": [
+          "task_name"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "task_name"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "task_name",
+          "command",
+          "username",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable scheduled tasks identified",
+        "finding": "No artifacts matching the defined examination criteria for Scheduled Tasks were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Scheduled Tasks",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Windows Event Log",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "AUTORUNS_STARTUP",
+      "title": "Autoruns and Startup Persistence",
+      "category": "PERSISTENCE",
+      "platforms": [
+        "WINDOWS"
+      ],
+      "objective": "Identify startup and autorun persistence configuration.",
+      "procedure_id": "P10_PERSISTENCE_SECURITY",
+      "required_fields": [],
+      "optional_fields": [
+        "mechanism",
+        "name",
+        "command",
+        "username"
+      ],
+      "count_rule": {
+        "unit": "PERSISTENCE_ITEM",
+        "key_fields": [
+          "mechanism",
+          "name",
+          "command"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "mechanism",
+            "name",
+            "command"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "mechanism",
+          "name",
+          "command",
+          "username"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable autoruns and startup persistence identified",
+        "finding": "No artifacts matching the defined examination criteria for Autoruns and Startup Persistence were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Autoruns and Startup",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Installed Applications",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Prefetch Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "LNK_FILES",
+      "title": "LNK Files",
+      "category": "FILE_ACTIVITY",
+      "platforms": [
+        "WINDOWS"
+      ],
+      "objective": "Identify Windows shortcut records referencing files, folders or volumes and available interaction metadata.",
+      "procedure_id": "P03_FILES_DOCUMENTS",
+      "required_fields": [],
+      "optional_fields": [
+        "target_path",
+        "event_time",
+        "volume_serial"
+      ],
+      "count_rule": {
+        "unit": "LNK_RECORD",
+        "key_fields": [
+          "evidence_source_id",
+          "external_artifact_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "external_artifact_id"
+          ],
+          [
+            "target_path",
+            "event_time"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "target_path",
+          "event_time",
+          "volume_serial"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable lnk files identified",
+        "finding": "No artifacts matching the defined examination criteria for LNK Files were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "LNK Files",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "JUMP_LISTS",
+      "title": "Jump Lists",
+      "category": "FILE_ACTIVITY",
+      "platforms": [
+        "WINDOWS"
+      ],
+      "objective": "Identify application-target references stored in Windows Jump Lists.",
+      "procedure_id": "P03_FILES_DOCUMENTS",
+      "required_fields": [],
+      "optional_fields": [
+        "application",
+        "target_path",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "JUMP_LIST_ENTRY",
+        "key_fields": [
+          "application",
+          "target_path",
+          "event_time"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "application",
+            "target_path",
+            "event_time"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "application",
+          "target_path",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable jump lists identified",
+        "finding": "No artifacts matching the defined examination criteria for Jump Lists were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Jump Lists",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "RECENT_DOCUMENTS",
+      "title": "Recent Documents and MRU",
+      "category": "FILE_ACTIVITY",
+      "platforms": [
+        "WINDOWS"
+      ],
+      "objective": "Identify recent-document and most-recently-used references for users.",
+      "procedure_id": "P03_FILES_DOCUMENTS",
+      "required_fields": [],
+      "optional_fields": [
+        "username",
+        "file_path",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "RECENT_ITEM",
+        "key_fields": [
+          "username",
+          "file_path",
+          "event_time"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "username",
+            "file_path",
+            "event_time"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "username",
+          "file_path",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable recent documents and mru identified",
+        "finding": "No artifacts matching the defined examination criteria for Recent Documents and MRU were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Recent Documents",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "SHELLBAGS",
+      "title": "Shellbags",
+      "category": "FILE_ACTIVITY",
+      "platforms": [
+        "WINDOWS"
+      ],
+      "objective": "Identify folder knowledge/navigation evidence from Shellbags without equating it to file execution.",
+      "procedure_id": "P03_FILES_DOCUMENTS",
+      "required_fields": [],
+      "optional_fields": [
+        "username",
+        "folder_path",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "SHELLBAG_RECORD",
+        "key_fields": [
+          "username",
+          "folder_path",
+          "event_time"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "username",
+            "folder_path",
+            "event_time"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "username",
+          "folder_path",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable shellbags identified",
+        "finding": "No artifacts matching the defined examination criteria for Shellbags were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Shellbags",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "RECYCLE_BIN",
+      "title": "Recycle Bin",
+      "category": "DELETION",
+      "platforms": [
+        "WINDOWS"
+      ],
+      "objective": "Identify files represented in the Windows Recycle Bin and available original path/deletion metadata.",
+      "procedure_id": "P09_DELETION_RECOVERY",
+      "required_fields": [],
+      "optional_fields": [
+        "original_path",
+        "deletion_time",
+        "sha256"
+      ],
+      "count_rule": {
+        "unit": "RECYCLE_BIN_ITEM",
+        "key_fields": [
+          "evidence_source_id",
+          "external_artifact_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "external_artifact_id"
+          ],
+          [
+            "original_path",
+            "deletion_time",
+            "sha256"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "original_path",
+          "deletion_time",
+          "sha256"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable recycle bin identified",
+        "finding": "No artifacts matching the defined examination criteria for Recycle Bin were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Recycle Bin",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Deleted Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "BROWSER_HISTORY",
+      "title": "Browser History",
+      "category": "WEB",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify recorded browser navigation and distinct visit events within the report scope.",
+      "procedure_id": "P05_BROWSER_WEB",
+      "required_fields": [],
+      "optional_fields": [
+        "browser",
+        "profile",
+        "url",
+        "domain"
+      ],
+      "count_rule": {
+        "unit": "WEB_VISIT",
+        "key_fields": [
+          "evidence_source_id",
+          "browser",
+          "profile",
+          "url",
+          "event_time"
+        ],
+        "secondary_counts": {
+          "unique_urls": [
+            "url"
+          ],
+          "unique_domains": [
+            "domain"
+          ]
+        }
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "browser",
+            "profile",
+            "url",
+            "event_time"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "browser",
+          "profile",
+          "url",
+          "domain"
+        ],
+        "positive_title": "{count} distinct browser visits identified",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable browser history identified",
+        "finding": "No artifacts matching the defined examination criteria for Browser History were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Browser History",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Browser Cache",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Browser Cookies",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "WEB_SEARCHES",
+      "title": "Web Searches",
+      "category": "WEB",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify recovered web search events and associated query, service/profile and timestamps.",
+      "procedure_id": "P05_BROWSER_WEB",
+      "required_fields": [],
+      "optional_fields": [
+        "browser",
+        "profile",
+        "query",
+        "url"
+      ],
+      "count_rule": {
+        "unit": "SEARCH_EVENT",
+        "key_fields": [
+          "evidence_source_id",
+          "browser",
+          "profile",
+          "query",
+          "event_time"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "browser",
+            "profile",
+            "query",
+            "event_time"
+          ],
+          [
+            "parent_external_artifact_id"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "browser",
+          "profile",
+          "query",
+          "url"
+        ],
+        "positive_title": "{count} distinct web search events identified",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable web searches identified",
+        "finding": "No artifacts matching the defined examination criteria for Web Searches were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Web Searches",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Browser History",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "BROWSER_DOWNLOADS",
+      "title": "Browser Downloads",
+      "category": "WEB",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify browser-mediated downloads and available source URL, destination, timestamp and hash information.",
+      "procedure_id": "P05_BROWSER_WEB",
+      "required_fields": [],
+      "optional_fields": [
+        "browser",
+        "profile",
+        "url",
+        "domain",
+        "file_path",
+        "sha256"
+      ],
+      "count_rule": {
+        "unit": "DOWNLOAD_EVENT",
+        "key_fields": [
+          "evidence_source_id",
+          "browser",
+          "profile",
+          "url",
+          "file_path",
+          "event_time"
+        ],
+        "secondary_counts": {
+          "unique_downloaded_content": [
+            "sha256"
+          ],
+          "unique_domains": [
+            "domain"
+          ]
+        }
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "browser",
+            "profile",
+            "url",
+            "file_path",
+            "event_time"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "browser",
+          "profile",
+          "url",
+          "domain",
+          "file_path",
+          "sha256"
+        ],
+        "positive_title": "{count} distinct browser download events identified",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable browser downloads identified",
+        "finding": "No artifacts matching the defined examination criteria for Browser Downloads were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Browser Downloads",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Browser History",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "BROWSER_BOOKMARKS",
+      "title": "Browser Bookmarks",
+      "category": "WEB",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify intentionally stored browser bookmarks/favorites.",
+      "procedure_id": "P05_BROWSER_WEB",
+      "required_fields": [],
+      "optional_fields": [
+        "browser",
+        "profile",
+        "url",
+        "title"
+      ],
+      "count_rule": {
+        "unit": "BOOKMARK",
+        "key_fields": [
+          "browser",
+          "profile",
+          "url"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "browser",
+            "profile",
+            "url"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "browser",
+          "profile",
+          "url",
+          "title"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable browser bookmarks identified",
+        "finding": "No artifacts matching the defined examination criteria for Browser Bookmarks were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Browser Bookmarks",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "BROWSER_COOKIES",
+      "title": "Browser Cookies",
+      "category": "WEB",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify relevant browser cookie records while avoiding unsupported claims that cookie presence proves deliberate navigation.",
+      "procedure_id": "P05_BROWSER_WEB",
+      "required_fields": [],
+      "optional_fields": [
+        "browser",
+        "profile",
+        "domain",
+        "cookie_name"
+      ],
+      "count_rule": {
+        "unit": "COOKIE_RECORD",
+        "key_fields": [
+          "browser",
+          "profile",
+          "domain",
+          "cookie_name"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "browser",
+            "profile",
+            "domain",
+            "cookie_name"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "browser",
+          "profile",
+          "domain",
+          "cookie_name"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable browser cookies identified",
+        "finding": "No artifacts matching the defined examination criteria for Browser Cookies were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Browser Cookies",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Browser History",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "BROWSER_CACHE",
+      "title": "Browser Cache",
+      "category": "WEB",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify relevant cached web content and associated URL/timestamp metadata.",
+      "procedure_id": "P05_BROWSER_WEB",
+      "required_fields": [],
+      "optional_fields": [
+        "browser",
+        "profile",
+        "url",
+        "content_hash"
+      ],
+      "count_rule": {
+        "unit": "CACHE_RECORD",
+        "key_fields": [
+          "browser",
+          "profile",
+          "url",
+          "content_hash"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "browser",
+            "profile",
+            "url",
+            "content_hash"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "browser",
+          "profile",
+          "url",
+          "content_hash"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable browser cache identified",
+        "finding": "No artifacts matching the defined examination criteria for Browser Cache were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Browser Cache",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Browser History",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "EMAIL_COMMUNICATIONS",
+      "title": "Email Communications",
+      "category": "COMMUNICATION",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify email messages, participants, subject, timestamps and attachments relevant to the examination.",
+      "procedure_id": "P06_COMMUNICATIONS",
+      "required_fields": [],
+      "optional_fields": [
+        "sender",
+        "recipients",
+        "subject",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "EMAIL_MESSAGE",
+        "key_fields": [
+          "message_id"
+        ],
+        "secondary_counts": {
+          "unique_senders": [
+            "sender"
+          ]
+        }
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "message_id"
+          ],
+          [
+            "sender",
+            "recipients",
+            "subject",
+            "event_time"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "sender",
+          "recipients",
+          "subject",
+          "event_time"
+        ],
+        "positive_title": "{count} distinct email messages identified",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable email communications identified",
+        "finding": "No artifacts matching the defined examination criteria for Email Communications were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Email Messages",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Communication Attachments",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Contacts",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "INSTANT_MESSAGING",
+      "title": "Instant Messaging",
+      "category": "COMMUNICATION",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify app-based messages and participants while keeping attachments separate from message counts.",
+      "procedure_id": "P06_COMMUNICATIONS",
+      "required_fields": [],
+      "optional_fields": [
+        "application",
+        "account",
+        "conversation_id",
+        "sender",
+        "recipients"
+      ],
+      "count_rule": {
+        "unit": "MESSAGE",
+        "key_fields": [
+          "application",
+          "account",
+          "message_id"
+        ],
+        "secondary_counts": {
+          "unique_conversations": [
+            "application",
+            "account",
+            "conversation_id"
+          ]
+        }
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "application",
+            "account",
+            "message_id"
+          ],
+          [
+            "application",
+            "account",
+            "conversation_id",
+            "sender",
+            "event_time",
+            "content_hash"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "application",
+          "account",
+          "conversation_id",
+          "sender",
+          "recipients"
+        ],
+        "positive_title": "{count} distinct instant messages identified",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable instant messaging identified",
+        "finding": "No artifacts matching the defined examination criteria for Instant Messaging were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Chat Messages",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Communication Attachments",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Contacts",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "CALL_HISTORY",
+      "title": "Call History",
+      "category": "COMMUNICATION",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify native or application call records including parties, direction, timestamp and duration where available.",
+      "procedure_id": "P06_COMMUNICATIONS",
+      "required_fields": [],
+      "optional_fields": [
+        "application",
+        "caller",
+        "recipient",
+        "direction",
+        "duration"
+      ],
+      "count_rule": {
+        "unit": "CALL",
+        "key_fields": [
+          "application",
+          "call_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "application",
+            "call_id"
+          ],
+          [
+            "application",
+            "caller",
+            "recipient",
+            "event_time",
+            "duration"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "application",
+          "caller",
+          "recipient",
+          "direction",
+          "duration"
+        ],
+        "positive_title": "{count} distinct call records identified",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable call history identified",
+        "finding": "No artifacts matching the defined examination criteria for Call History were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Call Logs",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Contacts",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "CONTACTS",
+      "title": "Contacts",
+      "category": "COMMUNICATION",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify stored contact records and available phone/email identifiers.",
+      "procedure_id": "P06_COMMUNICATIONS",
+      "required_fields": [],
+      "optional_fields": [
+        "account",
+        "name",
+        "phone",
+        "email"
+      ],
+      "count_rule": {
+        "unit": "CONTACT",
+        "key_fields": [
+          "account",
+          "contact_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "account",
+            "contact_id"
+          ],
+          [
+            "account",
+            "phone",
+            "email"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "account",
+          "name",
+          "phone",
+          "email"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable contacts identified",
+        "finding": "No artifacts matching the defined examination criteria for Contacts were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Contacts",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "DOCUMENTS",
+      "title": "Documents",
+      "category": "DOCUMENT",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify document files relevant to the examination and report file occurrences separately from unique content when needed.",
+      "procedure_id": "P03_FILES_DOCUMENTS",
+      "required_fields": [],
+      "optional_fields": [
+        "file_path",
+        "filename",
+        "sha256",
+        "author"
+      ],
+      "count_rule": {
+        "unit": "DOCUMENT_OCCURRENCE",
+        "key_fields": [
+          "evidence_source_id",
+          "file_path"
+        ],
+        "secondary_counts": {
+          "unique_document_content": [
+            "sha256"
+          ]
+        }
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "file_path"
+          ],
+          [
+            "evidence_source_id",
+            "external_artifact_id"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "file_path",
+          "filename",
+          "sha256",
+          "author"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable documents identified",
+        "finding": "No artifacts matching the defined examination criteria for Documents were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Documents",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "PICTURES",
+      "title": "Pictures",
+      "category": "MEDIA",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify image files and metadata, including unique content and geolocation where available.",
+      "procedure_id": "P16_MEDIA",
+      "required_fields": [],
+      "optional_fields": [
+        "file_path",
+        "filename",
+        "sha256",
+        "latitude",
+        "longitude"
+      ],
+      "count_rule": {
+        "unit": "IMAGE_OCCURRENCE",
+        "key_fields": [
+          "evidence_source_id",
+          "file_path"
+        ],
+        "secondary_counts": {
+          "unique_image_content": [
+            "sha256"
+          ]
+        }
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "file_path"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "file_path",
+          "filename",
+          "sha256",
+          "latitude",
+          "longitude"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable pictures identified",
+        "finding": "No artifacts matching the defined examination criteria for Pictures were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Pictures",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "VIDEOS",
+      "title": "Videos",
+      "category": "MEDIA",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify video files and relevant metadata.",
+      "procedure_id": "P16_MEDIA",
+      "required_fields": [],
+      "optional_fields": [
+        "file_path",
+        "filename",
+        "sha256",
+        "duration"
+      ],
+      "count_rule": {
+        "unit": "VIDEO_OCCURRENCE",
+        "key_fields": [
+          "evidence_source_id",
+          "file_path"
+        ],
+        "secondary_counts": {
+          "unique_video_content": [
+            "sha256"
+          ]
+        }
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "file_path"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "file_path",
+          "filename",
+          "sha256",
+          "duration"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable videos identified",
+        "finding": "No artifacts matching the defined examination criteria for Videos were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Videos",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "AUDIO",
+      "title": "Audio",
+      "category": "MEDIA",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify audio files and relevant metadata.",
+      "procedure_id": "P16_MEDIA",
+      "required_fields": [],
+      "optional_fields": [
+        "file_path",
+        "filename",
+        "sha256",
+        "duration"
+      ],
+      "count_rule": {
+        "unit": "AUDIO_OCCURRENCE",
+        "key_fields": [
+          "evidence_source_id",
+          "file_path"
+        ],
+        "secondary_counts": {
+          "unique_audio_content": [
+            "sha256"
+          ]
+        }
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "file_path"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "file_path",
+          "filename",
+          "sha256",
+          "duration"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable audio identified",
+        "finding": "No artifacts matching the defined examination criteria for Audio were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Audio",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "DELETED_FILES",
+      "title": "Deleted Files",
+      "category": "DELETION",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify deleted filesystem objects and available deletion/path/hash metadata.",
+      "procedure_id": "P09_DELETION_RECOVERY",
+      "required_fields": [],
+      "optional_fields": [
+        "file_path",
+        "filename",
+        "sha256",
+        "deletion_time"
+      ],
+      "count_rule": {
+        "unit": "DELETED_OBJECT",
+        "key_fields": [
+          "evidence_source_id",
+          "file_path",
+          "deletion_time"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "file_path",
+            "deletion_time",
+            "sha256"
+          ],
+          [
+            "evidence_source_id",
+            "external_artifact_id"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "file_path",
+          "filename",
+          "sha256",
+          "deletion_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable deleted files identified",
+        "finding": "No artifacts matching the defined examination criteria for Deleted Files were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Deleted Files",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Recycle Bin",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Carved Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "CARVED_FILES",
+      "title": "Carved Files",
+      "category": "RECOVERY",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify content reconstructed by carving and clearly state recovery status and limitations.",
+      "procedure_id": "P09_DELETION_RECOVERY",
+      "required_fields": [],
+      "optional_fields": [
+        "filename",
+        "sha256",
+        "source_offset",
+        "recovery_status"
+      ],
+      "count_rule": {
+        "unit": "CARVED_OBJECT",
+        "key_fields": [
+          "evidence_source_id",
+          "source_offset",
+          "sha256"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "source_offset",
+            "sha256"
+          ],
+          [
+            "evidence_source_id",
+            "external_artifact_id"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "filename",
+          "sha256",
+          "source_offset",
+          "recovery_status"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable carved files identified",
+        "finding": "No artifacts matching the defined examination criteria for Carved Files were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [
+        "Carved artifacts may be incomplete and may lack reliable file-system context."
+      ],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Carved Files",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "HASH_MATCHES",
+      "title": "Known Hash Matches",
+      "category": "SEARCH",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify files matching defined hash sets and preserve the matching source object.",
+      "procedure_id": "P18_SEARCH_HASH_IOC",
+      "required_fields": [],
+      "optional_fields": [
+        "sha256",
+        "hash_set",
+        "file_path"
+      ],
+      "count_rule": {
+        "unit": "HASH_MATCH",
+        "key_fields": [
+          "sha256",
+          "hash_set"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "sha256",
+            "hash_set"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "sha256",
+          "hash_set",
+          "file_path"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable known hash matches identified",
+        "finding": "No artifacts matching the defined examination criteria for Known Hash Matches were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Hash Matches",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "KEYWORD_SEARCH",
+      "title": "Keyword Search Results",
+      "category": "SEARCH",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify contextually relevant keyword occurrences without treating every string hit as a finding.",
+      "procedure_id": "P18_SEARCH_HASH_IOC",
+      "required_fields": [],
+      "optional_fields": [
+        "keyword",
+        "file_path",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "SOURCE_OBJECT_MATCH",
+        "key_fields": [
+          "keyword",
+          "source_object_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "keyword",
+            "source_object_id"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "keyword",
+          "file_path",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable keyword search results identified",
+        "finding": "No artifacts matching the defined examination criteria for Keyword Search Results were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Keyword Hits",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Documents",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Chat Messages",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Email Messages",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "MOBILE_DEVICE_INFORMATION",
+      "title": "Mobile Device Information",
+      "category": "MOBILE",
+      "platforms": [
+        "MOBILE"
+      ],
+      "objective": "Identify mobile-device characteristics and stable device identifiers.",
+      "procedure_id": "P12_MOBILE_ACTIVITY",
+      "required_fields": [],
+      "optional_fields": [
+        "manufacturer",
+        "model",
+        "device_serial",
+        "os_name",
+        "os_version"
+      ],
+      "count_rule": {
+        "unit": "MOBILE_DEVICE",
+        "key_fields": [
+          "device_serial"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "device_serial"
+          ],
+          [
+            "hostname",
+            "model"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "manufacturer",
+          "model",
+          "device_serial",
+          "os_name",
+          "os_version"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "REPORT_NEGATIVE_FINDING",
+        "title": "No recoverable mobile device information identified",
+        "finding": "No artifacts matching the defined examination criteria for Mobile Device Information were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Device Information",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Operating System Information",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "MOBILE_INSTALLED_APPS",
+      "title": "Mobile Installed Applications",
+      "category": "MOBILE",
+      "platforms": [
+        "MOBILE"
+      ],
+      "objective": "Identify applications installed on the mobile device without equating installation with user activity.",
+      "procedure_id": "P12_MOBILE_ACTIVITY",
+      "required_fields": [],
+      "optional_fields": [
+        "application",
+        "package_id",
+        "version",
+        "install_time"
+      ],
+      "count_rule": {
+        "unit": "MOBILE_APPLICATION",
+        "key_fields": [
+          "package_id",
+          "version"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "package_id",
+            "version"
+          ],
+          [
+            "application",
+            "version"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "application",
+          "package_id",
+          "version",
+          "install_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable mobile installed applications identified",
+        "finding": "No artifacts matching the defined examination criteria for Mobile Installed Applications were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Installed Applications",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "MOBILE_APP_USAGE",
+      "title": "Mobile Application Usage",
+      "category": "MOBILE",
+      "platforms": [
+        "MOBILE"
+      ],
+      "objective": "Identify supported mobile application/system activity events.",
+      "procedure_id": "P12_MOBILE_ACTIVITY",
+      "required_fields": [],
+      "optional_fields": [
+        "application",
+        "action",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "APP_ACTIVITY_EVENT",
+        "key_fields": [
+          "application",
+          "event_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "application",
+            "event_id"
+          ],
+          [
+            "application",
+            "action",
+            "event_time"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "application",
+          "action",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable mobile application usage identified",
+        "finding": "No artifacts matching the defined examination criteria for Mobile Application Usage were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Mobile App Usage",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Installed Applications",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "MOBILE_LOCATION",
+      "title": "Mobile Location",
+      "category": "LOCATION",
+      "platforms": [
+        "MOBILE"
+      ],
+      "objective": "Identify recovered mobile geolocation events and available coordinates/place/timestamps.",
+      "procedure_id": "P11_TIMELINE_LOCATION",
+      "required_fields": [],
+      "optional_fields": [
+        "latitude",
+        "longitude",
+        "place",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "LOCATION_EVENT",
+        "key_fields": [
+          "location_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "location_id"
+          ],
+          [
+            "latitude",
+            "longitude",
+            "event_time"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "latitude",
+          "longitude",
+          "place",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable mobile location identified",
+        "finding": "No artifacts matching the defined examination criteria for Mobile Location were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Mobile Location",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "CLOUD_FILES",
+      "title": "Cloud Files",
+      "category": "CLOUD",
+      "platforms": [
+        "CLOUD"
+      ],
+      "objective": "Identify cloud-stored files and available provider/account/object metadata.",
+      "procedure_id": "P13_CLOUD_EVIDENCE",
+      "required_fields": [],
+      "optional_fields": [
+        "provider",
+        "account",
+        "file_path",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "CLOUD_FILE",
+        "key_fields": [
+          "provider",
+          "account",
+          "file_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "provider",
+            "account",
+            "file_id"
+          ],
+          [
+            "provider",
+            "account",
+            "file_path"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "provider",
+          "account",
+          "file_path",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": false
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable cloud files identified",
+        "finding": "No artifacts matching the defined examination criteria for Cloud Files were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Cloud Files",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "CLOUD_ACTIVITY",
+      "title": "Cloud Activity",
+      "category": "CLOUD",
+      "platforms": [
+        "CLOUD"
+      ],
+      "objective": "Identify cloud upload/download/edit/share or other provider activity events.",
+      "procedure_id": "P13_CLOUD_EVIDENCE",
+      "required_fields": [],
+      "optional_fields": [
+        "provider",
+        "account",
+        "action",
+        "object_id",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "CLOUD_EVENT",
+        "key_fields": [
+          "provider",
+          "account",
+          "event_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "provider",
+            "account",
+            "event_id"
+          ],
+          [
+            "provider",
+            "account",
+            "action",
+            "object_id",
+            "event_time"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "provider",
+          "account",
+          "action",
+          "object_id",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable cloud activity identified",
+        "finding": "No artifacts matching the defined examination criteria for Cloud Activity were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Cloud Activity",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Cloud Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "MEMORY_PROCESSES",
+      "title": "Memory Processes",
+      "category": "MEMORY",
+      "platforms": [
+        "MEMORY"
+      ],
+      "objective": "Identify process instances captured in volatile memory.",
+      "procedure_id": "P14_MEMORY",
+      "required_fields": [],
+      "optional_fields": [
+        "pid",
+        "process_name",
+        "parent_pid",
+        "command_line"
+      ],
+      "count_rule": {
+        "unit": "PROCESS_INSTANCE",
+        "key_fields": [
+          "evidence_source_id",
+          "pid",
+          "event_time"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "pid",
+            "event_time"
+          ],
+          [
+            "evidence_source_id",
+            "pid",
+            "process_name"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "pid",
+          "process_name",
+          "parent_pid",
+          "command_line"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable memory processes identified",
+        "finding": "No artifacts matching the defined examination criteria for Memory Processes were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Memory Processes",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "MEMORY_NETWORK",
+      "title": "Memory Network Connections",
+      "category": "MEMORY",
+      "platforms": [
+        "MEMORY"
+      ],
+      "objective": "Identify volatile network connection records and associated process/endpoints.",
+      "procedure_id": "P14_MEMORY",
+      "required_fields": [],
+      "optional_fields": [
+        "pid",
+        "protocol",
+        "local_ip",
+        "local_port",
+        "remote_ip",
+        "remote_port"
+      ],
+      "count_rule": {
+        "unit": "MEMORY_CONNECTION",
+        "key_fields": [
+          "evidence_source_id",
+          "pid",
+          "protocol",
+          "local_ip",
+          "local_port",
+          "remote_ip",
+          "remote_port"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "pid",
+            "protocol",
+            "local_ip",
+            "local_port",
+            "remote_ip",
+            "remote_port"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "pid",
+          "protocol",
+          "local_ip",
+          "local_port",
+          "remote_ip",
+          "remote_port"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable memory network connections identified",
+        "finding": "No artifacts matching the defined examination criteria for Memory Network Connections were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Memory Network Connections",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Memory Processes",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "MEMORY_MODULES",
+      "title": "Loaded Memory Modules",
+      "category": "MEMORY",
+      "platforms": [
+        "MEMORY"
+      ],
+      "objective": "Identify modules/DLLs loaded by processes in memory.",
+      "procedure_id": "P14_MEMORY",
+      "required_fields": [],
+      "optional_fields": [
+        "pid",
+        "module_path",
+        "base_address"
+      ],
+      "count_rule": {
+        "unit": "MEMORY_MODULE",
+        "key_fields": [
+          "evidence_source_id",
+          "pid",
+          "module_path",
+          "base_address"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "pid",
+            "module_path",
+            "base_address"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "pid",
+          "module_path",
+          "base_address"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable loaded memory modules identified",
+        "finding": "No artifacts matching the defined examination criteria for Loaded Memory Modules were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Memory Modules",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Memory Processes",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "LINUX_AUTHENTICATION",
+      "title": "Linux Authentication",
+      "category": "LINUX",
+      "platforms": [
+        "LINUX"
+      ],
+      "objective": "Identify Linux authentication events and available account/source/result information.",
+      "procedure_id": "P07_ACCOUNT_AUTH",
+      "required_fields": [],
+      "optional_fields": [
+        "username",
+        "remote_ip",
+        "result",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "AUTH_EVENT",
+        "key_fields": [
+          "evidence_source_id",
+          "event_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "event_id"
+          ],
+          [
+            "username",
+            "remote_ip",
+            "result",
+            "event_time"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "username",
+          "remote_ip",
+          "result",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable linux authentication identified",
+        "finding": "No artifacts matching the defined examination criteria for Linux Authentication were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Linux Authentication",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Linux Audit",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "User Accounts",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "LINUX_AUDIT",
+      "title": "Linux Audit Events",
+      "category": "LINUX",
+      "platforms": [
+        "LINUX"
+      ],
+      "objective": "Analyze Linux auditd events relevant to the report scope.",
+      "procedure_id": "P15_OS_LOGS",
+      "required_fields": [],
+      "optional_fields": [
+        "username",
+        "action",
+        "object",
+        "result",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "AUDIT_EVENT",
+        "key_fields": [
+          "evidence_source_id",
+          "event_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "event_id"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "username",
+          "action",
+          "object",
+          "result",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable linux audit events identified",
+        "finding": "No artifacts matching the defined examination criteria for Linux Audit Events were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Linux Audit",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "SHELL_HISTORY",
+      "title": "Shell History",
+      "category": "LOG",
+      "platforms": [
+        "LINUX",
+        "MACOS"
+      ],
+      "objective": "Identify recorded shell commands and their user/context without assuming commands succeeded unless corroborated.",
+      "procedure_id": "P15_OS_LOGS",
+      "required_fields": [],
+      "optional_fields": [
+        "username",
+        "command",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "SHELL_COMMAND",
+        "key_fields": [
+          "evidence_source_id",
+          "username",
+          "event_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "username",
+            "event_id"
+          ],
+          [
+            "evidence_source_id",
+            "username",
+            "command",
+            "event_time"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "username",
+          "command",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable shell history identified",
+        "finding": "No artifacts matching the defined examination criteria for Shell History were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Shell History",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "SSH_ACTIVITY",
+      "title": "SSH Activity",
+      "category": "NETWORK",
+      "platforms": [
+        "LINUX",
+        "MACOS"
+      ],
+      "objective": "Identify SSH session/configuration evidence and available remote host/user/timestamp data.",
+      "procedure_id": "P08_NETWORK_EXTERNAL",
+      "required_fields": [],
+      "optional_fields": [
+        "username",
+        "remote_ip",
+        "hostname",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "SSH_SESSION",
+        "key_fields": [
+          "evidence_source_id",
+          "session_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "session_id"
+          ],
+          [
+            "username",
+            "remote_ip",
+            "event_time"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "username",
+          "remote_ip",
+          "hostname",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "REPORT_NEGATIVE_FINDING",
+        "title": "No recoverable ssh activity identified",
+        "finding": "No artifacts matching the defined examination criteria for SSH Activity were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "SSH Activity",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Linux Authentication",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Shell History",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "ENCRYPTED_FILES",
+      "title": "Encrypted Files",
+      "category": "SECURITY",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify encrypted/protected files or containers and available encryption metadata.",
+      "procedure_id": "P17_ENCRYPTION_CREDENTIALS",
+      "required_fields": [],
+      "optional_fields": [
+        "file_path",
+        "sha256",
+        "encryption_type"
+      ],
+      "count_rule": {
+        "unit": "ENCRYPTED_OBJECT",
+        "key_fields": [
+          "evidence_source_id",
+          "file_path",
+          "sha256"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "evidence_source_id",
+            "file_path",
+            "sha256"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "file_path",
+          "sha256",
+          "encryption_type"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable encrypted files identified",
+        "finding": "No artifacts matching the defined examination criteria for Encrypted Files were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Encrypted Files",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "SECURITY_DETECTIONS",
+      "title": "Security Detections",
+      "category": "SECURITY",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Identify security-product detections/actions and associated objects.",
+      "procedure_id": "P10_PERSISTENCE_SECURITY",
+      "required_fields": [],
+      "optional_fields": [
+        "detection_name",
+        "file_path",
+        "action",
+        "event_time"
+      ],
+      "count_rule": {
+        "unit": "SECURITY_DETECTION",
+        "key_fields": [
+          "detection_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "detection_id"
+          ],
+          [
+            "detection_name",
+            "file_path",
+            "event_time"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "detection_name",
+          "file_path",
+          "action",
+          "event_time"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable security detections identified",
+        "finding": "No artifacts matching the defined examination criteria for Security Detections were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Security Detections",
+          "relationship": "PRIMARY",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        },
+        {
+          "artifact_family": "Prefetch Files",
+          "relationship": "SUPPORTING",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "TIMELINE_EVENTS",
+      "title": "Normalized Timeline Events",
+      "category": "TIMELINE",
+      "platforms": [
+        "CROSS_PLATFORM"
+      ],
+      "objective": "Reconstruct normalized forensic events without counting multiple timestamp rows from one underlying artifact as multiple events.",
+      "procedure_id": "P11_TIMELINE_LOCATION",
+      "required_fields": [],
+      "optional_fields": [
+        "event_type",
+        "event_time",
+        "source_artifact_id"
+      ],
+      "count_rule": {
+        "unit": "TIMELINE_EVENT",
+        "key_fields": [
+          "underlying_event_id"
+        ],
+        "secondary_counts": {}
+      },
+      "dedup_rule": {
+        "deduplicate_by_priority": [
+          [
+            "underlying_event_id"
+          ],
+          [
+            "source_artifact_id",
+            "event_type"
+          ]
+        ],
+        "exclude_parent_child_double_count": true,
+        "exclude_refined_result_double_count": true
+      },
+      "correlation_rule": {
+        "require_primary_artifact": true
+      },
+      "observation_rule": {
+        "entity_fields": [
+          "event_type",
+          "event_time",
+          "source_artifact_id"
+        ],
+        "positive_title": "{count} {unit} identified for {report_title}",
+        "simple_explanation": "The examined evidence contains records relevant to this report. The count reflects distinct forensic records after filtering and deduplication rather than the raw AXIOM hit count.",
+        "always_require_examiner_review": true
+      },
+      "zero_result_rule": {
+        "policy": "STATISTICS_ONLY",
+        "title": "No recoverable normalized timeline events identified",
+        "finding": "No artifacts matching the defined examination criteria for Normalized Timeline Events were identified in the processed evidence.",
+        "simple_explanation": "The examined evidence did not contain recoverable activity matching this report's criteria within the defined analysis scope. This does not prove that the activity never occurred."
+      },
+      "limitations": [
+        "A single artifact may expose multiple timestamps; the count represents normalized underlying events, not raw Timeline rows."
+      ],
+      "version": "1.0",
+      "active": true,
+      "artifact_mappings": [
+        {
+          "artifact_family": "Timeline Events",
+          "relationship": "PRIMARY",
+          "notes": ""
+        }
+      ]
+    }
+  ],
+  "exclusions": [
+    {
+      "rule_key": "APPX_BLOCKMAP_XML",
+      "pattern_type": "REGEX",
+      "pattern": "<BlockMap\\b|AppxBlockMap\\.xml",
+      "reason": "Application package BlockMap metadata is excluded from normal narrative observations unless explicitly in scope.",
+      "active": true
+    },
+    {
+      "rule_key": "APPX_MANIFEST_XML",
+      "pattern_type": "REGEX",
+      "pattern": "AppxManifest\\.xml|<Package\\b",
+      "reason": "Application package manifest content is excluded from unrelated report observations.",
+      "active": true
+    },
+    {
+      "rule_key": "RAW_XML_DECLARATION",
+      "pattern_type": "REGEX",
+      "pattern": "<\\?xml\\s+version=",
+      "reason": "Raw XML is not suitable narrative evidence by itself and requires a report-specific mapping.",
+      "active": true
+    }
+  ]
+}

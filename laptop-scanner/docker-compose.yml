@@ -1,0 +1,383 @@
+# Aetheris on-site laptop stack: Local OpenVAS (Greenbone) + Scanner Agent.
+# Outbound HTTPS only to the central server. Scans client LAN (e.g. 192.168.1.x).
+#
+# Start: double-click Start-Laptop.cmd  (or scripts\start-laptop.ps1)
+
+name: aetheris-laptop
+
+services:
+  vulnerability-tests:
+    image: registry.community.greenbone.net/community/vulnerability-tests
+    environment:
+      FEED_RELEASE: "24.10"
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm_vt_data:/mnt
+
+  notus-data:
+    image: registry.community.greenbone.net/community/notus-data
+    environment:
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm_notus_data:/mnt
+
+  scap-data:
+    image: registry.community.greenbone.net/community/scap-data
+    environment:
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm_scap_data:/mnt
+
+  cert-bund-data:
+    image: registry.community.greenbone.net/community/cert-bund-data
+    environment:
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm_cert_data:/mnt
+
+  dfn-cert-data:
+    image: registry.community.greenbone.net/community/dfn-cert-data
+    environment:
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm_cert_data:/mnt
+    depends_on:
+      cert-bund-data:
+        condition: service_healthy
+
+  data-objects:
+    image: registry.community.greenbone.net/community/data-objects
+    environment:
+      FEED_RELEASE: "24.10"
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm_data_objects:/mnt
+
+  report-formats:
+    image: registry.community.greenbone.net/community/report-formats
+    environment:
+      FEED_RELEASE: "24.10"
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm_data_objects:/mnt
+    depends_on:
+      data-objects:
+        condition: service_healthy
+
+  gpg-data:
+    image: registry.community.greenbone.net/community/gpg-data
+    volumes:
+      - gvm_gpg_data:/mnt
+
+  redis-gvm:
+    image: registry.community.greenbone.net/community/redis-server
+    restart: on-failure
+    volumes:
+      - gvm_redis_socket:/run/redis/
+
+  pg-gvm-migrator:
+    image: registry.community.greenbone.net/community/pg-gvm-migrator:stable
+    restart: "no"
+    volumes:
+      - gvm_pgdata:/var/lib/postgresql
+      - gvm_psql_socket:/var/run/postgresql
+
+  pg-gvm:
+    image: registry.community.greenbone.net/community/pg-gvm:stable
+    restart: on-failure
+    volumes:
+      - gvm_pgdata:/var/lib/postgresql
+      - gvm_psql_socket:/var/run/postgresql
+    depends_on:
+      pg-gvm-migrator:
+        condition: service_completed_successfully
+
+  # gvmd enforces NVT timeouts from nvt_preferences, not openvas.conf.
+  # A feed sync can put the old 60s/90s floors back; this loop raises them
+  # again so the Nmap port scanner is not killed before the sweep finishes.
+  sync-scanner-timeouts:
+    image: registry.community.greenbone.net/community/gvmd:stable
+    restart: unless-stopped
+    environment:
+      PLUGINS_TIMEOUT_SEC: ${PLUGINS_TIMEOUT_SEC:-320}
+      SCANNER_PLUGINS_TIMEOUT_SEC: ${SCANNER_PLUGINS_TIMEOUT_SEC:-36000}
+    volumes:
+      - gvm_psql_socket:/var/run/postgresql
+      - ./scripts/sync-scanner-timeouts.sh:/sync-scanner-timeouts.sh:ro
+    entrypoint: ["/bin/sh", "/sync-scanner-timeouts.sh"]
+    depends_on:
+      pg-gvm:
+        condition: service_started
+
+  gvmd:
+    image: registry.community.greenbone.net/community/gvmd:stable
+    restart: on-failure
+    volumes:
+      - gvm_gvmd_data:/var/lib/gvm
+      - gvm_scap_data:/var/lib/gvm/scap-data/
+      - gvm_cert_data:/var/lib/gvm/cert-data
+      - gvm_data_objects:/var/lib/gvm/data-objects/gvmd
+      - gvm_vt_data:/var/lib/openvas/plugins
+      - gvm_pgdata:/var/lib/postgresql
+      - gvm_gvmd_socket:/run/gvmd
+      - gvm_ospd_socket:/run/ospd
+      - gvm_psql_socket:/var/run/postgresql
+    depends_on:
+      pg-gvm:
+        condition: service_started
+      scap-data:
+        condition: service_healthy
+      cert-bund-data:
+        condition: service_healthy
+      dfn-cert-data:
+        condition: service_healthy
+      data-objects:
+        condition: service_healthy
+      report-formats:
+        condition: service_healthy
+      ospd-openvas:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python3 -c \"import socket;s=socket.socket(socket.AF_UNIX);s.settimeout(3);s.connect('/run/gvmd/gvmd.sock')\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 180s
+
+  configure-openvas:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    environment:
+      GVM_MAX_HOSTS: ${GVM_MAX_HOSTS:-1}
+      GVM_MAX_CHECKS: ${GVM_MAX_CHECKS:-8}
+      GVM_OPTIMIZE_TEST: ${GVM_OPTIMIZE_TEST:-no}
+      GVM_CHECKS_READ_TIMEOUT: ${GVM_CHECKS_READ_TIMEOUT:-10}
+      GVM_TIMEOUT_RETRY: ${GVM_TIMEOUT_RETRY:-3}
+      GVM_OPEN_SOCK_MAX_ATTEMPTS: ${GVM_OPEN_SOCK_MAX_ATTEMPTS:-5}
+      PLUGINS_TIMEOUT_SEC: ${PLUGINS_TIMEOUT_SEC:-320}
+      SCANNER_PLUGINS_TIMEOUT_SEC: ${SCANNER_PLUGINS_TIMEOUT_SEC:-36000}
+    volumes:
+      - gvm_openvas_data:/mnt
+      - gvm_openvas_log:/var/log/openvas
+    command:
+      - /bin/sh
+      - -c
+      - |
+        # V45: Nessus-parity scanner defaults. plugins_timeout/scanner_plugins_timeout
+        # were 60/90 s, which killed the full-port Nmap NVT before it finished.
+        printf "table_driven_lsc = yes\nopenvasd_server = http://openvasd:80\nmax_hosts = %s\nmax_checks = %s\noptimize_test = %s\nplugins_timeout = %s\nscanner_plugins_timeout = %s\nchecks_read_timeout = %s\ntimeout_retry = %s\nopen_sock_max_attempts = %s\nsafe_checks = yes\nreport_host_details = yes\nexpand_vhosts = yes\ntest_empty_vhost = yes\n" "$${GVM_MAX_HOSTS}" "$${GVM_MAX_CHECKS}" "$${GVM_OPTIMIZE_TEST}" "$${PLUGINS_TIMEOUT_SEC}" "$${SCANNER_PLUGINS_TIMEOUT_SEC}" "$${GVM_CHECKS_READ_TIMEOUT}" "$${GVM_TIMEOUT_RETRY}" "$${GVM_OPEN_SOCK_MAX_ATTEMPTS}" > /mnt/openvas.conf
+        sed "s/127/128/" /etc/openvas/openvas_log.conf | sed 's/gvm/openvas/' > /mnt/openvas_log.conf
+        chmod 644 /mnt/openvas.conf /mnt/openvas_log.conf
+        touch /var/log/openvas/openvas.log
+        chmod 666 /var/log/openvas/openvas.log
+
+  openvas:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    volumes:
+      - gvm_openvas_data:/etc/openvas
+      - gvm_openvas_log:/var/log/openvas
+    command:
+      - /bin/sh
+      - -c
+      - |
+        cat /etc/openvas/openvas.conf
+        tail -f /var/log/openvas/openvas.log
+    depends_on:
+      configure-openvas:
+        condition: service_completed_successfully
+
+  openvasd:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    restart: on-failure
+    environment:
+      OPENVASD_MODE: service_notus
+      GNUPGHOME: /etc/openvas/gnupg
+      LISTENING: 0.0.0.0:80
+    volumes:
+      - gvm_openvas_data:/etc/openvas
+      - gvm_openvas_log:/var/log/openvas
+      - gvm_gpg_data:/etc/openvas/gnupg
+      - gvm_notus_data:/var/lib/notus
+      # NASL feed: openvasd still verifies sha256sums.asc hourly even in service_notus.
+      - gvm_vt_data:/var/lib/openvas/plugins
+    depends_on:
+      vulnerability-tests:
+        condition: service_healthy
+      notus-data:
+        condition: service_healthy
+      configure-openvas:
+        condition: service_completed_successfully
+      gpg-data:
+        condition: service_completed_successfully
+    networks:
+      default:
+        aliases: [openvasd]
+
+  ospd-openvas:
+    image: registry.community.greenbone.net/community/ospd-openvas:stable
+    hostname: ospd-openvas.local
+    restart: on-failure
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    command:
+      - ospd-openvas
+      - -f
+      - --config
+      - /etc/gvm/ospd-openvas.conf
+      - --notus-feed-dir
+      - /var/lib/notus/advisories
+      - -m
+      - "666"
+    volumes:
+      - gvm_gpg_data:/etc/openvas/gnupg
+      - gvm_vt_data:/var/lib/openvas/plugins
+      - gvm_notus_data:/var/lib/notus
+      - gvm_ospd_socket:/run/ospd
+      - gvm_redis_socket:/run/redis/
+      - gvm_openvas_data:/etc/openvas/
+      - gvm_openvas_log:/var/log/openvas
+    depends_on:
+      redis-gvm:
+        condition: service_started
+      gpg-data:
+        condition: service_completed_successfully
+      configure-openvas:
+        condition: service_completed_successfully
+      vulnerability-tests:
+        condition: service_healthy
+      notus-data:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python3 -c \"import socket;s=socket.socket(socket.AF_UNIX);s.settimeout(3);s.connect('/run/ospd/ospd-openvas.sock')\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 120s
+
+
+  scanner-bootstrap:
+    build: ./scanner-agent
+    profiles: ["bootstrap"]
+    restart: "no"
+    entrypoint: ["python", "-m", "agent.bootstrap_control_plane"]
+
+  scanner-agent:
+    build: ./scanner-agent
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CENTRAL_API_URL: ${CENTRAL_API_URL}
+      TENANT_SLUG: ${TENANT_SLUG}
+
+      AGENT_TOKEN_FILE: ${AGENT_TOKEN_FILE:-/run/aetheris-agent/agent-token}
+      AGENT_INSTANCE_FILE: ${AGENT_INSTANCE_FILE:-/run/aetheris-agent/agent-instance-id}
+      GVM_SOCKET_PATH: ${GVM_SOCKET_PATH:-/run/gvmd/gvmd.sock}
+      GVM_USERNAME: ${GVM_USERNAME:-admin}
+      GVM_PASSWORD: ${GVM_PASSWORD:-admin}
+      POLL_INTERVAL_SEC: ${POLL_INTERVAL_SEC:-15}
+      HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-60}
+
+
+
+
+
+
+
+
+
+
+      QUEUE_POLL_INTERVAL_SEC: ${QUEUE_POLL_INTERVAL_SEC:-3}
+      MAX_CONCURRENT_SCAN_JOBS: ${MAX_CONCURRENT_SCAN_JOBS:-1}
+      SCAN_IP_PARALLELISM: ${SCAN_IP_PARALLELISM:-auto}
+      SCAN_IP_MAX_PARALLELISM: ${SCAN_IP_MAX_PARALLELISM:-8}
+      SCAN_SLO_MIN_HOSTS_PER_HOUR: ${SCAN_SLO_MIN_HOSTS_PER_HOUR:-15}
+      SCAN_SLO_HOSTS_PER_HOUR: ${SCAN_SLO_HOSTS_PER_HOUR:-18}
+      SCAN_EXPECTED_HOST_MINUTES: ${SCAN_EXPECTED_HOST_MINUTES:-20}
+      SCAN_CPU_THROTTLE_C: ${SCAN_CPU_THROTTLE_C:-84}
+      SCAN_CPU_PAUSE_C: ${SCAN_CPU_PAUSE_C:-92}
+      SCAN_HOST_TEMP_C: ${SCAN_HOST_TEMP_C:-}
+      SKIP_UNREACHABLE_TARGETS: ${SKIP_UNREACHABLE_TARGETS:-false}
+      REACHABILITY_TIMEOUT_SEC: ${REACHABILITY_TIMEOUT_SEC:-0.5}
+      REACHABILITY_WORKERS: ${REACHABILITY_WORKERS:-10}
+      IP_SCAN_LOG_DIR: ${IP_SCAN_LOG_DIR:-/app/logs/ip}
+      SCANNER_PLUGINS_TIMEOUT_SEC: ${SCANNER_PLUGINS_TIMEOUT_SEC:-36000}
+      PLUGINS_TIMEOUT_SEC: ${PLUGINS_TIMEOUT_SEC:-320}
+      GVM_OPEN_SOCK_MAX_ATTEMPTS: ${GVM_OPEN_SOCK_MAX_ATTEMPTS:-5}
+      GVM_TIMEOUT_RETRY: ${GVM_TIMEOUT_RETRY:-3}
+      GVM_CHECKS_READ_TIMEOUT: ${GVM_CHECKS_READ_TIMEOUT:-10}
+      GVM_MAX_HOSTS: ${GVM_MAX_HOSTS:-1}
+      GVM_MAX_CHECKS: ${GVM_MAX_CHECKS:-8}
+      HIGH_PROGRESS_WARN_SEC: ${HIGH_PROGRESS_WARN_SEC:-300}
+      MAX_SCAN_RUNTIME_SEC: ${MAX_SCAN_RUNTIME_SEC:-0}
+      PORT_PROFILE: ${PORT_PROFILE:-full}
+      UDP_PROFILE: ${UDP_PROFILE:-priority}
+      SCAN_TCP_CUSTOM_PORTS: ${SCAN_TCP_CUSTOM_PORTS:-}
+      SCAN_UDP_CUSTOM_PORTS: ${SCAN_UDP_CUSTOM_PORTS:-}
+      UDP_PORT_RANGE: ${UDP_PORT_RANGE:-U:53,U:67-69,U:123,U:137-138,U:161-162,U:500,U:514,U:520,U:623,U:1434,U:1701,U:1812-1813,U:1900,U:4500,U:4789,U:5004,U:5060,U:5353,U:11211}
+      PORT_DISCOVERY_ENABLED: ${PORT_DISCOVERY_ENABLED:-true}
+      PORT_DISCOVERY_TIMEOUT_SEC: ${PORT_DISCOVERY_TIMEOUT_SEC:-1.0}
+      PORT_DISCOVERY_WORKERS: ${PORT_DISCOVERY_WORKERS:-32}
+      PORT_DISCOVERY_RANGE: ${PORT_DISCOVERY_RANGE:-T:21-23,T:25,T:53,T:80,T:81,T:88,T:110,T:111,T:135,T:139,T:143,T:389,T:443,T:445,T:465,T:587,T:631,T:993,T:995,T:1433,T:1521,T:1723,T:2049,T:3000,T:3306,T:3389,T:5432,T:5672,T:5900,T:5985,T:6379,T:6443,T:8080,T:8443,T:9000,T:9418,T:27017}
+      GVM_REPORT_MIN_QOD: ${GVM_REPORT_MIN_QOD:-0}
+      GVM_MIN_NVT_COUNT: ${GVM_MIN_NVT_COUNT:-10000}
+      GVM_FEED_LOAD_WAIT_MIN: ${GVM_FEED_LOAD_WAIT_MIN:-60}
+      GVM_ALLOW_BARE_TASK_FALLBACK: ${GVM_ALLOW_BARE_TASK_FALLBACK:-false}
+      GVM_OPTIMIZE_TEST: ${GVM_OPTIMIZE_TEST:-no}
+      GVM_SAFE_CHECKS: ${GVM_SAFE_CHECKS:-yes}
+      GVM_EXPAND_VHOSTS: ${GVM_EXPAND_VHOSTS:-yes}
+      GVM_TEST_EMPTY_VHOST: ${GVM_TEST_EMPTY_VHOST:-yes}
+      VERIFY_TLS: ${VERIFY_TLS:-true}
+      CENTRAL_API_TIMEOUT_SEC: ${CENTRAL_API_TIMEOUT_SEC:-0}
+      AGENT_VERSION: ${AGENT_VERSION:-1.5.3}
+      SCANNER_ROLE: ${SCANNER_ROLE:-portable}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - gvm_gvmd_socket:/run/gvmd:ro
+      # Mount a DIRECTORY, not a single file. This avoids Docker Desktop/WSL
+      # file-vs-directory bind state left behind by older scanner-agent containers.
+      - type: bind
+        source: ./scanner-agent/runtime
+        target: /run/aetheris-agent
+        bind:
+          create_host_path: false
+      - ./scanner-agent/agent:/app/agent:ro
+      - type: bind
+        source: ./.lan-fingerprint
+        target: /app/.lan-fingerprint
+        read_only: true
+        bind:
+          create_host_path: false
+      - ./logs:/app/logs
+    depends_on:
+      gvmd:
+        condition: service_healthy
+      ospd-openvas:
+        condition: service_healthy
+
+volumes:
+  gvm_gpg_data:
+  gvm_scap_data:
+  gvm_cert_data:
+  gvm_data_objects:
+  gvm_gvmd_data:
+  gvm_pgdata:
+  gvm_vt_data:
+  gvm_notus_data:
+  gvm_psql_socket:
+  gvm_gvmd_socket:
+  gvm_ospd_socket:
+  gvm_redis_socket:
+  gvm_openvas_data:
+  gvm_openvas_log:

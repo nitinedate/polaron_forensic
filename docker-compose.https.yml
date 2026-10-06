@@ -1,0 +1,871 @@
+# Production-ready Docker Compose for Windows + Airtel static IP HTTPS
+# Public IP: 122.170.114.36
+# Windows LAN IP remains 192.168.1.56; router forwards TCP 80/443 to this host.
+#
+# IMPORTANT: This file expects:
+#   ./deployment/windows-ip-https/nginx.https.conf
+# and Let's Encrypt certificate volumes created by the bootstrap process.
+# Only ports 80/443 are intentionally public; infrastructure/admin ports bind to 127.0.0.1.
+
+# Dynamic Windows drive mounts are a Compose OVERRIDE, not an `include`.
+# `include` rejects service-name conflicts (the generated file extends api/workers).
+# Windows startup/refresh scripts merge it with: -f docker-compose.drives.generated.yml
+include:
+  - docker-compose.gvm.yml
+  - docker-compose.vuln-scanners.yml
+
+x-forensic-volumes: &forensic-volumes
+  - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+  - ./data/job-data:/app/data
+
+# Shared GPU reservation (NVIDIA Container Toolkit / Docker Desktop GPU)
+x-gpu: &gpu
+  driver: nvidia
+  count: 1
+  capabilities: [gpu]
+
+# Probe host room (CPU/RAM/GPU/thermal) then exec celery — see scripts/dynamic_perf_entrypoint.py
+x-dynamic-entrypoint: &dynamic-entrypoint
+  - python
+  - /scripts/dynamic_perf_entrypoint.py
+
+x-worker-env: &worker-env
+  DATABASE_URL: postgresql+psycopg2://forensic:forensic@postgres:5432/forensic
+  REDIS_URL: redis://redis:6379/0
+  RESOURCE_GOVERNOR_ENABLED: ${RESOURCE_GOVERNOR_ENABLED:-true}
+  RESOURCE_GOVERNOR_REDIS_URL: ${RESOURCE_GOVERNOR_REDIS_URL:-redis://host.docker.internal:6389/0}
+  RESOURCE_GOVERNOR_GROUP: ${RESOURCE_GOVERNOR_GROUP:-aetheris-host}
+  RESOURCE_GOVERNOR_FAIL_OPEN_ON_UNAVAILABLE: ${RESOURCE_GOVERNOR_FAIL_OPEN_ON_UNAVAILABLE:-true}
+  RESOURCE_GOVERNOR_CPU_MAX_SLOTS: ${RESOURCE_GOVERNOR_CPU_MAX_SLOTS:-8}
+  RESOURCE_GOVERNOR_GPU_MAX_SLOTS: ${RESOURCE_GOVERNOR_GPU_MAX_SLOTS:-4}
+  GPU_RELEASE_MODEL_AFTER_TASK: ${GPU_RELEASE_MODEL_AFTER_TASK:-true}
+  # Small per-process pools prevent Celery prefork children from exhausting Postgres.
+  DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-2}
+  DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-2}
+  DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30}
+  MINIO_ENDPOINT: minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+  MINIO_BUCKET: ${MINIO_BUCKET:-forensic}
+  HOST_EVIDENCE_ENABLED: ${HOST_EVIDENCE_ENABLED:-true}
+  HOST_EVIDENCE_ROOT: ${HOST_EVIDENCE_ROOT:-}
+  HOST_DRIVE_MAP: ${HOST_DRIVE_MAP:-}
+  HOST_PATH_MAPPINGS: ${HOST_PATH_MAPPINGS:-}
+  # Examiner PC USB bridge for Device Wizard (adb / libimobiledevice on host)
+  HOST_DRIVE_HELPER_URL: ${HOST_DRIVE_HELPER_URL:-http://host.docker.internal:9876}
+  DATA_ROOT: /app/data
+  # Dynamic performance: retune concurrency/batch/thermal from live CPU/RAM/GPU room
+  DYNAMIC_PERF_ENABLED: ${DYNAMIC_PERF_ENABLED:-true}
+  DYNAMIC_PERF_FORCE: ${DYNAMIC_PERF_FORCE:-true}
+  DYNAMIC_PERF_LOCK: ${DYNAMIC_PERF_LOCK:-PARSE_WORKERS,PARSE_PARALLEL_ENABLED,PARSE_DRAIN_BATCH_LIMIT,PARSE_DRAIN_MAX_ROUNDS,PARSE_DRAIN_INTERLEAVE_RAG}
+  # E01: parallel readers on disjoint inode shards. Keep 2-4 so the host stays usable.
+  # Values below are baselines; host_capacity overrides when DYNAMIC_PERF_FORCE=true.
+  EXTRACT_DISK_WORKERS: ${EXTRACT_DISK_WORKERS:-3}
+  EXTRACT_SHARD_COUNT: ${EXTRACT_SHARD_COUNT:-8}
+  EXTRACT_UPLOAD_CONCURRENCY: ${EXTRACT_UPLOAD_CONCURRENCY:-4}
+  EXTRACT_ZSTD_LEVEL: ${EXTRACT_ZSTD_LEVEL:-1}
+  EXTRACT_MODE: ${EXTRACT_MODE:-forensic}
+  BROWSER_URL_PARSE_LIMIT: ${BROWSER_URL_PARSE_LIMIT:-500}
+  EXTRACT_UNCERTAIN_MAX_BYTES: ${EXTRACT_UNCERTAIN_MAX_BYTES:-4194304}
+  EXTRACT_MAX_FILE_BYTES: ${EXTRACT_MAX_FILE_BYTES:-100000000}
+  EXTRACT_HASH_FILES: ${EXTRACT_HASH_FILES:-false}
+  EXTRACT_PROGRESS_STEP: ${EXTRACT_PROGRESS_STEP:-10000}
+  EXTRACT_STOP_CHECK_INTERVAL: ${EXTRACT_STOP_CHECK_INTERVAL:-1000}
+  EXTRACT_TAR_BUFSIZE: ${EXTRACT_TAR_BUFSIZE:-2097152}
+  EXTRACT_PROGRESS_FLUSH_SEC: ${EXTRACT_PROGRESS_FLUSH_SEC:-10}
+  EXTRACT_PROGRESS_LOG_SEC: ${EXTRACT_PROGRESS_LOG_SEC:-20}
+  EXTRACT_SKIP_SYSTEM_PATHS: ${EXTRACT_SKIP_SYSTEM_PATHS:-false}
+  EXTRACT_REPLAN_ON_RESUME: ${EXTRACT_REPLAN_ON_RESUME:-false}
+  MAX_CONCURRENT_DISK_BUILDS: ${MAX_CONCURRENT_DISK_BUILDS:-3}
+  PARSE_DRAIN_MAX_ROUNDS: ${PARSE_DRAIN_MAX_ROUNDS:-25}
+  PARSE_DRAIN_BATCH_LIMIT: ${PARSE_DRAIN_BATCH_LIMIT:-1200}
+  PARSE_BATCH_LIMIT: ${PARSE_BATCH_LIMIT:-8000}
+  PARSE_WORKERS: ${PARSE_WORKERS:-2}
+  PARSE_PARALLEL_ENABLED: ${PARSE_PARALLEL_ENABLED:-true}
+  PARSE_DB_COMMIT_BATCH: ${PARSE_DB_COMMIT_BATCH:-75}
+  PARSE_PARALLEL_BUCKETS: ${PARSE_PARALLEL_BUCKETS:-1}
+  PARSE_BUCKET_MIN_PENDING: ${PARSE_BUCKET_MIN_PENDING:-2000}
+  AXIOM_INVENTORY_WORKERS: ${AXIOM_INVENTORY_WORKERS:-8}
+  AXIOM_INVENTORY_BATCH_SIZE: ${AXIOM_INVENTORY_BATCH_SIZE:-100}
+  PHASE1_ARTIFACT_FILTER: ${PHASE1_ARTIFACT_FILTER:-true}
+  # Default forensic flow: extract once, finalize the evidence manifest, then start downstream agents
+  EXTRACT_THEN_PROCESS: ${EXTRACT_THEN_PROCESS:-true}
+  PHASE3_STREAM_DURING_EXTRACT: ${PHASE3_STREAM_DURING_EXTRACT:-false}
+  PHASE3_STREAM_RAG_DURING_EXTRACT: ${PHASE3_STREAM_RAG_DURING_EXTRACT:-false}
+  PHASE3_STREAM_OCR_DURING_EXTRACT: ${PHASE3_STREAM_OCR_DURING_EXTRACT:-false}
+  RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-BAAI/bge-m3}
+  RAG_IMAGE_EMBED_MODEL: ${RAG_IMAGE_EMBED_MODEL:-clip-ViT-B-32}
+  HF_PULL_MODELS: ${HF_PULL_MODELS:-BAAI/bge-m3,zai-org/GLM-OCR,sentence-transformers/clip-ViT-B-32,cross-encoder/ms-marco-MiniLM-L-6-v2}
+  RAG_EMBEDDING_DEVICE: ${RAG_EMBEDDING_DEVICE:-cuda}
+  RAG_BATCH_SIZE: ${RAG_BATCH_SIZE:-8}
+  RAG_BATCH_SIZE_CAP: ${RAG_BATCH_SIZE_CAP:-16}
+  RAG_CUDA_MEMORY_FRACTION: ${RAG_CUDA_MEMORY_FRACTION:-0.32}
+  # Balanced laptop defaults: fast cool-path, hard hot-path (OEM trip ~85°C).
+  GPU_THERMAL_ENABLED: ${GPU_THERMAL_ENABLED:-true}
+  GPU_THERMAL_START_MAX_C: ${GPU_THERMAL_START_MAX_C:-90}
+  GPU_THERMAL_THROTTLE_C: ${GPU_THERMAL_THROTTLE_C:-85}
+  GPU_THERMAL_PAUSE_C: ${GPU_THERMAL_PAUSE_C:-90}
+  GPU_THERMAL_RESUME_C: ${GPU_THERMAL_RESUME_C:-82}
+  GPU_THERMAL_HONOR_ENV: ${GPU_THERMAL_HONOR_ENV:-true}
+  GPU_THERMAL_POLL_SEC: ${GPU_THERMAL_POLL_SEC:-2}
+  GPU_THERMAL_HOT_BATCH_SLEEP_SEC: ${GPU_THERMAL_HOT_BATCH_SLEEP_SEC:-5}
+  GPU_THERMAL_EMBED_REST_SEC: ${GPU_THERMAL_EMBED_REST_SEC:-0.6}
+  GPU_THERMAL_DUTY_CYCLE_BATCHES: ${GPU_THERMAL_DUTY_CYCLE_BATCHES:-4}
+  GPU_THERMAL_DUTY_CYCLE_REST_SEC: ${GPU_THERMAL_DUTY_CYCLE_REST_SEC:-3}
+  GPU_THERMAL_ADAPTIVE_BATCH: ${GPU_THERMAL_ADAPTIVE_BATCH:-true}
+  GPU_THERMAL_COOL_BOOST_C: ${GPU_THERMAL_COOL_BOOST_C:-58}
+  GPU_THERMAL_COOL_BATCH_MULTIPLIER: ${GPU_THERMAL_COOL_BATCH_MULTIPLIER:-1.25}
+  GPU_THERMAL_FALLBACK_DUTY: ${GPU_THERMAL_FALLBACK_DUTY:-true}
+  GPU_THERMAL_RISE_DELTA_C: ${GPU_THERMAL_RISE_DELTA_C:-5}
+  GPU_THERMAL_RISE_WINDOW_SEC: ${GPU_THERMAL_RISE_WINDOW_SEC:-12}
+  GPU_THERMAL_POWER_LIMIT_W: ${GPU_THERMAL_POWER_LIMIT_W:-70}
+  GPU_THERMAL_ABORT_C: ${GPU_THERMAL_ABORT_C:-90}
+  GPU_HEAVY_MAX_CONCURRENT: ${GPU_HEAVY_MAX_CONCURRENT:-2}
+  GPU_HEAVY_LOCK_WAIT_SEC: ${GPU_HEAVY_LOCK_WAIT_SEC:-1800}
+  GPU_HEAVY_LOCK_TTL_SEC: ${GPU_HEAVY_LOCK_TTL_SEC:-600}
+  CPU_THERMAL_THROTTLE_C: ${CPU_THERMAL_THROTTLE_C:-80}
+  CPU_THERMAL_PAUSE_C: ${CPU_THERMAL_PAUSE_C:-88}
+  PIPELINE_SUPERVISOR_ENABLED: ${PIPELINE_SUPERVISOR_ENABLED:-true}
+  PIPELINE_STALE_SEC: ${PIPELINE_STALE_SEC:-180}
+  PIPELINE_SUPERVISOR_INTERVAL_SEC: ${PIPELINE_SUPERVISOR_INTERVAL_SEC:-60}
+  PIPELINE_SEQUENTIAL_AGENTS: ${PIPELINE_SEQUENTIAL_AGENTS:-true}
+  PARSE_DRAIN_INTERLEAVE_RAG: ${PARSE_DRAIN_INTERLEAVE_RAG:-false}
+  RAG_AUTO_AFTER_DISK: ${RAG_AUTO_AFTER_DISK:-false}
+  RAG_EMBEDDING_ENABLED: ${RAG_EMBEDDING_ENABLED:-false}
+  RAG_BACKGROUND_AFTER_BASELINE: ${RAG_BACKGROUND_AFTER_BASELINE:-false}
+  PHASE3_AUTO_AFTER_DISK: ${PHASE3_AUTO_AFTER_DISK:-true}
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+  NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
+  NEO4J_USER: ${NEO4J_USER:-neo4j}
+  NEO4J_PASSWORD: ${NEO4J_PASSWORD:-forensic123}
+  OPENSEARCH_URL: ${OPENSEARCH_URL:-http://opensearch:9200}
+  # Laptop-safe LLM sizes (avoid 32b/70b thermal shutdown)
+  LLM_PRIMARY_MODEL: ${LLM_PRIMARY_MODEL:-qwen2.5:14b}
+  LLM_REVIEW_MODEL: ${LLM_REVIEW_MODEL:-deepseek-r1:14b}
+  LLM_REVIEW_MODEL_LARGE: ${LLM_REVIEW_MODEL_LARGE:-deepseek-r1:14b}
+  LLM_FAST_MODEL: ${LLM_FAST_MODEL:-qwen3.5:9b}
+  # All models required by the stack — pulled by ollama-init on compose up
+  OLLAMA_PULL_MODELS: ${OLLAMA_PULL_MODELS:-qwen2.5:14b,qwen2.5:7b,deepseek-r1:14b,llama3.1:8b,gemma4:12b,qwen3.5:9b,nomic-embed-text}
+  RAG_EMBEDDING_FALLBACK: ${RAG_EMBEDDING_FALLBACK:-nomic-embed-text}
+  OCR_ENABLED: ${OCR_ENABLED:-true}
+  OCR_ENGINE: ${OCR_ENGINE:-glm-ocr}
+  OCR_MODEL: ${OCR_MODEL:-zai-org/GLM-OCR}
+  OCR_DEVICE: ${OCR_DEVICE:-cuda}
+  OCR_GPU_ONLY: ${OCR_GPU_ONLY:-true}
+  OCR_PARALLEL_BUCKETS: ${OCR_PARALLEL_BUCKETS:-0}
+  OCR_MAX_PAGES: ${OCR_MAX_PAGES:-10}
+  OCR_MAX_NEW_TOKENS: ${OCR_MAX_NEW_TOKENS:-512}
+  OCR_CPU_WORKERS: ${OCR_CPU_WORKERS:-6}
+  GAP_REPORT_LLM_ENABLED: ${GAP_REPORT_LLM_ENABLED:-true}
+  GAP_REPORT_LLM_MODEL: ${GAP_REPORT_LLM_MODEL:-qwen2.5:7b}
+  NVIDIA_VISIBLE_DEVICES: all
+  NVIDIA_DRIVER_CAPABILITIES: compute,utility
+  PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+  VULN_MODULE_ENABLED: ${VULN_MODULE_ENABLED:-true}
+  AGENT_MODULE_ENABLED: ${AGENT_MODULE_ENABLED:-true}
+  AGENT_MAX_STEPS: ${AGENT_MAX_STEPS:-6}
+  AGENT_MODEL: ${AGENT_MODEL:-qwen3.5:9b}
+  NESSUS_API_TIMEOUT_SEC: ${NESSUS_API_TIMEOUT_SEC:-0}
+  NESSUS_VERIFY_SSL: ${NESSUS_VERIFY_SSL:-true}
+  NESSUS_DEFAULT_URL: ${NESSUS_DEFAULT_URL:-}
+  NESSUS_ACCESS_KEY: ${NESSUS_ACCESS_KEY:-}
+  NESSUS_SECRET_KEY: ${NESSUS_SECRET_KEY:-}
+  GVM_HOST: ${GVM_HOST:-gvmd}
+  GVM_PORT: ${GVM_PORT:-9390}
+  GVM_URL: ${GVM_URL:-tls://gvmd:9390}
+  GVM_USERNAME: ${GVM_USERNAME:-admin}
+  GVM_PASSWORD: ${GVM_PASSWORD:-}
+  GVM_ADMIN_PASSWORD: ${GVM_ADMIN_PASSWORD:-admin}
+  GVM_VERIFY_TLS: ${GVM_VERIFY_TLS:-false}
+  GVM_LIVE_ENABLED: ${GVM_LIVE_ENABLED:-false}
+  VULN_ORCHESTRATION_ENABLED: ${VULN_ORCHESTRATION_ENABLED:-true}
+  ZAP_API_URL: ${ZAP_API_URL:-http://zap:8080}
+  ZAP_API_KEY: ${ZAP_API_KEY:-changeme}
+  WAZUH_API_URL: ${WAZUH_API_URL:-https://wazuh-manager:55000}
+  WAZUH_API_USER: ${WAZUH_API_USER:-wazuh-wui}
+  WAZUH_API_PASSWORD: ${WAZUH_API_PASSWORD:-MyS3cr37P450r.*-}
+  WAZUH_VERIFY_TLS: ${WAZUH_VERIFY_TLS:-false}
+  TRIVY_SERVER_URL: ${TRIVY_SERVER_URL:-http://trivy:4954}
+  ASV_MODULE_ENABLED: ${ASV_MODULE_ENABLED:-true}
+  PENTEST_MODULE_ENABLED: ${PENTEST_MODULE_ENABLED:-true}
+  EDR_INVENTORY_ENABLED: ${EDR_INVENTORY_ENABLED:-true}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: forensic
+      POSTGRES_PASSWORD: forensic
+      POSTGRES_DB: forensic
+    ports:
+      - "127.0.0.1:5434:5432"
+    shm_size: 1g
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - max_connections=200
+      - -c
+      - work_mem=8MB
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forensic -d forensic && psql -U forensic -d forensic -c 'SELECT 1' >/dev/null"]
+      interval: 5s
+      timeout: 8s
+      retries: 20
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    restart: on-failure
+    env_file:
+      - .env
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@forensic.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "127.0.0.1:${PGADMIN_PORT:-5052}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./docker/pgadmin/pgpass:/pgpass:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
+  redis:
+    image: redis:7
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      # Unload idle models so embedder can reclaim VRAM
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+        limits:
+          memory: 16G
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  # One-shot: pull ALL required Ollama models via compose (no manual ollama pull)
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_PULL_MODELS: ${OLLAMA_PULL_MODELS:-qwen2.5:14b,qwen2.5:7b,deepseek-r1:14b,llama3.1:8b,gemma4:12b,qwen3.5:9b,nomic-embed-text}
+      LLM_PRIMARY_MODEL: ${LLM_PRIMARY_MODEL:-qwen2.5:14b}
+      LLM_REVIEW_MODEL: ${LLM_REVIEW_MODEL:-deepseek-r1:14b}
+      LLM_REVIEW_MODEL_LARGE: ${LLM_REVIEW_MODEL_LARGE:-deepseek-r1:14b}
+      LLM_FAST_MODEL: ${LLM_FAST_MODEL:-qwen3.5:9b}
+      RAG_EMBEDDING_FALLBACK: ${RAG_EMBEDDING_FALLBACK:-nomic-embed-text}
+      AGENT_MODEL: ${AGENT_MODEL:-qwen3.5:9b}
+      GAP_REPORT_LLM_MODEL: ${GAP_REPORT_LLM_MODEL:-qwen2.5:7b}
+    volumes:
+      - ./scripts/ollama_ensure_models.sh:/ensure.sh:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        sed 's/\r$$//' /ensure.sh > /tmp/ensure.sh
+        exec /bin/sh /tmp/ensure.sh
+    restart: "no"
+    gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+
+  # NVIDIA CUDA runtime — stays up so GPU passthrough is live for OCR/RAG workers.
+  nvidia-cuda:
+    image: nvidia/cuda:12.6.3-base-ubuntu24.04
+    container_name: rag_new2-nvidia-cuda
+    command: ["sh", "-c", "nvidia-smi -L && echo CUDA_OK && exec sleep infinity"]
+    gpus: all
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+    restart: unless-stopped
+
+  # GPU smoke test: docker compose --profile gpu-test run --rm nvidia-smi
+  nvidia-smi:
+    image: nvidia/cuda:12.6.3-base-ubuntu24.04
+    command: nvidia-smi
+    gpus: all
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+    profiles:
+      - gpu-test
+
+  neo4j:
+    image: neo4j:5
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-forensic123}
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    volumes:
+      - neo4j_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  opensearch:
+    image: opensearchproject/opensearch:2
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD:-ForensicDev1!Change}
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    user: "0:0"
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio_data:/data
+
+  api:
+    image: rag_new2-api
+    restart: unless-stopped
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      pull: false
+      cache_from:
+        - rag_new2-api:latest
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+      DB_POOL_SIZE: ${API_DB_POOL_SIZE:-10}
+      DB_MAX_OVERFLOW: ${API_DB_MAX_OVERFLOW:-10}
+      APP_BASE_URL: https://122.170.114.36
+    ports:
+      - "127.0.0.1:8080:8080"
+    # GPU visible so /api/health/capacity and thermal probes see the host NVIDIA device
+    gpus: all
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailhog:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      ollama:
+        condition: service_started
+      neo4j:
+        condition: service_started
+      opensearch:
+        condition: service_started
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts
+      - ./migrations:/migrations
+      - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+      - ./data:/app/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+        limits:
+          memory: 4G
+    command: >
+      sh -c "alembic upgrade head 2>/dev/null || true &&
+             python /scripts/ensure_sql_functions.py &&
+             python /scripts/bootstrap_platform_admin.py &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8080"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 180s
+
+  # Disk extract/parse — 2–3 concurrent jobs (scanner stays on worker-nessus).
+  worker-disk:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+    # CUDA device is visible; adaptive governor controls heavy GPU admission.
+    gpus: all
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+      - ./data/job-data:/app/data
+      - ./data/uploads:/app/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 14G
+          cpus: "12.0"
+    entrypoint: *dynamic-entrypoint
+    command:
+      - celery
+      - -A
+      - app.celery_app.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=3
+      - --prefetch-multiplier=1
+      - -Q
+      - disk-build
+
+  # Dedicated post-processing pool so parse/enrichment cannot starve extraction.
+  worker-parse:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+    gpus: all
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+      - ./data/job-data:/app/data
+      - ./data/uploads:/app/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: "8.0"
+    entrypoint: *dynamic-entrypoint
+    command:
+      - celery
+      - -A
+      - app.celery_app.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=${PARSE_CELERY_CONCURRENCY:-4}
+      - --prefetch-multiplier=1
+      - -Q
+      - disk-parse
+
+  # Mobile extract/parse/inventory — isolated from disk-build so domains cannot block each other.
+  worker-mobile:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+    # CUDA device is visible; adaptive governor controls heavy GPU admission.
+    gpus: all
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+      - ./data/job-data:/app/data
+      - ./data/uploads:/app/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"
+    entrypoint: *dynamic-entrypoint
+    command:
+      - celery
+      - -A
+      - app.celery_app.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=3
+      - --prefetch-multiplier=1
+      - -Q
+      - mobile-build
+
+  # Single GPU worker: RAG + OCR share rag-index (concurrency=1 = physical XOR).
+  worker-rag-gpu:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        # RTX 50-series needs a CUDA wheel. Other backend services stay on CPU torch.
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu130}
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+      RAG_EMBEDDING_DEVICE: ${RAG_EMBEDDING_DEVICE:-cuda}
+      RAG_BATCH_SIZE: ${RAG_BATCH_SIZE:-8}
+      RAG_BATCH_SIZE_CAP: ${RAG_BATCH_SIZE_CAP:-16}
+      RAG_CUDA_MEMORY_FRACTION: ${RAG_CUDA_MEMORY_FRACTION:-0.32}
+      OCR_ENABLED: ${OCR_ENABLED:-true}
+      OCR_DEVICE: ${OCR_DEVICE:-cuda}
+      OCR_CPU_WORKERS: ${OCR_CPU_WORKERS:-6}
+      # Exclusive OCR may raise above RAG's tight cap after embedder unload.
+      OCR_CUDA_MEMORY_FRACTION: ${OCR_CUDA_MEMORY_FRACTION:-0.70}
+      GPU_THERMAL_THROTTLE_C: ${GPU_THERMAL_THROTTLE_C:-85}
+      GPU_THERMAL_PAUSE_C: ${GPU_THERMAL_PAUSE_C:-90}
+      GPU_THERMAL_ABORT_C: ${GPU_THERMAL_ABORT_C:-90}
+      GPU_THERMAL_POWER_LIMIT_W: ${GPU_THERMAL_POWER_LIMIT_W:-70}
+    gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+        limits:
+          memory: 8G
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - ./data:/app/data
+      - huggingface_cache:/root/.cache/huggingface
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      ollama:
+        condition: service_started
+      neo4j:
+        condition: service_started
+      opensearch:
+        condition: service_started
+    entrypoint: *dynamic-entrypoint
+    command:
+      - celery
+      - -A
+      - app.celery_app.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=1
+      - --pool=solo
+      - -Q
+      - rag-index
+      - --prefetch-multiplier=1
+
+  # Optional second GPU OCR worker — DISABLED by default (profile). Starting it
+  # alongside worker-rag-gpu reintroduces dual-GPU thermal shutdown risk.
+  worker-ocr-gpu:
+    profiles: ["dual-gpu-ocr"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+      OCR_ENABLED: "true"
+      OCR_DEVICE: cuda
+      OCR_GPU_ONLY: "true"
+      OCR_PARALLEL_BUCKETS: "0"
+    gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+        limits:
+          memory: 6G
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - ./data:/app/data
+      - huggingface_cache:/root/.cache/huggingface
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    entrypoint: *dynamic-entrypoint
+    command:
+      - celery
+      - -A
+      - app.celery_app.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=1
+      - -Q
+      - ocr
+      - --prefetch-multiplier=1
+
+  worker-report:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+    # CUDA device is visible; adaptive governor controls heavy GPU admission.
+    gpus: all
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    entrypoint: *dynamic-entrypoint
+    command:
+      - celery
+      - -A
+      - app.celery_app.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=3
+      - -Q
+      - report-gen
+
+  # Nessus sync + multi-scanner orchestrator (nmap, OpenVAS, Nuclei, ZAP, Wazuh, Trivy)
+  worker-nessus:
+    image: rag_new2-worker-nessus
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.scanner
+      pull: false
+      cache_from:
+        - rag_new2-worker-nessus:latest
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+      NESSUS_WORKER_CONCURRENCY: ${NESSUS_WORKER_CONCURRENCY:-4}
+      VULN_MAX_PARALLEL_JOBS: ${VULN_MAX_PARALLEL_JOBS:-4}
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+      zap:
+        condition: service_started
+        required: false
+      trivy:
+        condition: service_started
+        required: false
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    entrypoint: *dynamic-entrypoint
+    command:
+      - celery
+      - -A
+      - app.celery_app.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=4
+      - --prefetch-multiplier=1
+      - -Q
+      - nessus-sync
+
+  # Forensic Agentic AI — isolated from disk-build / rag-index / nessus-sync
+  worker-agent:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      <<: *worker-env
+    # GPU visible for capacity/thermal probes (nvidia-smi) — no heavy CUDA work here.
+    gpus: all
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+        limits:
+          memory: 4G
+    entrypoint: *dynamic-entrypoint
+    command:
+      - celery
+      - -A
+      - app.celery_app.celery
+      - worker
+      - -B
+      - --loglevel=info
+      - --concurrency=1
+      - --prefetch-multiplier=1
+      - -Q
+      - agent-orchestration
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Empty means the React app uses same-origin /api through nginx.
+        VITE_API_BASE: ""
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # HTTPS nginx config and Let's Encrypt certificate storage.
+      - ./deployment/windows-ip-https/nginx.https.conf:/etc/nginx/conf.d/default.conf:ro
+      - certbot_etc:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Certbot is run on demand for initial certificate issuance and renewals.
+  certbot:
+    image: certbot/certbot:latest
+    profiles: ["certbot"]
+    volumes:
+      - certbot_etc:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+
+  # Start this service by itself before the first certificate exists.
+  # It exposes port 80 for the ACME HTTP-01 challenge.
+  acme-bootstrap:
+    image: nginx:1.27-alpine
+    profiles: ["acme-bootstrap"]
+    ports:
+      - "80:80"
+    volumes:
+      - certbot_www:/usr/share/nginx/html:ro
+
+volumes:
+  pgdata:
+  pgadmin_data:
+  minio_data:
+  ollama_data:
+  neo4j_data:
+  opensearch_data:
+  huggingface_cache:
+  certbot_etc:
+  certbot_www:

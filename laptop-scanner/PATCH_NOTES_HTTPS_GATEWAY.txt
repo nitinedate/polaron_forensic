@@ -1,0 +1,22 @@
+Aetheris Laptop Scanner HTTPS Gateway Patch
+Date: 2026-08-18
+
+Changes
+-------
+1. CENTRAL_API_URL now defaults to https://122.170.114.36.
+2. Startup validates /api/health over HTTPS instead of automatically scanning LAN port 8080.
+3. Explicit configured HTTPS URL failures now stop with a clear message instead of silently falling back to port-8080 discovery.
+4. Legacy AUTO/port-8080 discovery remains available only when explicitly requested.
+5. scanner-agent normalizes a CENTRAL_API_URL ending in /api to prevent /api/api/... paths.
+6. VERIFY_TLS now defaults to true.
+7. PowerShell .env writes use UTF-8 without BOM.
+8. README updated for the hardened Nginx :443 -> /api -> api:8080 architecture.
+9. README uses docker compose stop rather than docker compose down so existing containers/volumes are preserved.
+
+Central health test
+-------------------
+curl.exe https://122.170.114.36/api/health
+
+Expected base URL in .env
+-------------------------
+CENTRAL_API_URL=https://122.170.114.36

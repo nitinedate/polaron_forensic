@@ -1,0 +1,477 @@
+{
+  "tcp": [
+    {
+      "ports": "20",
+      "service": "ftp-data",
+      "priority": "High"
+    },
+    {
+      "ports": "21",
+      "service": "ftp",
+      "priority": "High"
+    },
+    {
+      "ports": "22",
+      "service": "ssh",
+      "priority": "Critical"
+    },
+    {
+      "ports": "23",
+      "service": "telnet",
+      "priority": "High"
+    },
+    {
+      "ports": "25",
+      "service": "smtp",
+      "priority": "High"
+    },
+    {
+      "ports": "53",
+      "service": "dns",
+      "priority": "High"
+    },
+    {
+      "ports": "80",
+      "service": "http",
+      "priority": "Critical"
+    },
+    {
+      "ports": "88",
+      "service": "kerberos",
+      "priority": "Critical"
+    },
+    {
+      "ports": "110",
+      "service": "pop3",
+      "priority": "Medium"
+    },
+    {
+      "ports": "111",
+      "service": "rpcbind",
+      "priority": "High"
+    },
+    {
+      "ports": "135",
+      "service": "msrpc",
+      "priority": "Critical"
+    },
+    {
+      "ports": "139",
+      "service": "netbios-ssn",
+      "priority": "Critical"
+    },
+    {
+      "ports": "143",
+      "service": "imap",
+      "priority": "Medium"
+    },
+    {
+      "ports": "389",
+      "service": "ldap",
+      "priority": "Critical"
+    },
+    {
+      "ports": "443",
+      "service": "https",
+      "priority": "Critical"
+    },
+    {
+      "ports": "445",
+      "service": "smb",
+      "priority": "Critical"
+    },
+    {
+      "ports": "465",
+      "service": "smtps",
+      "priority": "High"
+    },
+    {
+      "ports": "512-514",
+      "service": "rexec-rlogin-rsh",
+      "priority": "High"
+    },
+    {
+      "ports": "548",
+      "service": "afp",
+      "priority": "High"
+    },
+    {
+      "ports": "587",
+      "service": "submission",
+      "priority": "High"
+    },
+    {
+      "ports": "631",
+      "service": "ipp",
+      "priority": "Medium"
+    },
+    {
+      "ports": "636",
+      "service": "ldaps",
+      "priority": "Critical"
+    },
+    {
+      "ports": "873",
+      "service": "rsync",
+      "priority": "High"
+    },
+    {
+      "ports": "902",
+      "service": "vmware",
+      "priority": "Critical"
+    },
+    {
+      "ports": "990",
+      "service": "ftps",
+      "priority": "High"
+    },
+    {
+      "ports": "993",
+      "service": "imaps",
+      "priority": "Medium"
+    },
+    {
+      "ports": "995",
+      "service": "pop3s",
+      "priority": "Medium"
+    },
+    {
+      "ports": "1099",
+      "service": "java-rmi",
+      "priority": "High"
+    },
+    {
+      "ports": "1433",
+      "service": "mssql",
+      "priority": "Critical"
+    },
+    {
+      "ports": "1521",
+      "service": "oracle",
+      "priority": "Critical"
+    },
+    {
+      "ports": "1883",
+      "service": "mqtt",
+      "priority": "High"
+    },
+    {
+      "ports": "2049",
+      "service": "nfs",
+      "priority": "High"
+    },
+    {
+      "ports": "2181",
+      "service": "zookeeper",
+      "priority": "High"
+    },
+    {
+      "ports": "2375-2376",
+      "service": "docker",
+      "priority": "Critical"
+    },
+    {
+      "ports": "3000",
+      "service": "web-app",
+      "priority": "High"
+    },
+    {
+      "ports": "3268-3269",
+      "service": "ldap-global-catalog",
+      "priority": "High"
+    },
+    {
+      "ports": "3306",
+      "service": "mysql",
+      "priority": "Critical"
+    },
+    {
+      "ports": "3389",
+      "service": "rdp",
+      "priority": "Critical"
+    },
+    {
+      "ports": "4443",
+      "service": "https-alt",
+      "priority": "Critical"
+    },
+    {
+      "ports": "4786",
+      "service": "cisco-smart-install",
+      "priority": "Critical"
+    },
+    {
+      "ports": "4848",
+      "service": "glassfish",
+      "priority": "High"
+    },
+    {
+      "ports": "5000",
+      "service": "docker-registry",
+      "priority": "High"
+    },
+    {
+      "ports": "5432",
+      "service": "postgres",
+      "priority": "Critical"
+    },
+    {
+      "ports": "5555",
+      "service": "adb",
+      "priority": "High"
+    },
+    {
+      "ports": "5601",
+      "service": "kibana",
+      "priority": "High"
+    },
+    {
+      "ports": "5672",
+      "service": "amqp",
+      "priority": "High"
+    },
+    {
+      "ports": "5900-5909",
+      "service": "vnc",
+      "priority": "High"
+    },
+    {
+      "ports": "5984",
+      "service": "couchdb",
+      "priority": "High"
+    },
+    {
+      "ports": "5985-5986",
+      "service": "winrm",
+      "priority": "High"
+    },
+    {
+      "ports": "6379",
+      "service": "redis",
+      "priority": "Critical"
+    },
+    {
+      "ports": "6443",
+      "service": "kubernetes",
+      "priority": "Critical"
+    },
+    {
+      "ports": "7001-7002",
+      "service": "weblogic",
+      "priority": "Critical"
+    },
+    {
+      "ports": "8000",
+      "service": "http-alt",
+      "priority": "Critical"
+    },
+    {
+      "ports": "8009",
+      "service": "ajp",
+      "priority": "High"
+    },
+    {
+      "ports": "8080",
+      "service": "http-alt",
+      "priority": "Critical"
+    },
+    {
+      "ports": "8443",
+      "service": "https-alt",
+      "priority": "Critical"
+    },
+    {
+      "ports": "9000",
+      "service": "web-admin",
+      "priority": "High"
+    },
+    {
+      "ports": "9090",
+      "service": "prometheus",
+      "priority": "High"
+    },
+    {
+      "ports": "9092",
+      "service": "kafka",
+      "priority": "High"
+    },
+    {
+      "ports": "9100",
+      "service": "jetdirect",
+      "priority": "Medium"
+    },
+    {
+      "ports": "9200",
+      "service": "elasticsearch",
+      "priority": "High"
+    },
+    {
+      "ports": "9300",
+      "service": "elasticsearch-transport",
+      "priority": "High"
+    },
+    {
+      "ports": "9418",
+      "service": "git",
+      "priority": "High"
+    },
+    {
+      "ports": "9443",
+      "service": "https-admin",
+      "priority": "Critical"
+    },
+    {
+      "ports": "9990",
+      "service": "jboss",
+      "priority": "High"
+    },
+    {
+      "ports": "10000",
+      "service": "webmin",
+      "priority": "High"
+    },
+    {
+      "ports": "10250",
+      "service": "kubelet",
+      "priority": "Critical"
+    },
+    {
+      "ports": "10443",
+      "service": "https-alt",
+      "priority": "Critical"
+    },
+    {
+      "ports": "15672",
+      "service": "rabbitmq-management",
+      "priority": "High"
+    },
+    {
+      "ports": "27017",
+      "service": "mongodb",
+      "priority": "High"
+    },
+    {
+      "ports": "11211",
+      "service": "memcached",
+      "priority": "High"
+    }
+  ],
+  "udp": [
+    {
+      "ports": "53",
+      "service": "dns",
+      "priority": "High"
+    },
+    {
+      "ports": "67-68",
+      "service": "dhcp",
+      "priority": "Medium"
+    },
+    {
+      "ports": "69",
+      "service": "tftp",
+      "priority": "Medium"
+    },
+    {
+      "ports": "123",
+      "service": "ntp",
+      "priority": "Medium"
+    },
+    {
+      "ports": "137",
+      "service": "netbios-ns",
+      "priority": "Medium"
+    },
+    {
+      "ports": "161-162",
+      "service": "snmp",
+      "priority": "Critical"
+    },
+    {
+      "ports": "500",
+      "service": "isakmp",
+      "priority": "High"
+    },
+    {
+      "ports": "514",
+      "service": "syslog",
+      "priority": "Medium"
+    },
+    {
+      "ports": "520",
+      "service": "rip",
+      "priority": "Medium"
+    },
+    {
+      "ports": "623",
+      "service": "ipmi",
+      "priority": "High"
+    },
+    {
+      "ports": "1434",
+      "service": "mssql-browser",
+      "priority": "High"
+    },
+    {
+      "ports": "1900",
+      "service": "ssdp",
+      "priority": "Medium"
+    },
+    {
+      "ports": "4500",
+      "service": "ipsec-nat-t",
+      "priority": "High"
+    },
+    {
+      "ports": "5060",
+      "service": "sip",
+      "priority": "High"
+    },
+    {
+      "ports": "5353",
+      "service": "mdns",
+      "priority": "Medium"
+    },
+    {
+      "ports": "11211",
+      "service": "memcached",
+      "priority": "High"
+    },
+    {
+      "ports": "88",
+      "service": "kerberos",
+      "priority": "High",
+      "scope": "guide_transport_extension"
+    },
+    {
+      "ports": "111",
+      "service": "rpcbind",
+      "priority": "High",
+      "scope": "guide_transport_extension"
+    },
+    {
+      "ports": "389",
+      "service": "cldap",
+      "priority": "High",
+      "scope": "guide_transport_extension"
+    },
+    {
+      "ports": "902",
+      "service": "vmware",
+      "priority": "High",
+      "scope": "guide_transport_extension"
+    },
+    {
+      "ports": "2049",
+      "service": "nfs",
+      "priority": "High",
+      "scope": "guide_transport_extension"
+    },
+    {
+      "ports": "3389",
+      "service": "rdp",
+      "priority": "High",
+      "scope": "guide_transport_extension"
+    }
+  ]
+}

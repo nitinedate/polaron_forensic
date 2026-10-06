@@ -1,0 +1,41 @@
+Polaron consolidated merge verification - 2026-10-03
+Base: user supplied pol.zip
+
+1) Focused forensic/mobile/report/V43/V44 suite
+   Command scope:
+     - adaptive semaphore/resource governor
+     - Cellebrite UFED inventory
+     - 13-report reference training
+     - extract-then-process barrier V43
+     - host capacity
+     - EML(X) reconciliation V44
+     - email MIME inventory
+   RESULT: 66 passed
+
+2) Vulnerability focused regression
+   Tests:
+     test_vuln_extended.py
+     test_vuln_module.py
+     test_vuln_orchestrator.py
+   RESULT: 58 passed
+
+3) Migration 037 focused checks
+   RESULT: 2 passed, 8 deselected
+
+4) Broader EML/email/report/browse suite
+   RESULT: 36 passed, 1 failed
+   The failing test is the previously documented stale dummy-DB test:
+     test_email_count_fallback.py::test_report_email_collectors_skip_encyclopedia_fallback
+   It creates a _Db object without execute(); the same failure existed in the prior V44 baseline.
+
+5) Backend compile
+   python -m compileall -q backend/app
+   RESULT: PASS
+
+6) Disk high-throughput runtime test collection
+   Environment limitation: ModuleNotFoundError: zstandard in this execution environment.
+   Source compile passed. Run this test in the built backend Docker image where project dependencies are installed.
+
+7) Full frontend build
+   Environment limitation: supplied workspace does not contain installed frontend dependencies such as Vite/React/clsx/lucide-react.
+   A no-resolve TypeScript pass on the modified files produced only missing-module diagnostics and no TS1xxx syntax-class errors.

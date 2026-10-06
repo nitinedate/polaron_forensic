@@ -1,0 +1,14 @@
+Aetheris Dynamic Drive v4.4 validation
+
+..................                                                       [100%]
+18 passed in 0.11s
+
+docker-compose.yml: YAML PASS (20 services)
+docker-compose.https.yml: YAML PASS (22 services)
+docker-compose.drives.generated.yml: YAML PASS (4 services)
+generate-drive-mounts.ps1: braces 98=98, parens 147=147
+resolve-docker-drive-source.ps1: braces 148=148, parens 208=208
+refresh-drive-mounts-job.ps1: braces 283=283, parens 477=477
+test-dynamic-drive-mounts.ps1: braces 61=61, parens 126=126
+Static v4.4 WSL-integration invariants: PASS
+Runtime note: physical Windows/WSL/Docker external-drive verification must run on the target workstation using validate-dynamic-drive-v4.4.ps1.

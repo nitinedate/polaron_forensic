@@ -1,0 +1,554 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root,
+button,
+input,
+select,
+textarea {
+  font-family: "Segoe UI", system-ui, ui-sans-serif, sans-serif;
+  font-feature-settings: normal;
+  font-variation-settings: normal;
+  word-spacing: normal;
+  letter-spacing: normal;
+}
+
+/* Bootstrap grid + utilities sit beside Tailwind. Reboot is not imported so
+ * existing buttons, forms, and cards keep the Polaron theme. */
+.container-fluid {
+  --bs-gutter-x: 0;
+}
+.row {
+  --bs-gutter-x: 1.25rem;
+  --bs-gutter-y: 1.25rem;
+}
+
+:root,
+[data-theme="polaron"] {
+  --color-brand-50: 255 248 241;
+  --color-brand-100: 255 237 213;
+  --color-brand-200: 254 215 170;
+  --color-brand-300: 253 186 116;
+  --color-brand-400: 251 146 60;
+  --color-brand-500: 244 123 32;
+  --color-brand-600: 224 90 16;
+  --color-brand-700: 194 65 12;
+  --color-brand-800: 154 52 18;
+  --color-brand-900: 124 45 18;
+  --color-brand-950: 67 20 7;
+  --color-brand-panel: 28 28 28;
+  --color-accent-50: 243 251 244;
+  --color-accent-100: 223 243 226;
+  --color-accent-200: 183 228 190;
+  --color-accent-300: 134 208 146;
+  --color-accent-400: 79 184 95;
+  --color-accent-500: 34 163 56;
+  --color-accent-600: 19 136 8;
+  --color-accent-700: 15 109 10;
+  --color-accent-800: 17 86 18;
+  --color-accent-900: 15 71 17;
+  --color-ink-50: 247 248 250;
+  --color-ink-100: 238 240 244;
+  --color-ink-200: 216 221 230;
+  --color-ink-300: 180 189 201;
+  --color-ink-400: 133 147 169;
+  --color-ink-500: 101 116 141;
+  --color-ink-600: 80 93 116;
+  --color-ink-700: 61 70 88;
+  --color-ink-800: 31 39 51;
+  --color-ink-900: 20 26 35;
+  --color-ink-950: 12 16 21;
+
+  /* Theme-aware analytics palette. Keep semantic colors recognizable while
+   * giving categorical donut slices a richer, distinct visual identity. */
+  --chart-1: 244 123 32;
+  --chart-2: 19 136 8;
+  --chart-3: 79 70 229;
+  --chart-4: 14 165 233;
+  --chart-5: 168 85 247;
+  --chart-6: 225 29 72;
+  --chart-7: 20 184 166;
+  --chart-8: 234 179 8;
+  --chart-9: 236 72 153;
+  --chart-10: 99 102 241;
+  --chart-success: 22 163 74;
+  --chart-pending: 245 158 11;
+  --chart-processing: 79 70 229;
+  --chart-danger: 220 38 38;
+  --chart-muted: 100 116 139;
+  --chart-info: 2 132 199;
+  --chart-critical: 220 38 38;
+  --chart-high: 234 88 12;
+  --chart-medium: 217 119 6;
+  --chart-low: 37 99 235;
+  --chart-track: 226 232 240;
+  --chart-separator: 255 255 255;
+  --app-wash-1: rgb(255 237 213 / 0.55);
+  --app-wash-2: rgb(223 243 226 / 0.4);
+}
+
+[data-theme="harbor"] {
+  --color-brand-50: 240 253 250;
+  --color-brand-100: 204 251 241;
+  --color-brand-200: 153 246 228;
+  --color-brand-300: 94 234 212;
+  --color-brand-400: 45 212 191;
+  --color-brand-500: 13 148 136;
+  --color-brand-600: 15 118 110;
+  --color-brand-700: 17 94 89;
+  --color-brand-800: 17 76 73;
+  --color-brand-900: 19 62 58;
+  --color-brand-950: 4 47 46;
+  --color-brand-panel: 15 23 42;
+  --color-accent-50: 238 242 255;
+  --color-accent-100: 224 231 255;
+  --color-accent-200: 199 210 254;
+  --color-accent-300: 165 180 252;
+  --color-accent-400: 129 140 248;
+  --color-accent-500: 79 70 229;
+  --color-accent-600: 67 56 202;
+  --color-accent-700: 55 48 163;
+  --color-accent-800: 49 46 129;
+  --color-accent-900: 30 27 75;
+  --color-ink-50: 246 250 252;
+  --color-ink-100: 232 241 245;
+  --color-ink-200: 203 219 227;
+  --color-ink-300: 163 186 198;
+  --color-ink-400: 113 140 156;
+  --color-ink-500: 84 110 126;
+  --color-ink-600: 64 86 102;
+  --color-ink-700: 51 69 82;
+  --color-ink-800: 27 42 53;
+  --color-ink-900: 15 27 36;
+  --color-ink-950: 8 16 22;
+
+  --chart-1: 13 148 136;
+  --chart-2: 79 70 229;
+  --chart-3: 14 165 233;
+  --chart-4: 16 185 129;
+  --chart-5: 217 119 6;
+  --chart-6: 219 39 119;
+  --chart-7: 124 58 237;
+  --chart-8: 6 182 212;
+  --chart-9: 225 29 72;
+  --chart-10: 132 204 22;
+  --chart-success: 5 150 105;
+  --chart-pending: 217 119 6;
+  --chart-processing: 13 148 136;
+  --chart-danger: 225 29 72;
+  --chart-muted: 100 116 139;
+  --chart-info: 2 132 199;
+  --chart-critical: 220 38 38;
+  --chart-high: 234 88 12;
+  --chart-medium: 202 138 4;
+  --chart-low: 37 99 235;
+  --chart-track: 203 219 227;
+  --chart-separator: 255 255 255;
+  --app-wash-1: rgb(153 246 228 / 0.42);
+  --app-wash-2: rgb(199 210 254 / 0.38);
+}
+
+[data-theme="midnight"] {
+  --color-brand-50: 238 242 255;
+  --color-brand-100: 224 231 255;
+  --color-brand-200: 199 210 254;
+  --color-brand-300: 165 180 252;
+  --color-brand-400: 129 140 248;
+  --color-brand-500: 79 70 229;
+  --color-brand-600: 67 56 202;
+  --color-brand-700: 55 48 163;
+  --color-brand-800: 49 46 129;
+  --color-brand-900: 30 27 75;
+  --color-brand-950: 23 23 54;
+  --color-brand-panel: 15 23 42;
+  --color-accent-50: 255 251 235;
+  --color-accent-100: 254 243 199;
+  --color-accent-200: 253 230 138;
+  --color-accent-300: 252 211 77;
+  --color-accent-400: 251 191 36;
+  --color-accent-500: 217 145 30;
+  --color-accent-600: 180 113 20;
+  --color-accent-700: 146 88 16;
+  --color-accent-800: 120 73 16;
+  --color-accent-900: 78 50 12;
+  --color-ink-50: 246 247 251;
+  --color-ink-100: 232 234 244;
+  --color-ink-200: 210 214 230;
+  --color-ink-300: 165 172 196;
+  --color-ink-400: 120 129 160;
+  --color-ink-500: 90 98 128;
+  --color-ink-600: 70 76 104;
+  --color-ink-700: 52 57 82;
+  --color-ink-800: 30 34 54;
+  --color-ink-900: 18 20 36;
+  --color-ink-950: 10 12 22;
+
+  --chart-1: 79 70 229;
+  --chart-2: 217 145 30;
+  --chart-3: 139 92 246;
+  --chart-4: 6 182 212;
+  --chart-5: 16 185 129;
+  --chart-6: 244 63 94;
+  --chart-7: 249 115 22;
+  --chart-8: 59 130 246;
+  --chart-9: 217 70 239;
+  --chart-10: 132 204 22;
+  --chart-success: 16 185 129;
+  --chart-pending: 217 145 30;
+  --chart-processing: 99 102 241;
+  --chart-danger: 239 68 68;
+  --chart-muted: 120 129 160;
+  --chart-info: 56 189 248;
+  --chart-critical: 239 68 68;
+  --chart-high: 249 115 22;
+  --chart-medium: 234 179 8;
+  --chart-low: 59 130 246;
+  --chart-track: 210 214 230;
+  --chart-separator: 255 255 255;
+  --app-wash-1: rgb(165 180 252 / 0.42);
+  --app-wash-2: rgb(253 230 138 / 0.28);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-ink-50 text-ink-800 font-sans antialiased;
+    background-image:
+      radial-gradient(ellipse 110% 70% at 0% -8%, var(--app-wash-1), transparent 52%),
+      radial-gradient(ellipse 80% 55% at 100% 108%, var(--app-wash-2), transparent 48%);
+    background-attachment: fixed;
+  }
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-xl border border-ink-300 bg-white/90 px-3.5 py-2.5 text-sm text-ink-800
+      placeholder:text-ink-400 shadow-panel transition
+      focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/20;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-semibold text-ink-700;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold
+      transition focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .btn-primary {
+    @apply btn bg-ink-900 text-white hover:bg-ink-800 focus:ring-ink-900/20;
+  }
+  .btn-brand {
+    @apply btn bg-brand-600 text-white hover:bg-brand-500 focus:ring-brand-500/35;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-ink-600 hover:bg-brand-50 focus:ring-brand-200/60;
+  }
+  .btn-outline {
+    @apply btn border border-ink-300 bg-white/80 text-ink-700 shadow-panel
+      hover:border-brand-400 hover:bg-brand-50/70 focus:ring-brand-200/50;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-500 focus:ring-red-600/30;
+  }
+  /* Soft rounded shells — medium-dark borders + light brand wash */
+  .card {
+    @apply rounded-2xl border border-ink-200 bg-gradient-to-b from-white via-white to-brand-50/30
+      shadow-card transition-shadow duration-200;
+  }
+  .card:hover {
+    box-shadow:
+      0 2px 4px rgb(28 28 28 / 0.05),
+      0 8px 22px rgb(28 28 28 / 0.07),
+      0 0 0 1px rgb(80 93 116 / 0.35);
+  }
+  .panel {
+    @apply rounded-2xl border border-ink-200 bg-brand-50/40 shadow-panel;
+  }
+  .panel-inset {
+    @apply rounded-xl border border-ink-300 bg-white/70 shadow-panel;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+}
+
+/*
+ * Table headers: Tailwind bg-brand-100 on <tr>/<thead> is a utility and would
+ * paint a square fill over rounded card corners. Paint cells instead, and clip
+ * every card/panel that contains a list table. Unlayered so it wins over utilities.
+ */
+.card:has(.table-head),
+.panel:has(.table-head),
+.panel-inset:has(.table-head),
+.table-shell {
+  overflow: hidden;
+}
+
+table:has(.table-head),
+table:has(> thead.table-head) {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table-head,
+thead.table-head,
+tr.table-head,
+thead[class*="bg-brand-100"],
+tr[class*="bg-brand-100"] {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+.table-head > th,
+.table-head > tr > th,
+thead.table-head th,
+tr.table-head th,
+thead[class*="bg-brand-100"] th,
+tr[class*="bg-brand-100"] th {
+  background-color: rgb(var(--color-brand-100));
+}
+
+/* Flush tables: match .card rounded-2xl so gold follows the card corner. */
+.card > table:first-child .table-head > th:first-child,
+.card > table:first-child .table-head > tr > th:first-child,
+.card > table:first-child thead.table-head th:first-child,
+.card > table:first-child tr.table-head th:first-child,
+.card > .overflow-x-auto:first-child .table-head > th:first-child,
+.card > .overflow-x-auto:first-child .table-head > tr > th:first-child,
+.card > .overflow-x-auto:first-child thead.table-head th:first-child,
+.card > .overflow-x-auto:first-child tr.table-head th:first-child {
+  border-top-left-radius: 1.125rem;
+}
+
+.card > table:first-child .table-head > th:last-child,
+.card > table:first-child .table-head > tr > th:last-child,
+.card > table:first-child thead.table-head th:last-child,
+.card > table:first-child tr.table-head th:last-child,
+.card > .overflow-x-auto:first-child .table-head > th:last-child,
+.card > .overflow-x-auto:first-child .table-head > tr > th:last-child,
+.card > .overflow-x-auto:first-child thead.table-head th:last-child,
+.card > .overflow-x-auto:first-child tr.table-head th:last-child {
+  border-top-right-radius: 1.125rem;
+}
+
+.table-shell .table-head > th:first-child,
+.table-shell .table-head > tr > th:first-child,
+.table-shell thead.table-head th:first-child {
+  border-top-left-radius: 0.375rem;
+}
+
+.table-shell .table-head > th:last-child,
+.table-shell .table-head > tr > th:last-child,
+.table-shell thead.table-head th:last-child {
+  border-top-right-radius: 0.375rem;
+}
+
+/* Subtle scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-ink-200;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-ink-300;
+}
+
+/* Forensic report — one ISO A4 sheet. Header and footer are the paper, not overlays. */
+.report-a4-page {
+  --a4-header: 14.814814%; /* 44mm of 297mm */
+  --a4-footer: 8.754208%; /* 26mm of 297mm */
+  --a4-pagenum: 10mm; /* reserved band above the footer for "Page N" */
+  position: relative;
+  width: min(210mm, 100%);
+  aspect-ratio: 210 / 297;
+  height: auto;
+  max-height: none;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  flex-shrink: 0;
+  isolation: isolate;
+  background-color: #ffffff;
+  border: 1px solid #c5d0db;
+  border-radius: 0;
+}
+
+.report-a4-letterhead-header,
+.report-a4-letterhead-footer {
+  display: block;
+  position: absolute;
+  left: 0;
+  width: 100% !important;
+  max-width: none !important;
+  height: auto;
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+}
+
+.report-a4-letterhead-header {
+  top: 0;
+  height: var(--a4-header) !important;
+  object-position: left top;
+}
+
+.report-a4-letterhead-footer {
+  bottom: 0;
+  height: var(--a4-footer) !important;
+  object-position: left bottom;
+}
+
+.report-a4-content {
+  position: absolute;
+  top: var(--a4-header);
+  bottom: calc(var(--a4-footer) + var(--a4-pagenum));
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  z-index: 1;
+  padding: 8mm 16mm 2mm;
+}
+
+/* Reference forensic reports place INTRODUCTION roughly one normal text line below
+   the letterhead rather than leaving a large dashboard-style gap. */
+.report-a4-content--introduction {
+  padding-top: 5mm;
+}
+
+.report-a4-content--cover {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  padding-top: 2mm;
+}
+
+.report-a4-page-number {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--a4-footer) + 3mm);
+  z-index: 3;
+  height: var(--a4-pagenum);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  pointer-events: none;
+}
+
+.report-a4-stamp {
+  position: absolute;
+  top: 2.6%;
+  right: 3.2%;
+  z-index: 4;
+  width: 18.1%;
+  height: auto;
+  pointer-events: none;
+}
+
+.report-a4-watermark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 0;
+  width: 62%;
+  transform: translate(-50%, -50%);
+  /* The PNG itself is trained/baked to ~6% alpha so PDF, DOCX and UI match. */
+  opacity: 1;
+  pointer-events: none;
+}
+
+@media screen {
+  .report-a4-page {
+    margin-bottom: 1.5rem;
+  }
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+  html,
+  body {
+    width: 210mm;
+    margin: 0;
+    padding: 0;
+    background: white !important;
+  }
+  .report-a4-page {
+    width: 210mm !important;
+    height: 297mm !important;
+    aspect-ratio: auto !important;
+    max-width: none !important;
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    overflow: hidden !important;
+    border: none !important;
+    border-radius: 0 !important;
+    page-break-after: always;
+    break-after: page;
+    background-color: #ffffff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .report-a4-letterhead-header,
+  .report-a4-letterhead-footer {
+    display: block !important;
+    width: 210mm !important;
+    max-width: none !important;
+    object-fit: fill !important;
+  }
+  .report-a4-letterhead-header {
+    height: 44mm !important;
+  }
+  .report-a4-letterhead-footer {
+    height: 26mm !important;
+  }
+  .report-a4-content {
+    top: 44mm !important;
+    bottom: 36mm !important; /* 26mm footer + 10mm page-number band */
+    padding-top: 8mm !important;
+  }
+  .report-a4-content--introduction {
+    padding-top: 5mm !important;
+  }
+  .report-a4-page-number {
+    bottom: 29mm !important;
+    height: 10mm !important;
+  }
+  .report-a4-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+}
+
+/* Sliding fallback when acquisition progress_pct is briefly unavailable. */
+@keyframes acq-indet-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+.report-human-edit {
+  color: #1d4ed8;
+}
+.report-inline-editor {
+  caret-color: #1d4ed8;
+}

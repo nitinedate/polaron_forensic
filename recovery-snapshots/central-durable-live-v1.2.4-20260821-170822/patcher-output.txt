@@ -1,0 +1,37 @@
+﻿{
+  "root": "F:\\rag_new2",
+  "source_policy": "LIVE backend/app only; backups are never read",
+  "files": [
+    {
+      "relative_path": "backend/app/routers/vuln.py",
+      "source_sha256": "49c66dff72dc432966068a022ea2b63a5f164a2d073f23e161a87b875a145619",
+      "staged_sha256": "49c66dff72dc432966068a022ea2b63a5f164a2d073f23e161a87b875a145619",
+      "changed": false,
+      "auth_sql_patches": 0,
+      "auth_python_patches": 0,
+      "rotation_patches": 0
+    },
+    {
+      "relative_path": "backend/app/services/scanner_agent_auth.py",
+      "source_sha256": "72c6b4fdc71a6f62eabc02978b52665137893e87eb589e193eaa24bf99c328ce",
+      "staged_sha256": "a321507457042da3c607d195ef1a78890932c92b04640bcf7d57bb4a8a939462",
+      "changed": true,
+      "auth_sql_patches": 1,
+      "auth_python_patches": 0,
+      "rotation_patches": 0
+    },
+    {
+      "relative_path": "backend/app/routers/scanner_agent.py",
+      "source_sha256": "2aeb7003f35447fa8215bf30f28ca86fffbf0498357bbe2faa6aa013ea924012",
+      "staged_sha256": "2aeb7003f35447fa8215bf30f28ca86fffbf0498357bbe2faa6aa013ea924012",
+      "changed": false,
+      "auth_sql_patches": 0,
+      "auth_python_patches": 0,
+      "rotation_patches": 0
+    }
+  ],
+  "auth_patches": 1,
+  "python_auth_patches": 0,
+  "rotation_patches": 0,
+  "existing_live_marker": false
+}

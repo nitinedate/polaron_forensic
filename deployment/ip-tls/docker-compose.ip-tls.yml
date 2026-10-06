@@ -1,0 +1,11 @@
+﻿services:
+  caddy:
+    volumes:
+      - aetheris_ip_letsencrypt:/etc/letsencrypt:ro
+      - aetheris_ip_acme_webroot:/var/www/acme:ro
+
+volumes:
+  aetheris_ip_letsencrypt:
+    external: true
+  aetheris_ip_acme_webroot:
+    external: true

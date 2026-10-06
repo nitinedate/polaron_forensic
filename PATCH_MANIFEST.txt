@@ -1,0 +1,10 @@
+Polaron/Aetheris Mobile Unified Console V26 patch
+Base: polaron2_concurrency_audit_v25_full.zip
+Date: 2026-09-24
+
+Purpose:
+- Add Mobile Forensics navigation to the unified Enterprise Console.
+- Keep Android/iOS API routing and evidence processing isolated.
+- Add Device -> Image, Images -> RAG, Jobs, RAG and Reports mobile workflows.
+- Filter direct/local device discovery by Android/iOS platform.
+- Add regression tests for unified mobile routing and menu isolation.

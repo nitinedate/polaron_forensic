@@ -1,0 +1,39 @@
+def get_edge_agent(
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+    x_tenant: str | None = Header(default=None, alias="X-Tenant"),
+) -> EdgeAgentContext:
+    if not creds or not creds.credentials:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": {"code": "unauthorized", "message": "Agent bearer token required"}},
+        )
+    db = SessionLocal()
+    try:
+        db.execute(text("SET search_path TO public"))
+        firm_slug, schema_name = resolve_firm_schema(db, x_tenant or "")
+        bind_firm_schema(db, schema_name)
+        apply_firm_search_path(db, schema_name)
+        token_hash = hash_agent_token(creds.credentials)
+        row = fetchone(
+            db,
+            """SELECT * FROM vuln_scanners
+               WHERE (agent_token_hash = :th OR agent_recovery_token_hash = :th OR (agent_previous_token_hash = :th AND agent_previous_token_valid_until > NOW())) /* AETHERIS_V124_TARGETED_AUTH_FIX4 */
+                 AND lower(coalesce(connection_mode, 'gmp')) = :mode
+                 AND lower(status) = 'active'
+               LIMIT 1""",
+            {"th": token_hash, "mode": CONNECTION_MODE_EDGE},
+        )
+        if not row:
+            raise HTTPException(
+                status_code=401,
+                detail={"error": {"code": "unauthorized", "message": "Invalid agent token"}},
+            )
+        return EdgeAgentContext(
+            firm_slug=firm_slug,
+            schema_name=schema_name,
+            scanner_id=str(row["id"]),
+            scanner_name=str(row.get("name") or ""),
+            scanner=dict(row),
+        )
+    finally:
+        db.close()

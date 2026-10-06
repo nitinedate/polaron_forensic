@@ -1,0 +1,470 @@
+# Service 2 — Mobile extraction to .pas / .ufd / .ufdx / .zip (existing process).
+# Independent of forensic and vuln. From repo root:
+#   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\ensure-capacity.ps1
+#   docker compose -f services/mobile-extract/docker-compose.yml --project-directory . up -d --build
+# Shared Redis is services/common (logical DB 15 for the resource governor). Without it,
+# extract tasks retry with CpuHeavySlotTimeout / "resource governor unavailable".
+name: aetheris-mobile-extract
+
+# Shared GPU reservation (NVIDIA Container Toolkit / Docker Desktop GPU)
+x-gpu: &gpu
+  driver: nvidia
+  count: 1
+  capabilities: [gpu]
+
+x-extract-volumes: &extract-volumes
+  - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+  - type: bind
+    source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/mobile-extract/job-data
+    target: /app/data
+
+x-extract-env: &extract-env
+  AETHERIS_SERVICE: mobile-extract
+  VULN_MODULE_ENABLED: "false"
+  DATABASE_URL: postgresql+psycopg2://forensic:forensic@postgres:5432/forensic
+  REDIS_URL: redis://redis:6379/4
+  RESOURCE_GOVERNOR_ENABLED: ${RESOURCE_GOVERNOR_ENABLED:-true}
+  RESOURCE_GOVERNOR_REDIS_URL: ${RESOURCE_GOVERNOR_REDIS_URL:-redis://redis:6379/15}
+  RESOURCE_GOVERNOR_GROUP: ${RESOURCE_GOVERNOR_GROUP:-aetheris-host}
+  RESOURCE_GOVERNOR_FAIL_OPEN_ON_UNAVAILABLE: ${RESOURCE_GOVERNOR_FAIL_OPEN_ON_UNAVAILABLE:-true}
+  RESOURCE_GOVERNOR_CPU_MAX_SLOTS: ${RESOURCE_GOVERNOR_CPU_MAX_SLOTS:-10}
+  RESOURCE_GOVERNOR_GPU_MAX_SLOTS: ${RESOURCE_GOVERNOR_GPU_MAX_SLOTS:-4}
+  GPU_RELEASE_MODEL_AFTER_TASK: ${GPU_RELEASE_MODEL_AFTER_TASK:-true}
+  MINIO_ENDPOINT: minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+  MINIO_BUCKET: ${MINIO_BUCKET:-mobile-extract}
+  HOST_EVIDENCE_ENABLED: ${HOST_EVIDENCE_ENABLED:-true}
+  HOST_DRIVE_HELPER_URL: ${HOST_DRIVE_HELPER_URL:-http://host.docker.internal:9876}
+  DATA_ROOT: /app/data
+  TMPDIR: /app/data/tmp
+  TMP: /app/data/tmp
+  TEMP: /app/data/tmp
+  AETHERIS_WORKER: "1"
+  IDLE_IN_TRANSACTION_SESSION_TIMEOUT: "0"
+  EXTRACT_MOBILE_WORKERS: ${EXTRACT_MOBILE_WORKERS:-12}
+  EXTRACT_SHARD_COUNT: ${EXTRACT_SHARD_COUNT:-12}
+  EXTRACT_MODE: mobile
+  MAX_CONCURRENT_DISK_BUILDS: ${MAX_CONCURRENT_DISK_BUILDS:-4}
+  DYNAMIC_PERF_ENABLED: ${DYNAMIC_PERF_ENABLED:-true}
+  DYNAMIC_PERF_FORCE: ${DYNAMIC_PERF_FORCE:-true}
+  AETHERIS_SHARE_HOST: ${AETHERIS_SHARE_HOST:-true}
+  GPU_THERMAL_ENABLED: ${GPU_THERMAL_ENABLED:-true}
+  GPU_THERMAL_THROTTLE_C: ${GPU_THERMAL_THROTTLE_C:-87}
+  GPU_THERMAL_PAUSE_C: ${GPU_THERMAL_PAUSE_C:-92}
+  GPU_THERMAL_RESUME_C: ${GPU_THERMAL_RESUME_C:-84}
+  GPU_THERMAL_ABORT_C: ${GPU_THERMAL_ABORT_C:-94}
+  GPU_HEAVY_MAX_CONCURRENT: ${GPU_HEAVY_MAX_CONCURRENT:-2}
+  CPU_THERMAL_THROTTLE_C: ${CPU_THERMAL_THROTTLE_C:-86}
+  CPU_THERMAL_PAUSE_C: ${CPU_THERMAL_PAUSE_C:-94}
+  LONG_JOB_TIMEOUT_SEC: ${LONG_JOB_TIMEOUT_SEC:-0}
+  PIPELINE_SUPERVISOR_ENABLED: "true"
+  RAG_EMBEDDING_ENABLED: "false"
+  MAIL_SEND_ENABLED: "false"
+  PHASE3_AUTO_AFTER_DISK: "true"
+  OCR_ENABLED: "true"
+  OCR_DEVICE: cuda
+  OCR_GPU_ONLY: "true"
+  OCR_PARALLEL_BUCKETS: "0"
+  OCR_ENGINE: ${OCR_ENGINE:-glm-ocr}
+  OCR_MODEL: ${OCR_MODEL:-zai-org/GLM-OCR}
+  NVIDIA_VISIBLE_DEVICES: all
+  NVIDIA_DRIVER_CAPABILITIES: compute,utility
+  # Ollama lives on the forensic stack and is published on the host (:11434).
+  # Do NOT join aetheris-forensic_default — that shadows hostname "postgres".
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+
+services:
+  nvidia-cuda:
+    image: nvidia/cuda:12.6.3-base-ubuntu24.04
+    command: ["sh", "-c", "nvidia-smi -L && echo CUDA_OK && exec sleep infinity"]
+    gpus: all
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "nvidia-smi -L"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # GPU smoke test: docker compose --profile gpu-test run --rm nvidia-smi
+  nvidia-smi:
+    image: nvidia/cuda:12.6.3-base-ubuntu24.04
+    command: nvidia-smi
+    gpus: all
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+    profiles:
+      - gpu-test
+
+  api:
+    networks:
+      - default
+      - aetheris-common
+    image: rag_new2-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      <<: *extract-env
+      APP_BASE_URL: http://localhost:3000
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-superadmin@admin.com}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-admin@123456789}
+    ports:
+      - "127.0.0.1:8081:8080"
+    # CUDA device is visible; adaptive governor controls heavy GPU admission.
+    gpus: all
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts
+      - ./migrations:/migrations
+      - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/mobile-extract
+        target: /app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: >
+      sh -c "mkdir -p /app/data/tmp && alembic upgrade head 2>/dev/null || true &&
+             python /scripts/ensure_sql_functions.py &&
+             python /scripts/bootstrap_platform_admin.py &&
+             uvicorn app.main_mobile_extract:app --host 0.0.0.0 --port 8080"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 180s
+
+  worker-mobile:
+    networks:
+      - default
+      - aetheris-common
+    image: rag_new2-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      <<: *extract-env
+    # CUDA device is visible; adaptive governor controls heavy GPU admission.
+    gpus: all
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/mobile-extract
+        target: /app/data
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/mobile-extract/uploads
+        target: /app/data/uploads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_healthy
+    entrypoint:
+      - python
+      - /scripts/dynamic_perf_entrypoint.py
+    command:
+      - celery
+      - -A
+      - app.celery_mobile_extract.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=${MOBILE_BUILD_CONCURRENCY:-5}
+      - --prefetch-multiplier=1
+      - -Q
+      - mobile-build
+
+  worker-progress:
+    networks:
+    - default
+    - aetheris-common
+    image: rag_new2-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+    - .env
+    environment:
+      CUDA_VISIBLE_DEVICES: ""
+      AETHERIS_SERVICE: mobile-extract
+      VULN_MODULE_ENABLED: 'false'
+      DATABASE_URL: postgresql+psycopg2://forensic:forensic@postgres:5432/forensic
+      REDIS_URL: redis://redis:6379/4
+      RESOURCE_GOVERNOR_ENABLED: ${RESOURCE_GOVERNOR_ENABLED:-true}
+      RESOURCE_GOVERNOR_REDIS_URL: ${RESOURCE_GOVERNOR_REDIS_URL:-redis://redis:6379/15}
+      RESOURCE_GOVERNOR_GROUP: ${RESOURCE_GOVERNOR_GROUP:-aetheris-host}
+      RESOURCE_GOVERNOR_FAIL_OPEN_ON_UNAVAILABLE: ${RESOURCE_GOVERNOR_FAIL_OPEN_ON_UNAVAILABLE:-true}
+      RESOURCE_GOVERNOR_CPU_MAX_SLOTS: ${RESOURCE_GOVERNOR_CPU_MAX_SLOTS:-10}
+      RESOURCE_GOVERNOR_GPU_MAX_SLOTS: ${RESOURCE_GOVERNOR_GPU_MAX_SLOTS:-4}
+      GPU_RELEASE_MODEL_AFTER_TASK: ${GPU_RELEASE_MODEL_AFTER_TASK:-true}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-mobile-extract}
+      HOST_EVIDENCE_ENABLED: ${HOST_EVIDENCE_ENABLED:-true}
+      HOST_DRIVE_HELPER_URL: ${HOST_DRIVE_HELPER_URL:-http://host.docker.internal:9876}
+      DATA_ROOT: /app/data
+      TMPDIR: /app/data/tmp
+      TMP: /app/data/tmp
+      TEMP: /app/data/tmp
+      AETHERIS_WORKER: '1'
+      IDLE_IN_TRANSACTION_SESSION_TIMEOUT: '0'
+      EXTRACT_MOBILE_WORKERS: ${EXTRACT_MOBILE_WORKERS:-12}
+      EXTRACT_SHARD_COUNT: ${EXTRACT_SHARD_COUNT:-12}
+      EXTRACT_MODE: mobile
+      MAX_CONCURRENT_DISK_BUILDS: ${MAX_CONCURRENT_DISK_BUILDS:-4}
+      DYNAMIC_PERF_ENABLED: ${DYNAMIC_PERF_ENABLED:-true}
+      DYNAMIC_PERF_FORCE: ${DYNAMIC_PERF_FORCE:-true}
+      AETHERIS_SHARE_HOST: ${AETHERIS_SHARE_HOST:-true}
+      GPU_THERMAL_ENABLED: ${GPU_THERMAL_ENABLED:-true}
+      GPU_THERMAL_THROTTLE_C: ${GPU_THERMAL_THROTTLE_C:-87}
+      GPU_THERMAL_PAUSE_C: ${GPU_THERMAL_PAUSE_C:-92}
+      GPU_THERMAL_RESUME_C: ${GPU_THERMAL_RESUME_C:-84}
+      GPU_THERMAL_ABORT_C: ${GPU_THERMAL_ABORT_C:-94}
+      GPU_HEAVY_MAX_CONCURRENT: ${GPU_HEAVY_MAX_CONCURRENT:-2}
+      CPU_THERMAL_THROTTLE_C: ${CPU_THERMAL_THROTTLE_C:-86}
+      CPU_THERMAL_PAUSE_C: ${CPU_THERMAL_PAUSE_C:-94}
+      LONG_JOB_TIMEOUT_SEC: ${LONG_JOB_TIMEOUT_SEC:-0}
+      PIPELINE_SUPERVISOR_ENABLED: 'true'
+      RAG_EMBEDDING_ENABLED: 'false'
+      MAIL_SEND_ENABLED: 'false'
+      PHASE3_AUTO_AFTER_DISK: 'true'
+      OCR_ENABLED: 'true'
+      OCR_DEVICE: cuda
+      OCR_GPU_ONLY: 'true'
+      OCR_PARALLEL_BUCKETS: '0'
+      OCR_ENGINE: ${OCR_ENGINE:-glm-ocr}
+      OCR_MODEL: ${OCR_MODEL:-zai-org/GLM-OCR}
+      NVIDIA_VISIBLE_DEVICES: none
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      WORKER_ROLE: progress
+      DB_POOL_SIZE: '2'
+      DB_MAX_OVERFLOW: '1'
+    volumes:
+    - ./backend:/app
+    - ./scripts:/scripts:ro
+    extra_hosts:
+    - host.docker.internal:host-gateway
+    depends_on:
+      api:
+        condition: service_healthy
+    entrypoint:
+    - python
+    - /scripts/dynamic_perf_entrypoint.py
+    command:
+    - celery
+    - -A
+    - app.celery_mobile_extract.celery
+    - worker
+    - --loglevel=info
+    - --concurrency=1
+    - --prefetch-multiplier=1
+    - -Q
+    - mobile-progress
+
+  worker-beat:
+    networks:
+      - default
+      - aetheris-common
+    image: rag_new2-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      <<: *extract-env
+    # CUDA device is visible; adaptive governor controls heavy GPU admission.
+    gpus: all
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_healthy
+    entrypoint:
+      - python
+      - /scripts/dynamic_perf_entrypoint.py
+    command:
+      - celery
+      - -A
+      - app.celery_mobile_extract.celery
+      - beat
+      - --loglevel=info
+      - --schedule
+      - /tmp/celerybeat-schedule-mobile-extract
+
+  # Mobile OCR must run on CUDA. worker-mobile has no GPU; GLM stays here.
+  worker-ocr-gpu:
+    networks:
+      - default
+      - aetheris-common
+    image: rag_new2-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu130}
+    env_file:
+      - .env
+    environment:
+      <<: *extract-env
+      OCR_ENABLED: "true"
+      OCR_DEVICE: cuda
+      OCR_GPU_ONLY: "true"
+      OCR_PARALLEL_BUCKETS: "0"
+      OCR_CELERY_CONCURRENCY: "1"
+      OCR_BATCH_LIMIT: ${OCR_BATCH_LIMIT:-32}
+      OCR_CUDA_MEMORY_FRACTION: ${OCR_CUDA_MEMORY_FRACTION:-0.45}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+        limits:
+          memory: 6G
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/mobile-extract
+        target: /app/data
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/huggingface
+        target: /root/.cache/huggingface
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_healthy
+      nvidia-cuda:
+        condition: service_healthy
+    entrypoint:
+      - python
+      - /scripts/dynamic_perf_entrypoint.py
+    command:
+      - celery
+      - -A
+      - app.celery_mobile_extract.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=1
+      - --pool=solo
+      - --prefetch-multiplier=1
+      - -Q
+      - ocr
+
+  # GPU embeddings on rag-index. worker-mobile stays CPU so extract/parse never wait.
+  worker-rag-gpu:
+    networks:
+      - default
+      - aetheris-common
+    image: rag_new2-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu130}
+    env_file:
+      - .env
+    environment:
+      <<: *extract-env
+      RAG_EMBEDDING_DEVICE: ${RAG_EMBEDDING_DEVICE:-cuda}
+      RAG_BATCH_SIZE: ${RAG_BATCH_SIZE:-24}
+      RAG_BATCH_SIZE_CAP: ${RAG_BATCH_SIZE_CAP:-48}
+      RAG_CUDA_MEMORY_FRACTION: ${RAG_CUDA_MEMORY_FRACTION:-0.35}
+      OCR_ENABLED: "false"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - *gpu
+        limits:
+          memory: 6G
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts:ro
+      - ${HOST_EVIDENCE_PATH:-./evidence}:/evidence:ro
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/mobile-extract
+        target: /app/data
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/huggingface
+        target: /root/.cache/huggingface
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      api:
+        condition: service_healthy
+      nvidia-cuda:
+        condition: service_healthy
+    entrypoint:
+      - python
+      - /scripts/dynamic_perf_entrypoint.py
+    command:
+      - celery
+      - -A
+      - app.celery_mobile_extract.celery
+      - worker
+      - --loglevel=info
+      - --concurrency=1
+      - --pool=solo
+      - --prefetch-multiplier=1
+      - -Q
+      - rag-index
+
+  frontend:
+    profiles: ["legacy-ui"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_AETHERIS_SERVICE: mobile-extract
+        VITE_VULN_MODULE_ENABLED: "false"
+    ports:
+      - "3002:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+networks:
+  aetheris-common:
+    external: true
+    name: aetheris-common

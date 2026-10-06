@@ -1,0 +1,1272 @@
+{
+  "version": "forensic-reports-v2.0-20261003",
+  "purpose": "Curated methodology corpus distilled from all thirteen user-supplied forensic reports. It teaches evidence selection, query planning, deduplication, coverage checks, Objective/Procedure/Observation structure, Annexure traceability and cross-source synthesis. Example case values are never current-case facts.",
+  "sources": [
+    {
+      "name": "Ex-1 Forensic Report.docx",
+      "platform": "Windows",
+      "role": "disk_reference_exemplar"
+    },
+    {
+      "name": "Ex-2 Forensic Report.docx",
+      "platform": "Windows",
+      "role": "disk_reference_exemplar"
+    },
+    {
+      "name": "Ex-3 Forensic Report.docx",
+      "platform": "Windows",
+      "role": "disk_reference_exemplar"
+    },
+    {
+      "name": "Ex-4 Forensic Report.docx",
+      "platform": "Linux/Ubuntu",
+      "role": "disk_reference_exemplar"
+    },
+    {
+      "name": "Ex-5  Forensic Report.docx",
+      "platform": "Windows",
+      "role": "disk_reference_exemplar"
+    },
+    {
+      "name": "Ex.1 Darshan Forensic Report.pdf",
+      "platform": "Windows",
+      "role": "disk_reference_exemplar"
+    },
+    {
+      "name": "RRP E Mr.Seger Forensic Report.pdf",
+      "platform": "Windows",
+      "role": "disk_reference_exemplar"
+    },
+    {
+      "name": "Saurabh Kushwah Data Report.pdf",
+      "platform": "Windows",
+      "role": "data_reference_exemplar"
+    },
+    {
+      "name": "Azim Lalani Google Takeout Forensic Report.pdf",
+      "platform": "Google Takeout",
+      "role": "cloud_email_reference_exemplar"
+    },
+    {
+      "name": "Manish Google Takeout Forensic Report.pdf",
+      "platform": "Google Takeout",
+      "role": "cloud_email_reference_exemplar"
+    },
+    {
+      "name": "Saish Google Takeout Forensic Report .pdf",
+      "platform": "Google Takeout",
+      "role": "cloud_email_reference_exemplar"
+    },
+    {
+      "name": "Saurabh@fanory.com Email Forensic Report.pdf",
+      "platform": "Google Takeout",
+      "role": "cloud_email_reference_exemplar"
+    },
+    {
+      "name": "Master Report.pdf",
+      "platform": "Cross-source",
+      "role": "master_synthesis_reference_exemplar"
+    }
+  ],
+  "training_rules": [
+    "Reference reports teach methodology and wording, never current-case names, counts, dates, URLs, device identifiers or conclusions.",
+    "Section B artifact totals are candidate evidence inventory. A broad artifact count is not automatically the answer to a Section C objective.",
+    "Section C must resolve Objective -> Procedure -> relevant artifact families -> record-level evidence -> exclusions -> deduplication/correlation -> finding -> limitation -> plain-language meaning.",
+    "Section D Annexure is the traceability layer. A positive Section C observation should be reproducible from specific Annexure/source records where a suitable Annexure exists.",
+    "Section E Analysis Summary must restate the final Section C conclusion and must not independently invent or contradict a finding.",
+    "Presence is different from use; access is different from transfer; installation is different from execution; connection is different from copying; a URL visit is different from download/upload; a cleanup tool being installed is different from proof that it erased evidence.",
+    "When an expected artifact family is unavailable or incompletely collected, return INCONCLUSIVE rather than NOT_FOUND.",
+    "Platform-specific evidence must be respected. A Windows-only artifact cannot be treated as absent on Linux merely because no Windows record exists.",
+    "Raw technical rows must be classified before narrative use. Interface, hub, camera, Bluetooth, internal-disk, resource/static-asset and integration/telemetry rows must not be promoted to a stronger finding without evidence supporting that interpretation.",
+    "A report may contain analyst inconsistencies. The current-case deterministic evidence and cross-section consistency rules override an inconsistent exemplar sentence.",
+    "Google Takeout/cloud-export reports require source/service coverage verification before interpreting Gmail, Drive, Activity, Calendar, Photos or permission records.",
+    "Email account identity must distinguish a currently configured/current account from historical correspondents, message participants and browser traces.",
+    "Shared-file metadata and permission metadata prove the sharing/permission state recorded by the provider; they do not by themselves prove that a recipient opened, downloaded or exfiltrated a file.",
+    "Master/cross-source summaries must reconcile duplicated evidence across disk, mobile and cloud sources and preserve the strongest source-specific provenance instead of adding raw counts together.",
+    "Derived counts such as distinct physical devices, distinct messages and distinct cloud files must be computed after source-specific semantic deduplication and must be reproducible from traceable records."
+  ],
+  "artifact_inventory": [
+    {
+      "category": "Connected Devices",
+      "artifact_names": [
+        "USB Devices",
+        "Your Phone",
+        "Remote Desktop Protocol (RDP)"
+      ],
+      "platforms": [
+        "Windows"
+      ],
+      "rule": "Inventory counts are context; classify physical storage/mobile/remote-session records before Section C."
+    },
+    {
+      "category": "Application Usages",
+      "artifact_names": [
+        "Feature Usage",
+        "Installed Microsoft Programs",
+        "Installed Programs (Non-Microsoft)",
+        "Windows Defender Logs"
+      ],
+      "platforms": [
+        "Windows"
+      ],
+      "rule": "Use application identity and execution/session evidence separately."
+    },
+    {
+      "category": "Communication",
+      "artifact_names": [
+        "Web Chat URLs",
+        "Social Media URLs",
+        "Malware/Phishing URLs"
+      ],
+      "platforms": [
+        "Windows",
+        "Linux/Ubuntu"
+      ],
+      "rule": "Classify URL/service and preserve the distinction between service access and communication/content transfer."
+    },
+    {
+      "category": "Documents",
+      "artifact_names": [
+        "CSV Documents",
+        "Microsoft PowerPoint Documents",
+        "Microsoft Excel Documents",
+        "PDF Documents",
+        "RTF Documents",
+        "Text Documents",
+        "Microsoft Word Documents"
+      ],
+      "platforms": [
+        "Windows",
+        "Linux/Ubuntu"
+      ],
+      "rule": "Document type totals do not prove a file action, ownership or company relevance."
+    },
+    {
+      "category": "Email & Calendar",
+      "artifact_names": [
+        "Email Attachments",
+        "EML(X) Files",
+        "Windows Mail",
+        "Outlook Emails",
+        "Outlook Tasks",
+        "Outlook Contacts",
+        "Outlook Appointments"
+      ],
+      "platforms": [
+        "Windows",
+        "Linux/Ubuntu"
+      ],
+      "rule": "Message/item totals do not equal distinct email accounts."
+    },
+    {
+      "category": "Encryption & Credentials",
+      "artifact_names": [
+        "Encrypted Files",
+        "Windows Stored Credentials"
+      ],
+      "platforms": [
+        "Windows",
+        "Linux/Ubuntu"
+      ],
+      "rule": "Count supported protected objects; encryption/protection does not establish wrongdoing."
+    },
+    {
+      "category": "Media",
+      "artifact_names": [
+        "Audio",
+        "Picture",
+        "Video",
+        "Photoshop Files"
+      ],
+      "platforms": [
+        "Windows",
+        "Linux/Ubuntu"
+      ],
+      "rule": "Media totals are inventory unless an objective asks for specific content."
+    },
+    {
+      "category": "Operating System",
+      "artifact_names": [
+        "Logfile Analysis",
+        "Jump List",
+        "LNK Files"
+      ],
+      "platforms": [
+        "Windows"
+      ],
+      "rule": "Use these for correlation, execution/recent-use context and timestamps; do not substitute their total count for another objective."
+    },
+    {
+      "category": "Web Related",
+      "artifact_names": [
+        "Web Related Files"
+      ],
+      "platforms": [
+        "Windows",
+        "Linux/Ubuntu"
+      ],
+      "rule": "Review browser history, cookies, cache and downloads at record level; a global web count is not a forensic finding."
+    },
+    {
+      "category": "Cloud Account Activity",
+      "artifact_names": [
+        "Cloud Google Activity",
+        "Connected Devices History"
+      ],
+      "platforms": [
+        "Google Takeout"
+      ],
+      "rule": "Treat provider activity/device rows as service-specific records and deduplicate repeated export/telemetry entries before conclusions."
+    },
+    {
+      "category": "Cloud Email & Calendar",
+      "artifact_names": [
+        "Cloud Gmail Messages",
+        "Email Attachments",
+        "Cloud Google Calendar Events (Takeout)",
+        "Cloud Google Contacts"
+      ],
+      "platforms": [
+        "Google Takeout"
+      ],
+      "rule": "Count distinct messages/events/contacts using native identifiers where available; attachments and descriptions are linked content, not independent messages/events."
+    },
+    {
+      "category": "Cloud Drive & Permissions",
+      "artifact_names": [
+        "Google Drive Files",
+        "Google Drive Shared Files",
+        "Google Drive Shared Permissions"
+      ],
+      "platforms": [
+        "Google Takeout"
+      ],
+      "rule": "Separate file identity, sharing state, permission role and actual transfer/activity. Sharing or permission alone does not prove download/exfiltration."
+    },
+    {
+      "category": "Cloud Photos",
+      "artifact_names": [
+        "Google Photos",
+        "Google Photos Albums"
+      ],
+      "platforms": [
+        "Google Takeout"
+      ],
+      "rule": "Link album metadata to distinct media and deduplicate exported copies using provider IDs/hashes where available."
+    }
+  ],
+  "objective_patterns": [
+    {
+      "id": "REMOTE_ACCESS_TOOLS",
+      "canonical_title": "Verify Use of Unauthorized Remote Access Tools",
+      "aliases": [
+        "unauthorized remote access",
+        "remote access tools",
+        "remote session activity",
+        "RDP activity",
+        "remote desktop access"
+      ],
+      "client_objective": "To determine whether remote access tools were present and whether the available evidence shows remote session activity.",
+      "client_procedure": "Installed applications and relevant remote-session/system records were examined to identify remote access software and supported remote connectivity activity.",
+      "kb_report_ids": [
+        "INSTALLED_APPLICATIONS",
+        "PROGRAM_EXECUTION",
+        "RDP_ACTIVITY",
+        "WINDOWS_EVENT_LOGS"
+      ],
+      "annexure_kinds": [
+        "rdp_connections"
+      ],
+      "required_questions": [
+        "Which remote-access applications are installed?",
+        "Is there execution evidence for those tools?",
+        "Are there RDP or other remote-session records?",
+        "Do the records prove unauthorized external control, or only presence/session traces?"
+      ],
+      "decision_rules": [
+        "Installed tool alone proves presence, not use.",
+        "RDP/session record proves a session trace, not that it was unauthorized.",
+        "Only call access unauthorized when case evidence separately supports that conclusion."
+      ],
+      "reference_states": [
+        "tool_absent_rdp_present",
+        "tool_present_no_unauthorized_session",
+        "tool_absent_no_session"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "remote-tool product identity",
+          "RDP/remote-session event family"
+        ],
+        "dedupe_keys": [
+          "application+version",
+          "session native id",
+          "timestamp+source/destination tuple"
+        ],
+        "coverage_requirements": [
+          "installed applications",
+          "execution evidence",
+          "RDP/session logs"
+        ],
+        "index_hints": [
+          "(job_id, normalized_application)",
+          "(job_id, event_time)",
+          "(job_id, source_ip, destination_ip)"
+        ]
+      }
+    },
+    {
+      "id": "USB_EXTERNAL_DEVICE",
+      "canonical_title": "USB and External Device Usage",
+      "aliases": [
+        "usb usage",
+        "external device usage",
+        "external hard disk",
+        "external storage",
+        "removable media",
+        "mobile device connection"
+      ],
+      "client_objective": "To determine whether USB storage, mobile devices or other relevant external devices were connected to the system.",
+      "client_procedure": "Device-enumeration and connection records were examined and correlated to identify physical storage devices, mobile devices and relevant connection times.",
+      "kb_report_ids": [
+        "USB_DEVICES",
+        "VOLUME_INFORMATION",
+        "LNK_FILES",
+        "JUMP_LISTS"
+      ],
+      "annexure_kinds": [
+        "usb_devices"
+      ],
+      "required_questions": [
+        "Which rows represent distinct physical external storage devices?",
+        "Which rows are hubs, interfaces, cameras, Bluetooth, input devices, internal disks or duplicate volumes?",
+        "Were mobile-device/Your Phone records present?",
+        "Is file transfer independently supported?"
+      ],
+      "decision_rules": [
+        "Deduplicate interface/volume rows to the physical device.",
+        "Exclude internal disks, hubs, cameras, Bluetooth and input devices from the external-storage count.",
+        "Connection does not prove file transfer."
+      ],
+      "reference_states": [
+        "storage_and_mobile_present",
+        "mobile_only",
+        "no_relevant_external_device"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "external/removable device class only"
+        ],
+        "dedupe_keys": [
+          "device_serial",
+          "VID+PID+manufacturer+model"
+        ],
+        "coverage_requirements": [
+          "USB/device enumeration",
+          "volume correlation",
+          "LNK/Jump List supporting records"
+        ],
+        "index_hints": [
+          "(job_id, device_serial)",
+          "(job_id, vid, pid)",
+          "(job_id, event_time)"
+        ]
+      }
+    },
+    {
+      "id": "CLOUD_STORAGE",
+      "canonical_title": "Cloud Storage Service Usage",
+      "aliases": [
+        "access to cloud storage services",
+        "cloud storage",
+        "cloud service usage",
+        "cloud sync",
+        "online storage"
+      ],
+      "client_objective": "To determine whether cloud storage services were accessed and whether the evidence supports any upload, download, sharing or synchronization activity.",
+      "client_procedure": "The browser history, internet activity, download records and available cloud-related records were examined to identify cloud services and any supported file-transfer or synchronization activity.",
+      "kb_report_ids": [
+        "BROWSER_HISTORY",
+        "BROWSER_DOWNLOADS",
+        "CLOUD_FILES",
+        "CLOUD_ACTIVITY"
+      ],
+      "annexure_kinds": [
+        "url_category:cloud services"
+      ],
+      "required_questions": [
+        "Which distinct cloud providers have meaningful access records?",
+        "Are records top-level/history visits or only static resources, privacy pages, integration scripts or telemetry?",
+        "Is there evidence of upload, download, sharing or sync separate from access?"
+      ],
+      "decision_rules": [
+        "Name distinct supported providers.",
+        "Cloud URL access proves access only.",
+        "Do not claim upload/download/share/sync without a supporting transfer/sync artifact."
+      ],
+      "reference_states": [
+        "service_access_without_transfer",
+        "no_supported_cloud_access"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "controlled cloud-provider/domain classification"
+        ],
+        "dedupe_keys": [
+          "provider+normalized_url",
+          "provider_file_id",
+          "download native id"
+        ],
+        "coverage_requirements": [
+          "browser history",
+          "downloads",
+          "cloud file/activity records"
+        ],
+        "index_hints": [
+          "(job_id, normalized_domain)",
+          "(job_id, event_time)",
+          "(job_id, provider, provider_file_id)"
+        ]
+      }
+    },
+    {
+      "id": "CHAT_COMMUNICATION",
+      "canonical_title": "Analysis of Chat / Communication Apps",
+      "aliases": [
+        "chat communication apps",
+        "communication apps",
+        "web chat",
+        "whatsapp web",
+        "telegram web",
+        "discord",
+        "slack",
+        "zoom"
+      ],
+      "client_objective": "To identify use of web-based chat or communication platforms on the examined system.",
+      "client_procedure": "Browser activity, messaging artifacts and relevant system records were examined to identify supported access to chat and communication services.",
+      "kb_report_ids": [
+        "BROWSER_HISTORY",
+        "INSTANT_MESSAGING",
+        "CALL_HISTORY"
+      ],
+      "annexure_kinds": [
+        "url_category:web chat urls"
+      ],
+      "required_questions": [
+        "Which communication services are supported by browser/app evidence?",
+        "Does evidence show platform access only, or message/call/file-transfer content?",
+        "Are static assets being mistaken for user activity?"
+      ],
+      "decision_rules": [
+        "Name supported services.",
+        "Service access alone does not prove messaging or file transfer.",
+        "Use message/attachment records for content-level conclusions."
+      ],
+      "reference_states": [
+        "service_access",
+        "no_supported_chat_access"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "controlled chat service/app classification"
+        ],
+        "dedupe_keys": [
+          "message native id",
+          "conversation id+timestamp+sender+body hash",
+          "normalized_url"
+        ],
+        "coverage_requirements": [
+          "browser history",
+          "native message/application records",
+          "call records where relevant"
+        ],
+        "index_hints": [
+          "(job_id, artifact_type, event_time)",
+          "(job_id, conversation_id)",
+          "(job_id, normalized_domain)"
+        ]
+      }
+    },
+    {
+      "id": "SOCIAL_MEDIA",
+      "canonical_title": "Analysis of Social Media Activity",
+      "aliases": [
+        "social media activity",
+        "social media",
+        "entertainment platforms",
+        "professional networking"
+      ],
+      "client_objective": "To identify supported access to social media, entertainment and professional networking platforms from the examined system.",
+      "client_procedure": "Browser history and related system records were reviewed to identify distinct social, entertainment and professional-networking services accessed from the system.",
+      "kb_report_ids": [
+        "BROWSER_HISTORY"
+      ],
+      "annexure_kinds": [
+        "url_category:social media urls"
+      ],
+      "required_questions": [
+        "Which distinct platforms have meaningful browser-history evidence?",
+        "Are rows direct page/navigation records or embedded icons/share/static resources?",
+        "Does the evidence prove only access or a specific user action/post/message?"
+      ],
+      "decision_rules": [
+        "Name supported platforms.",
+        "Do not infer posting, messaging or account ownership from a URL alone."
+      ],
+      "reference_states": [
+        "platform_access",
+        "no_supported_social_access"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "controlled social-domain classification"
+        ],
+        "dedupe_keys": [
+          "platform+normalized_url"
+        ],
+        "coverage_requirements": [
+          "browser history/navigation records"
+        ],
+        "index_hints": [
+          "(job_id, normalized_domain)",
+          "(job_id, event_time)"
+        ]
+      }
+    },
+    {
+      "id": "INTERNET_NETWORK_REVIEW",
+      "canonical_title": "Internet and Network Connection Review",
+      "aliases": [
+        "internet and network connection",
+        "network connection review",
+        "internet usage",
+        "external websites",
+        "data transfer over internet"
+      ],
+      "client_objective": "To identify relevant internet and network activity and determine whether the evidence supports communication, file sharing or data transfer to external sources.",
+      "client_procedure": "Browsing records, network-related records, connection history and relevant file-sharing/communication evidence were examined and correlated.",
+      "kb_report_ids": [
+        "BROWSER_HISTORY",
+        "BROWSER_DOWNLOADS",
+        "RDP_ACTIVITY",
+        "WIFI_ACTIVITY",
+        "SSH_ACTIVITY",
+        "MEMORY_NETWORK"
+      ],
+      "annexure_kinds": [
+        "url_category:social media urls",
+        "url_category:web chat urls",
+        "url_category:cloud services",
+        "rdp_connections"
+      ],
+      "required_questions": [
+        "Which relevant external services/hosts were accessed?",
+        "What network/session records are present?",
+        "Is communication, file sharing or data transfer directly supported?"
+      ],
+      "decision_rules": [
+        "Access to a platform is a supported fact when record-level evidence exists.",
+        "Do not convert access into data-transfer or messaging without direct evidence."
+      ],
+      "reference_states": [
+        "internet_access_without_transfer",
+        "network_activity_confirmed",
+        "no_relevant_network_evidence"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "network/browser/session artifact family"
+        ],
+        "dedupe_keys": [
+          "native connection id",
+          "5-tuple+time bucket",
+          "normalized_url"
+        ],
+        "coverage_requirements": [
+          "browser/network/session evidence"
+        ],
+        "index_hints": [
+          "(job_id, event_time)",
+          "(job_id, remote_ip, remote_port)",
+          "(job_id, normalized_domain)"
+        ]
+      }
+    },
+    {
+      "id": "ANTI_FORENSICS",
+      "canonical_title": "Anti-Forensics Tools",
+      "aliases": [
+        "anti forensics",
+        "cleanup attempts",
+        "cleanup tools",
+        "evidence erasure",
+        "ccleaner",
+        "sdelete",
+        "bleachbit"
+      ],
+      "client_objective": "To determine whether tools capable of cleaning, hiding, deleting or altering digital traces were present or used on the system.",
+      "client_procedure": "Installed applications, execution evidence and relevant system records were examined for cleanup, wiping or trace-hiding utilities and any supported evidence of their use.",
+      "kb_report_ids": [
+        "INSTALLED_APPLICATIONS",
+        "PROGRAM_EXECUTION",
+        "PREFETCH_ANALYSIS",
+        "AMCACHE_ANALYSIS",
+        "WINDOWS_EVENT_LOGS"
+      ],
+      "annexure_kinds": [],
+      "required_questions": [
+        "Which known cleanup/wiping tools are installed?",
+        "Is there execution/use evidence?",
+        "Is there evidence that the tool erased or concealed case-relevant data?"
+      ],
+      "decision_rules": [
+        "Presence proves availability only.",
+        "Execution requires execution evidence.",
+        "Erasure/concealment requires stronger activity evidence; do not infer it from installation."
+      ],
+      "reference_states": [
+        "tool_present_use_not_proven",
+        "tool_not_found"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "controlled cleanup/wipe tool identities"
+        ],
+        "dedupe_keys": [
+          "application+version",
+          "execution native id"
+        ],
+        "coverage_requirements": [
+          "installed applications",
+          "execution traces",
+          "system logs"
+        ],
+        "index_hints": [
+          "(job_id, normalized_application)",
+          "(job_id, event_time)"
+        ]
+      }
+    },
+    {
+      "id": "TORRENT_ACTIVITY",
+      "canonical_title": "Torrent URLs",
+      "aliases": [
+        "torrent urls",
+        "torrent activity",
+        "torrent websites",
+        "torrent file sharing",
+        "magnet links"
+      ],
+      "client_objective": "To determine whether torrent-related services or artifacts were accessed and whether torrent-based downloading, uploading or file sharing is supported by evidence.",
+      "client_procedure": "Browser records, download records, torrent/magnet artifacts and installed torrent-client evidence were reviewed for supported torrent-related activity.",
+      "kb_report_ids": [
+        "BROWSER_HISTORY",
+        "BROWSER_DOWNLOADS",
+        "INSTALLED_APPLICATIONS",
+        "PROGRAM_EXECUTION"
+      ],
+      "annexure_kinds": [
+        "url_category:torrent"
+      ],
+      "required_questions": [
+        "Are there true torrent/magnet/client artifacts or only unrelated URLs?",
+        "Was a torrent client installed/executed?",
+        "Is actual file transfer supported?"
+      ],
+      "decision_rules": [
+        "A torrent-related URL proves access only.",
+        "A .torrent/magnet/client artifact supports stronger torrent activity.",
+        "Do not claim download/upload/share without corresponding evidence."
+      ],
+      "reference_states": [
+        "torrent_url_access_without_transfer",
+        "torrent_activity_not_found"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "controlled torrent/magnet domain/signature"
+        ],
+        "dedupe_keys": [
+          "normalized_url",
+          "magnet info-hash",
+          "download native id"
+        ],
+        "coverage_requirements": [
+          "browser history",
+          "downloads",
+          "torrent-client execution"
+        ],
+        "index_hints": [
+          "(job_id, normalized_domain)",
+          "(job_id, event_time)"
+        ]
+      }
+    },
+    {
+      "id": "MALWARE_PHISHING",
+      "canonical_title": "Malware / Phishing URL Verification",
+      "aliases": [
+        "malware phishing url",
+        "phishing url",
+        "malicious url",
+        "malware phishing pornography urls",
+        "suspicious urls"
+      ],
+      "client_objective": "To determine whether recovered URLs or related activity are associated with malware, phishing or other supported malicious indicators.",
+      "client_procedure": "Recovered URLs, browser activity, downloads and available security-detection records were examined and correlated for supported malware or phishing indicators.",
+      "kb_report_ids": [
+        "BROWSER_HISTORY",
+        "BROWSER_DOWNLOADS",
+        "SECURITY_DETECTIONS",
+        "HASH_MATCHES"
+      ],
+      "annexure_kinds": [
+        "url_category:malware/phishing urls"
+      ],
+      "required_questions": [
+        "Which URLs match a controlled malware/phishing classification?",
+        "Was the URL actually present in browser evidence?",
+        "Is there download, execution or security-detection evidence beyond URL access?"
+      ],
+      "decision_rules": [
+        "Report the URL access separately from infection/execution.",
+        "A suspicious or classified URL does not by itself prove compromise."
+      ],
+      "reference_states": [
+        "classified_url_access",
+        "no_classified_url_access"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "controlled classification/indicator match"
+        ],
+        "dedupe_keys": [
+          "normalized_url",
+          "file sha256",
+          "security detection native id"
+        ],
+        "coverage_requirements": [
+          "browser/download records",
+          "security detections",
+          "hash matches"
+        ],
+        "index_hints": [
+          "(job_id, sha256)",
+          "(job_id, normalized_domain)",
+          "(job_id, event_time)"
+        ]
+      }
+    },
+    {
+      "id": "GOOGLE_ACCOUNT_DATA",
+      "canonical_title": "Verification of Google Account Data",
+      "aliases": [
+        "verify google takeout",
+        "google takeout completeness",
+        "google account export verification",
+        "google account data"
+      ],
+      "client_objective": "To verify the integrity and service coverage of the supplied Google Takeout export before interpreting account activity.",
+      "client_procedure": "The Takeout archive structure, hashes/manifests where available, and exported service folders were inventoried before service-specific records were parsed.",
+      "kb_report_ids": [
+        "EVIDENCE_SOURCE_SUMMARY",
+        "CLOUD_ACTIVITY",
+        "CLOUD_FILES",
+        "EMAIL_COMMUNICATIONS"
+      ],
+      "annexure_kinds": [],
+      "required_questions": [
+        "Which Takeout archives/parts were supplied and hashed?",
+        "Which Google service folders and export files are present?",
+        "Are expected service sources missing, unreadable or encrypted?",
+        "Does the available export support a complete or only partial service-level examination?"
+      ],
+      "decision_rules": [
+        "Archive/service presence supports coverage, not completeness beyond the supplied export.",
+        "A missing service folder makes conclusions for that service inconclusive.",
+        "Never copy a reference report service count into the current case."
+      ],
+      "reference_states": [
+        "service_coverage_verified",
+        "partial_takeout_coverage",
+        "unreadable_takeout_source"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "source hash/manifest",
+          "Google service source family"
+        ],
+        "dedupe_keys": [
+          "source sha256",
+          "archive part name+size",
+          "service+relative path"
+        ],
+        "coverage_requirements": [
+          "archive inventory",
+          "service-folder inventory",
+          "hash/integrity result"
+        ],
+        "index_hints": [
+          "(job_id, sha256)",
+          "(job_id, source_path)",
+          "(job_id, artifact_family)"
+        ]
+      }
+    },
+    {
+      "id": "GMAIL_USAGE",
+      "canonical_title": "Review of Gmail Usage",
+      "aliases": [
+        "gmail usage",
+        "gmail messages",
+        "google mail review",
+        "review gmail"
+      ],
+      "client_objective": "To identify Gmail communications relevant to the examination and distinguish messages, participants, attachments and account state.",
+      "client_procedure": "Gmail MBOX/message records and related metadata were parsed; messages were deduplicated by native/message identifiers and correlated with attachments and participants.",
+      "kb_report_ids": [
+        "EMAIL_COMMUNICATIONS"
+      ],
+      "annexure_kinds": [],
+      "required_questions": [
+        "Which messages are sent, received, draft or other mailbox states?",
+        "Which addresses are current account identities versus historical correspondents?",
+        "Which attachments belong to which distinct message?",
+        "Are deleted/trash labels or historical records present, and what is their recovery state?"
+      ],
+      "decision_rules": [
+        "Count distinct messages, not attachment rows.",
+        "Correspondence with an address does not prove that address is currently configured on the account.",
+        "Preserve mailbox/label state and source message-id when available."
+      ],
+      "reference_states": [
+        "gmail_records_present",
+        "gmail_records_absent_with_coverage",
+        "gmail_coverage_incomplete"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "email message artifact type",
+          "Google/Gmail source"
+        ],
+        "dedupe_keys": [
+          "message_id",
+          "sender+recipients+subject+event_time+body hash"
+        ],
+        "coverage_requirements": [
+          "MBOX/message parse",
+          "account/source identity",
+          "attachment linkage"
+        ],
+        "index_hints": [
+          "(job_id, message_id)",
+          "(job_id, sender)",
+          "(job_id, event_time)"
+        ]
+      }
+    },
+    {
+      "id": "GOOGLE_DRIVE_FILES",
+      "canonical_title": "Review of Google Drive Files",
+      "aliases": [
+        "google drive files",
+        "drive files",
+        "my drive review"
+      ],
+      "client_objective": "To identify files represented in the Google Drive export and the available metadata describing their paths, types and activity.",
+      "client_procedure": "Drive file metadata and exported file records were inventoried, normalized and deduplicated using provider identifiers or stable path/revision attributes.",
+      "kb_report_ids": [
+        "CLOUD_FILES",
+        "CLOUD_ACTIVITY",
+        "DOCUMENTS"
+      ],
+      "annexure_kinds": [],
+      "required_questions": [
+        "Which distinct Drive files/folders are represented?",
+        "Which records show ownership, creation, modification or access versus only a local exported copy?",
+        "Are shared items separated from owned/My Drive items?"
+      ],
+      "decision_rules": [
+        "File presence in an export does not by itself prove a transfer event.",
+        "Use provider/native identifiers before file names for deduplication."
+      ],
+      "reference_states": [
+        "drive_files_present",
+        "drive_files_absent_with_coverage",
+        "drive_coverage_incomplete"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "provider=Google Drive",
+          "cloud file/activity family"
+        ],
+        "dedupe_keys": [
+          "provider_file_id",
+          "normalized_path+revision",
+          "sha256 for exported binary"
+        ],
+        "coverage_requirements": [
+          "Drive metadata/file inventory"
+        ],
+        "index_hints": [
+          "(job_id, provider, provider_file_id)",
+          "(job_id, normalized_path)",
+          "(job_id, event_time)"
+        ]
+      }
+    },
+    {
+      "id": "GOOGLE_ACCOUNT_ACTIVITY",
+      "canonical_title": "Review of Google Account Activity Logs",
+      "aliases": [
+        "google account activity",
+        "google activity logs",
+        "my activity",
+        "account activity logs"
+      ],
+      "client_objective": "To identify supported Google account activity events and the services/devices involved.",
+      "client_procedure": "Exported activity records were normalized by service, timestamp and native event attributes, then deduplicated and correlated without treating telemetry rows as independent user actions.",
+      "kb_report_ids": [
+        "CLOUD_ACTIVITY"
+      ],
+      "annexure_kinds": [],
+      "required_questions": [
+        "Which services have activity records?",
+        "Which events include usable timestamps/device context?",
+        "Are repeated telemetry/export rows duplicates of one activity?"
+      ],
+      "decision_rules": [
+        "An activity record supports the described event only to the level encoded by the source.",
+        "Do not infer intent from activity metadata."
+      ],
+      "reference_states": [
+        "activity_present",
+        "activity_absent_with_coverage",
+        "activity_coverage_incomplete"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "Google activity service/event"
+        ],
+        "dedupe_keys": [
+          "native_event_id",
+          "service+event_time+normalized action/value"
+        ],
+        "coverage_requirements": [
+          "activity source present and parsed"
+        ],
+        "index_hints": [
+          "(job_id, provider, event_time)",
+          "(job_id, artifact_type, event_time)"
+        ]
+      }
+    },
+    {
+      "id": "GOOGLE_CALENDAR_EVENTS",
+      "canonical_title": "Review of Google Calendar Events",
+      "aliases": [
+        "google calendar events",
+        "calendar event descriptions",
+        "google calendar",
+        "calendar review"
+      ],
+      "client_objective": "To identify exported Google Calendar events and relevant event descriptions, participants, locations and timestamps.",
+      "client_procedure": "Calendar export records were parsed and deduplicated by native event identifier or stable event fields; descriptions were treated as event content rather than separate events.",
+      "kb_report_ids": [
+        "CLOUD_ACTIVITY",
+        "DOCUMENTS"
+      ],
+      "annexure_kinds": [],
+      "required_questions": [
+        "How many distinct calendar events are present?",
+        "Which descriptions/participants/locations belong to each event?",
+        "Are recurring instances distinguished from duplicate export rows?"
+      ],
+      "decision_rules": [
+        "Do not count an event description as another event.",
+        "Preserve timezone and recurring-event identity where available."
+      ],
+      "reference_states": [
+        "calendar_events_present",
+        "calendar_absent_with_coverage",
+        "calendar_coverage_incomplete"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "calendar event artifact/source"
+        ],
+        "dedupe_keys": [
+          "event_id",
+          "calendar_id+start_time+title+recurrence_id"
+        ],
+        "coverage_requirements": [
+          "calendar source parsed"
+        ],
+        "index_hints": [
+          "(job_id, event_time)",
+          "(job_id, artifact_type, source_id)"
+        ]
+      }
+    },
+    {
+      "id": "GOOGLE_CONNECTED_DEVICES",
+      "canonical_title": "Review of Connected Devices History",
+      "aliases": [
+        "connected devices history",
+        "google connected devices",
+        "device activity history",
+        "devices history"
+      ],
+      "client_objective": "To identify devices recorded by the Google account export and the available evidence of account access from those devices.",
+      "client_procedure": "Device/account-activity records were normalized using stable device identifiers, model/platform labels and timestamps and were deduplicated before reporting.",
+      "kb_report_ids": [
+        "DEVICE_INFORMATION",
+        "MOBILE_DEVICE_INFORMATION",
+        "CLOUD_ACTIVITY",
+        "USER_ACCOUNTS"
+      ],
+      "annexure_kinds": [],
+      "required_questions": [
+        "Which distinct devices are represented?",
+        "What stable identifier/model/platform supports each device identity?",
+        "Does the record show account access/activity or merely device registration?"
+      ],
+      "decision_rules": [
+        "Deduplicate repeated device rows to a stable device identity.",
+        "Registration/presence is not automatically proof of a specific user action."
+      ],
+      "reference_states": [
+        "devices_present",
+        "no_devices_with_coverage",
+        "device_coverage_incomplete"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "device/account activity source"
+        ],
+        "dedupe_keys": [
+          "device_id",
+          "serial",
+          "model+platform+account"
+        ],
+        "coverage_requirements": [
+          "device/account activity export present"
+        ],
+        "index_hints": [
+          "(job_id, device_id)",
+          "(job_id, event_time)"
+        ]
+      }
+    },
+    {
+      "id": "GOOGLE_PHOTOS_ALBUMS",
+      "canonical_title": "Review of Google Photos Albums",
+      "aliases": [
+        "google photos",
+        "photos albums",
+        "google photo albums"
+      ],
+      "client_objective": "To identify exported Google Photos media and album relationships relevant to the examination.",
+      "client_procedure": "Photo/video files and Google Photos metadata were inventoried, linked by provider metadata or stable path/hash, and deduplicated before reporting.",
+      "kb_report_ids": [
+        "PICTURES",
+        "VIDEOS",
+        "CLOUD_FILES"
+      ],
+      "annexure_kinds": [],
+      "required_questions": [
+        "Which distinct media files are present?",
+        "Which albums/provider metadata reference them?",
+        "Are duplicate exported copies separated from distinct media?"
+      ],
+      "decision_rules": [
+        "Count distinct media by provider identity/hash where available.",
+        "Album membership is metadata context and must not duplicate the media count."
+      ],
+      "reference_states": [
+        "photos_present",
+        "photos_absent_with_coverage",
+        "photos_coverage_incomplete"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "Google Photos/media source"
+        ],
+        "dedupe_keys": [
+          "provider_media_id",
+          "sha256",
+          "normalized_path+size"
+        ],
+        "coverage_requirements": [
+          "Photos metadata/media inventory"
+        ],
+        "index_hints": [
+          "(job_id, sha256)",
+          "(job_id, artifact_type)",
+          "(job_id, normalized_path)"
+        ]
+      }
+    },
+    {
+      "id": "GOOGLE_DRIVE_SHARED_FILES",
+      "canonical_title": "Review of Google Drive Shared Files",
+      "aliases": [
+        "google drive shared files",
+        "shared with me",
+        "drive sharing"
+      ],
+      "client_objective": "To identify Drive items represented as shared and distinguish sharing metadata from file ownership or transfer.",
+      "client_procedure": "Shared-item metadata and cloud-file records were correlated using provider file identifiers, owner/account fields and sharing state.",
+      "kb_report_ids": [
+        "CLOUD_FILES",
+        "CLOUD_ACTIVITY"
+      ],
+      "annexure_kinds": [],
+      "required_questions": [
+        "Which distinct files/folders are marked shared?",
+        "Who is recorded as owner/sharer/recipient where available?",
+        "Does the source record sharing, access or an actual file transfer?"
+      ],
+      "decision_rules": [
+        "Shared status does not by itself prove download or exfiltration.",
+        "Do not infer ownership when only recipient/shared-with metadata is present."
+      ],
+      "reference_states": [
+        "shared_files_present",
+        "shared_files_absent_with_coverage",
+        "sharing_coverage_incomplete"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "provider=Google Drive",
+          "sharing state"
+        ],
+        "dedupe_keys": [
+          "provider_file_id+principal",
+          "normalized_path+principal"
+        ],
+        "coverage_requirements": [
+          "shared-item metadata"
+        ],
+        "index_hints": [
+          "(job_id, provider, provider_file_id)",
+          "(job_id, account_id)",
+          "(job_id, event_time)"
+        ]
+      }
+    },
+    {
+      "id": "GOOGLE_DRIVE_SHARED_PERMISSIONS",
+      "canonical_title": "Review of Google Drive Shared Permissions",
+      "aliases": [
+        "google drive shared permissions",
+        "drive permissions",
+        "shared permissions",
+        "edit access",
+        "view access"
+      ],
+      "client_objective": "To identify permissions recorded for shared Google Drive items and the principals to which those permissions apply.",
+      "client_procedure": "Permission metadata was correlated to Drive items and principals, preserving role/type and source record identity and deduplicating repeated export entries.",
+      "kb_report_ids": [
+        "CLOUD_FILES",
+        "CLOUD_ACTIVITY"
+      ],
+      "annexure_kinds": [],
+      "required_questions": [
+        "Which principals have permissions on which distinct files/folders?",
+        "What role/type is recorded (view/comment/edit/owner or equivalent)?",
+        "Are repeated permission rows duplicates of the same item-principal-role relationship?"
+      ],
+      "decision_rules": [
+        "A granted permission proves access rights, not that the recipient opened or transferred the file.",
+        "Report the role exactly as supported by the source metadata."
+      ],
+      "reference_states": [
+        "permissions_present",
+        "permissions_absent_with_coverage",
+        "permission_coverage_incomplete"
+      ],
+      "query_strategy": {
+        "primary_filters": [
+          "case/job scope",
+          "provider=Google Drive",
+          "permission/share record"
+        ],
+        "dedupe_keys": [
+          "provider_file_id+principal+role"
+        ],
+        "coverage_requirements": [
+          "permission metadata source"
+        ],
+        "index_hints": [
+          "(job_id, provider, provider_file_id)",
+          "(job_id, principal, role)"
+        ]
+      }
+    }
+  ],
+  "cross_section_consistency": [
+    {
+      "rule": "positive_section_c_requires_trace",
+      "description": "A positive provider/device/platform/session finding should have at least one supporting record in the authoritative source set and, where selected, Annexure."
+    },
+    {
+      "rule": "negative_section_c_cannot_conflict_with_annexure",
+      "description": "Section C cannot say no cloud/device/chat/social/RDP evidence when valid Annexure/source records establish the opposite."
+    },
+    {
+      "rule": "summary_matches_section_c",
+      "description": "Analysis Summary must reuse the finalized Section C finding rather than independently regenerate it."
+    },
+    {
+      "rule": "artifact_total_not_objective_count",
+      "description": "Section B totals are not substituted for objective-specific distinct counts."
+    },
+    {
+      "rule": "coverage_before_zero",
+      "description": "A zero/negative conclusion is permitted only when required evidence coverage is sufficient; otherwise use INCONCLUSIVE."
+    }
+  ],
+  "writing_style": {
+    "source_basis": "All thirteen supplied disk, data, Google Takeout/email and master forensic report exemplars were reviewed for recurring forensic-report methodology, evidence grammar and layout.",
+    "rules": [
+      "Use formal, factual and concise forensic language; describe what was examined, what evidence was identified, and what the evidence does or does not establish.",
+      "Objective states the examination question in plain client language and does not contain a conclusion.",
+      "Procedure describes the forensic examination method and artifact families reviewed; it does not claim a result before the evidence is evaluated.",
+      "Observation answers the objective from current-case evidence, distinguishes presence/access/use/transfer, and states relevant limitations.",
+      "Prefer phrases such as The examination identified, The available records indicate, and No evidence confirming ... was identified when those statements are supported by current evidence.",
+      "Do not insert raw internal objective IDs, implementation terms, database field names, source code paths or unsupported technical noise into client narrative.",
+      "Keep the same finding consistent across Section C, Annexure and Analysis Summary.",
+      "Write each Objective, Procedure and Observation in full. Page packing is the Formation Agent's job; do not omit a finding to save space and do not invent filler to pad a page.",
+      "Write every Annexure table row in full. The Report Formation Agent packs leftover A4 body with the next URL rows; do not drop a row to save space and do not invent filler rows.",
+      "Never copy names, dates, counts, hashes, URLs, devices or conclusions from an exemplar into another case."
+    ]
+  },
+  "query_principles": [
+    "Do not let an LLM execute arbitrary SQL. Resolve the objective to a controlled collector/report definition, then query versioned tables/views with bound parameters.",
+    "Filter by job_id/case id and tenant/schema at the first table access; never rely on a later in-memory filter for evidentiary isolation.",
+    "Use stable native identifiers for deduplication before timestamps/text. For devices prefer serial then VID/PID/model; for email prefer message-id; for cloud files prefer provider file-id/path plus revision when available.",
+    "Use equality/range predicates on indexed normalized columns for primary selection. ILIKE/regex/full-text are secondary discovery aids and must not replace an indexed case/job predicate.",
+    "Separate allocated/live, logically deleted, filesystem/trash recovered, WAL/journal/freelist residual and carved/unallocated states. Never merge an unverified residual candidate into a confirmed deleted count.",
+    "For zero-result conclusions record evidence coverage first. Missing parser/key/source/manifest coverage is INCONCLUSIVE, not proof of absence.",
+    "For multi-source findings preserve source_path/source_hash/parser/version/record native id so every narrative finding can be traced back to a concrete record.",
+    "Count distinct forensic entities/events after exclusions and semantic deduplication; never substitute a Section B raw artifact total for an objective-specific count."
+  ]
+}

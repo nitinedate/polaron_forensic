@@ -1,0 +1,68 @@
+# Public HTTPS edge on top of services/gateway/docker-compose.yml.
+# Exposes 80/443 on the Windows host for router port-forward, plus local UI on 3001.
+# Do not bind 3002: that port is the Android UI.
+#
+# From repo root:
+#   docker compose --project-directory . --project-name aetheris-gateway \
+#     -f services/gateway/docker-compose.yml \
+#     -f deployment/windows-ip-https/docker-compose.gateway-public-https.yml \
+#     up -d
+name: aetheris-gateway
+
+services:
+  gateway:
+    ports: !override
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
+      - "127.0.0.1:3001:80"
+    volumes:
+      - ./deployment/windows-ip-https/nginx.gateway.https.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deployment/windows-ip-https/gateway-https-locations.inc:/etc/nginx/conf.d/gateway-https-locations.inc:ro
+      - ./frontend/gateway-proxy.inc:/etc/nginx/conf.d/gateway-proxy.inc:ro
+      - certbot_etc:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://127.0.0.1/gateway-health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+
+  # Temporary HTTP-only container used before the first certificate exists.
+  acme-bootstrap:
+    image: nginx:1.27-alpine
+    profiles: ["acme-bootstrap"]
+    ports:
+      - "80:80"
+    volumes:
+      - certbot_www:/usr/share/nginx/html:ro
+      - ./deployment/windows-ip-https/acme-bootstrap.default.conf:/etc/nginx/conf.d/default.conf:ro
+
+  certbot:
+    image: certbot/certbot:v5.8.0
+    profiles: ["certbot"]
+    volumes:
+      - certbot_etc:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+      - ./script_docker:/tools:ro
+
+  # No Docker socket or Windows scheduled task is needed. The renewal process
+  # shares only nginx's PID namespace so its successful deploy hook can send HUP.
+  certbot-renewer:
+    image: certbot/certbot:v5.8.0
+    restart: unless-stopped
+    pid: "service:gateway"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    volumes:
+      - certbot_etc:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+      - ./script_docker:/tools:ro
+    entrypoint: ["/bin/sh", "/tools/renew-certificates.sh"]
+
+volumes:
+  certbot_etc:
+    name: aetheris-gateway_certbot_etc
+  certbot_www:
+    name: aetheris-gateway_certbot_www

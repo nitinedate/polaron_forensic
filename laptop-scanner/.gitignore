@@ -1,0 +1,9 @@
+.env
+*.log
+scanner-agent/.agent-token
+backups/
+recovery-snapshots/
+diagnostics/
+.pytest_cache/
+scanner-agent/.pytest_cache/
+scanner-agent/runtime/agent-token

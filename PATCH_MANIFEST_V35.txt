@@ -1,0 +1,35 @@
+Polaron V35 patch
+Base: Polaron V34 complete AXIOM artifacts build
+Date: 2026-09-27
+
+Scope:
+- Full Windows + Cloud + Windows Memory AXIOM artifact tree, including zero-count rows
+- OneDrive / Google Drive / Dropbox / Box / iCloud / Mega / AWS / Azure / Samsung / Carbonite / Flickr provider evidence
+- Strict Social Networking provider matching (no Chrome-cache-as-Google+ false positives)
+- EML/EMLX and MSG body + attachment preview/download
+- PST/OST -> derived EML materialization with readpst (source mailbox unchanged)
+- libmagic-backed MIME/type/normalized-extension detection
+- stale Social/Cloud count invalidation and automatic recount
+
+Changed/added files:
+- backend/Dockerfile
+- backend/requirements.txt
+- backend/app/parsers/outlook_msg_parser.py
+- backend/app/routers/artifacts.py
+- backend/app/services/artifact_evidence_browse.py
+- backend/app/services/artifact_preview.py
+- backend/app/services/artifact_selection_catalog.py
+- backend/app/services/artifact_type_resolver.py
+- backend/app/services/catalog_aligned_counts.py
+- backend/app/services/catalog_artifact_runner.py
+- backend/app/services/email_inventory.py
+- backend/app/services/email_mime_inventory.py
+- backend/app/services/pst_mailbox_inventory.py
+- backend/app/services/pst_message_materializer.py
+- backend/app/services/social_cloud_inventory.py
+- backend/tests/test_axiom_artifact_tree_v34.py
+- backend/tests/test_email_cloud_social_v35.py
+- frontend/src/components/forensic/ArtifactCategoryTree.tsx
+- frontend/src/lib/forensicApi.ts
+- frontend/src/lib/types/forensic.ts
+- EMAIL_MIME_CLOUD_SOCIAL_FIX_V35_20260927.md

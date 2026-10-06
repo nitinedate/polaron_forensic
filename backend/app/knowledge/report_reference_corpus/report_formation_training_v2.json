@@ -1,0 +1,178 @@
+{
+  "version": "report-formation-training-v2.5",
+  "purpose": "Layout, writing-presentation and page-formation rules learned from every supplied forensic-report exemplar. The references teach structure and presentation only; case-specific facts are never reused.",
+  "sources": [
+    "Ex-1 Forensic Report.docx",
+    "Ex-2 Forensic Report.docx",
+    "Ex-3 Forensic Report.docx",
+    "Ex-4 Forensic Report.docx",
+    "Ex-5  Forensic Report.docx",
+    "Ex.1 Darshan Forensic Report.pdf",
+    "RRP E Mr.Seger Forensic Report.pdf",
+    "Saurabh Kushwah Data Report.pdf",
+    "Azim Lalani Google Takeout Forensic Report.pdf",
+    "Manish Google Takeout Forensic Report.pdf",
+    "Saish Google Takeout Forensic Report .pdf",
+    "Saurabh@fanory.com Email Forensic Report.pdf",
+    "Master Report.pdf"
+  ],
+  "agent_split": {
+    "report_generator_agent": "Forensic content agent: artifacts, evidence selection, Objective, Procedure, Observation, Annexure and Analysis Summary.",
+    "report_formation_agent": "Formation-only agent: page packing, continuation logic, UI/PDF/DOCX parity and final document creation. It cannot rewrite content."
+  },
+  "formation_rules": [
+    "Use the saved UI section content as immutable canonical content.",
+    "Before creating a continuation page, place the next complete row, paragraph or panel on the current page when it physically fits.",
+    "Do not waste a page merely because a conservative fixed row-count threshold was reached.",
+    "Never split one table row between pages; repeat the table header after a true split.",
+    "Keep section/subsection headings with following content.",
+    "Objective/Procedure/Observation panels remain together when possible; oversized panels may continue without changing wording.",
+    "Section C must occupy remaining A4 body space: pull the next complete O/P/O card, or a meaningful prefix, onto the current page before opening a continuation.",
+    "Annexure tables must occupy remaining A4 body space only when the next rows still fit above the footer.",
+    "After packing each table page, verify every source row is present in order. A jump from serial 7 to serial 9 is a formation failure.",
+    "Place only the rows that are manageable on that A4 page. Leftover white space is required if another row would be clipped by overflow:hidden.",
+    "Never drop, shorten or rewrite Objective, Procedure or Observation text to make a page look tidy.",
+    "Only add '(CONTINUED)' as layout metadata; do not add forensic meaning or new narrative.",
+    "PDF and DOCX are generated from the same canonical content snapshot as the UI.",
+    "No export-specific sanitization, summarization or LLM rewriting is allowed.",
+    "A content fingerprint is stored with every PDF/DOCX export for parity verification.",
+    "For Introduction specifically, reproduce the formal reference-letter hierarchy: centered underlined heading, date right, compact recipient block, centered subject, body, scope/terms, and right-aligned sign-off.",
+    "Watermarks are presentation chrome only and must remain very faint (about 6-8 percent effective opacity) so they never compete with evidence text.",
+    "Pagination uses measured/estimated physical height and available printable space; a fixed 12-row threshold must not create avoidable blank areas."
+  ],
+  "reference_layout_observations": [
+    "The sample reports use a stable section order: Introduction, Operating System, Artifacts, Objective/Procedure/Observation, Annexure, Analysis Summary and Appendix.",
+    "Annexure tables continue across pages while preserving serial-number continuity.",
+    "Continuation headings appear only when content truly continues onto another page.",
+    "Branding/header/footer are repeated consistently without consuming report-body facts.",
+    "The reports prefer compact pages rather than leaving usable body space empty.",
+    "Across the supplied introduction pages the heading is centered, uppercase and underlined, followed by a right-aligned date and compact formal letter blocks.",
+    "Reference watermarks are intentionally pale and sit behind content without reducing readability.",
+    "The reference pages do not use dashboard cards or exaggerated vertical spacing for the introduction letter."
+  ],
+  "training_scope": {
+    "reference_reports_reviewed": 13,
+    "content_method_sources": [
+      "Ex-1 Forensic Report.docx",
+      "Ex-2 Forensic Report.docx",
+      "Ex-3 Forensic Report.docx",
+      "Ex-4 Forensic Report.docx",
+      "Ex-5  Forensic Report.docx",
+      "Ex.1 Darshan Forensic Report.pdf",
+      "RRP E Mr.Seger Forensic Report.pdf",
+      "Saurabh Kushwah Data Report.pdf",
+      "Azim Lalani Google Takeout Forensic Report.pdf",
+      "Manish Google Takeout Forensic Report.pdf",
+      "Saish Google Takeout Forensic Report .pdf",
+      "Saurabh@fanory.com Email Forensic Report.pdf",
+      "Master Report.pdf"
+    ],
+    "formation_validation_source": "Master Report.pdf",
+    "rule": "Review the full reference corpus before forming a report; learn document grammar and layout, never copy another case fact."
+  },
+  "introduction_page_training": {
+    "purpose": "The introduction is a formal forensic transmittal/engagement letter on a dedicated A4 page.",
+    "layout": [
+      "After the 44 mm letterhead band, leave approximately one normal text-line of clear space (about 4-6 mm) before the INTRODUCTION heading.",
+      "Render INTRODUCTION centered, uppercase, bold and underlined; never left-align or title-case it.",
+      "Keep the date on the upper right below the title.",
+      "Keep To and the recipient/address as a compact left-aligned block; do not stretch individual address lines vertically.",
+      "Center the Subject line; make only the Subject label visually bold when possible.",
+      "Place Dear Sir and the engagement paragraph as compact, justified letter text.",
+      "Render Scope of Work and Terms and Condition(s) as bold labels with compact numbered text immediately below.",
+      "Place Digital Forensic Analyst and company sign-off right-aligned after the terms with modest spacing, not a large empty gap.",
+      "Do not use cards, rounded borders, shadows, callouts or dashboard styling on the introduction page.",
+      "The introduction should use the body area efficiently while retaining a professional letter rhythm; do not artificially distribute blocks to fill the page."
+    ],
+    "watermark": [
+      "The centered brand watermark stays behind the text and must be very faint.",
+      "Target effective watermark opacity is approximately 6-8 percent; report text must remain dominant and fully readable.",
+      "Use the same light watermark treatment in UI preview, PDF and DOCX."
+    ]
+  },
+  "page_space_training": {
+    "principle": "Physical remaining space, not a fixed conservative row count, decides whether the next report block can stay on the current page.",
+    "rules": [
+      "Pull the next complete paragraph, table row, artifact item or O/P/O block into remaining space whenever it fits.",
+      "A half-empty annexure page that still has room for the next Social Media / Web Chat URL rows must absorb those rows instead of starting D. ANNEXURE (CONTINUED).",
+      "A table may begin in remaining page space; do not force the whole table to a new page merely because it has many rows.",
+      "Never split a single table row. Repeat the table header when the renderer creates a true continuation page.",
+      "Do not enforce a 12-row page ceiling. Estimate actual wrapped row height and use the printable body budget.",
+      "Keep headings with following content and avoid orphan Objective, Procedure or Observation labels.",
+      "Only create a continuation page when the next meaningful unit cannot physically fit or the current unit is itself oversized.",
+      "Introduction remains a dedicated formal page even if it contains some intentional white space; other report sections should not waste usable body space."
+    ]
+  },
+  "opo_page_training": {
+    "purpose": "Section C (Objective, Procedure & Observation) must fill each A4 body and never lose a line.",
+    "learned_from": "Ex-1 through Ex-5 examiner reports plus the Seger formation validation PDF.",
+    "physical_budget": {
+      "a4_body_after_letterhead_and_page_number_mm": 196,
+      "chars_per_line": 78,
+      "page_units": 34,
+      "card_overhead_units": 3,
+      "min_split_room_units": 6
+    },
+    "rules": [
+      "Keep a complete O/P/O card on the current page whenever its estimated height fits the remaining body.",
+      "If the next complete card does not fit but at least six units remain, place a useful prefix (title plus at least one Objective/Procedure/Observation body line) and continue the rest on the next page.",
+      "Do not leave a half-empty Section C page merely because the next card is slightly taller than the leftover gap.",
+      "Split an oversized card only as required by physical A4 capacity.",
+      "Never leave an Objective, Procedure or Observation label as the last line of a page; move the label with its first body line.",
+      "Repeat the card title on a continuation page as layout metadata only.",
+      "Every source line from every card must appear on some page. Formation may add '(continued)' but must not delete forensic text.",
+      "After the first pack, pull a following card upward when it still fits so leftover body space is used.",
+      "Estimate wrap from the actual card text width (~78 characters), not an overly narrow 56-character line that invents empty pages."
+    ]
+  },
+  "annexure_table_training": {
+    "purpose": "Section D (Annexure) tables must place only manageable rows on each A4 page and never lose a row.",
+    "learned_from": "Ex-1 through Ex-5 examiner reports plus the Seger formation validation PDF.",
+    "physical_budget": {
+      "a4_body_after_letterhead_and_page_number_mm": 196,
+      "page_units": 26,
+      "title_units": 2,
+      "header_units": 2,
+      "gap_units": 2,
+      "min_split_room_units": 8,
+      "url_chars_per_line": 18,
+      "total_chars_per_line": 88,
+      "max_url_rows_first": 5,
+      "max_url_rows_continued": 6,
+      "max_prose_rows": 2,
+      "pack_slack_units": 2,
+      "max_row_units": 16
+    },
+    "rules": [
+      "Keep packing rows onto the current page only while estimated wrapped height still fits above the footer and page number.",
+      "A wrapping 5-column URL table may hold at most 5 data rows with its title and preview note, or 6 rows on a continuation page.",
+      "A 4-column Objective/Procedure/Observation table (Analysis Summary) may hold at most 2 tall rows on a page.",
+      "Do not cap a tall observation row at 6 units. Use the real wrapped height up to 16 units so a third row is not packed under the footer.",
+      "After every pack, check that every source row appears in order. Missing serials (for example 7 then 9, skipping 8) must fail closed and re-pack.",
+      "If another row would enter the letterhead footer, start the section (CONTINUED) with that row. Do not clip it.",
+      "Never split one table row. Repeat the table header and '(continued)' only on a true continuation page.",
+      "Every source row from every annexure table must appear on some page, in order.",
+      "Do not invent filler rows or drop URLs to make a page look tidy.",
+      "Leftover white space is acceptable; missing content is not."
+    ]
+  },
+  "content_parity_training": {
+    "rule": "UI, PDF and DOCX use one canonical saved section snapshot.",
+    "allowed_changes": [
+      "page breaks",
+      "table continuation mechanics",
+      "header/footer placement",
+      "watermark placement",
+      "typographic presentation"
+    ],
+    "forbidden_changes": [
+      "paraphrase",
+      "summary",
+      "new facts",
+      "removed facts",
+      "reordered facts",
+      "changed counts",
+      "changed observations"
+    ]
+  }
+}

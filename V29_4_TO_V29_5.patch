@@ -1,0 +1,2410 @@
+--- a/backend/app/services/drive_mount_agent.py
++++ b/backend/app/services/drive_mount_agent.py
+@@ -1,453 +1,449 @@
+-"""Drive Mount Agent — consult Windows letters and remount every attached drive."""
+-
+-from __future__ import annotations
+-
+-import json
+-import logging
+-import os
+-import re
+-import string
+-import time
+-import urllib.request
+-from pathlib import Path
+-from typing import Any
+-
+-from app.services.host_evidence import (
+-    _host_mount_prefix,
+-    _is_stale_host_mount,
+-    _safe_is_dir,
+-)
+-from app.services.hostdrive_agent import probe_helper, proxy_refresh_mounts, wait_for_refresh
+-
+-log = logging.getLogger("drive_mount_agent")
+-
+-_SKIP_DRIVE_TYPES = frozenset({"cdrom", "cd-rom", "cd_rom"})
+-
+-
+-def inspect_local_host_letters() -> list[dict[str, Any]]:
+-    """What THIS container can see under /host/<letter>."""
+-    prefix = _host_mount_prefix()
+-    out: list[dict[str, Any]] = []
+-    for letter in string.ascii_lowercase:
+-        path = prefix / letter
+-        exists = _safe_is_dir(path)
+-        stale = bool(exists and _is_stale_host_mount(path))
+-        entries = 0
+-        if exists and not stale:
+-            try:
+-                entries = sum(1 for _ in path.iterdir())
+-            except OSError:
+-                stale = True
+-                entries = 0
+-        out.append(
+-            {
+-                "letter": letter,
+-                "path": str(path),
+-                "exists": exists,
+-                "stale": stale,
+-                "mounted": bool(exists and not stale),
+-                "entries": entries,
+-            }
+-        )
+-    return out
+-
+-
+-def _peer_api_bases() -> list[str]:
+-    extra = (os.environ.get("FORENSIC_API_URL") or os.environ.get("API_INTERNAL_URL") or "").strip()
+-    bases = [extra, "http://api:8080", "http://127.0.0.1:8080"]
+-    seen: set[str] = set()
+-    out: list[str] = []
+-    for raw in bases:
+-        base = raw.rstrip("/")
+-        if not base or base in seen:
+-            continue
+-        seen.add(base)
+-        out.append(base)
+-    return out
+-
+-
+-def inspect_peer_api_letters() -> list[dict[str, Any]] | None:
+-    """Ask the API container — worker-agent has no /host binds of its own."""
+-    for base in _peer_api_bases():
+-        try:
+-            req = urllib.request.Request(f"{base}/internal/host-mounts")
+-            with urllib.request.urlopen(req, timeout=3.0) as resp:
+-                data = json.loads(resp.read().decode("utf-8") or "{}")
+-            rows = data.get("inspect") if isinstance(data, dict) else None
+-            if isinstance(rows, list) and any(r.get("mounted") for r in rows if isinstance(r, dict)):
+-                return [r for r in rows if isinstance(r, dict)]
+-        except Exception as exc:
+-            log.debug("peer host-mounts %s: %s", base, exc)
+-    return None
+-
+-
+-def inspect_host_letters() -> list[dict[str, Any]]:
+-    """API-visible /host/<letter> mounts (local first, then the API peer)."""
+-    local = inspect_local_host_letters()
+-    if mounted_letters(local):
+-        return local
+-    peer = inspect_peer_api_letters()
+-    return peer if peer else local
+-
+-
+-def mounted_letters(rows: list[dict[str, Any]] | None = None) -> list[str]:
+-    rows = rows if rows is not None else inspect_host_letters()
+-    return [str(r["letter"]).upper() for r in rows if r.get("mounted")]
+-
+-
+-def windows_attached_letters(helper: dict[str, Any] | None = None) -> list[str]:
+-    """Drive letters Windows currently has attached (helper /drives + volumes)."""
+-    helper = helper if helper is not None else probe_helper()
+-    seen: set[str] = set()
+-    letters: list[str] = []
+-
+-    def _add(raw: object) -> None:
+-        letter = str(raw or "").strip().upper()[:1]
+-        if letter.isalpha() and letter not in seen:
+-            seen.add(letter)
+-            letters.append(letter)
+-
+-    for vol in helper.get("volumes") or []:
+-        if not isinstance(vol, dict):
+-            continue
+-        drive_type = str(vol.get("drive_type") or "").lower().replace(" ", "")
+-        if drive_type in _SKIP_DRIVE_TYPES:
+-            continue
+-        _add(vol.get("letter"))
+-    for raw in helper.get("drives") or []:
+-        _add(raw)
+-    return letters
+-
+-
+-def missing_windows_letters(
+-    helper: dict[str, Any] | None = None,
+-    rows: list[dict[str, Any]] | None = None,
+-) -> list[str]:
+-    """Windows letters that Docker cannot read yet (stale stub or unmounted)."""
+-    wanted = windows_attached_letters(helper)
+-    mounted = set(mounted_letters(rows))
+-    return [letter for letter in wanted if letter not in mounted]
+-
+-
+-def mounts_ready(
+-    rows: list[dict[str, Any]] | None = None,
+-    helper: dict[str, Any] | None = None,
+-) -> bool:
+-    """True when Docker already has at least one usable /host/<letter>.
+-
+-    Extra Windows letters (USB, DVD, unused volumes) must not keep Drive Mount
+-    running or remount the stack. List Folder can pick G: from the letters that
+-    are already visible. ``helper`` is kept for callers; it is not a gate.
+-    """
+-    rows = rows if rows is not None else inspect_host_letters()
+-    _ = helper
+-    return bool(mounted_letters(rows))
+-
+-
+-def _required_path_for_missing(missing: list[str]) -> str | None:
+-    if not missing:
+-        return None
+-    return f"{missing[0]}:\\"
+-
+-
+-_WINDOWS_LETTER_RE = re.compile(r"^([A-Za-z]):")
+-
+-
+-def windows_letter_from_path(path: str | None) -> str | None:
+-    match = _WINDOWS_LETTER_RE.match((path or "").strip())
+-    if not match:
+-        return None
+-    return match.group(1).upper()
+-
+-
+-def docker_path_for_windows(required_path: str) -> Path | None:
+-    """Map ``G:\\DISK2\\folder`` onto ``/host/g/DISK2/folder`` inside Docker."""
+-    match = re.match(r"^([A-Za-z]):[/\\]?(.*)$", (required_path or "").strip())
+-    if not match:
+-        return None
+-    letter = match.group(1).lower()
+-    rest = match.group(2).replace("\\", "/").strip("/")
+-    base = _host_mount_prefix() / letter
+-    return (base / rest) if rest else base
+-
+-
+-def path_is_readable(required_path: str) -> bool:
+-    """True when Docker can actually list/stat the selected Windows path."""
+-    p = docker_path_for_windows(required_path)
+-    if p is None:
+-        return False
+-    try:
+-        if p.is_file():
+-            return True
+-        if not _safe_is_dir(p):
+-            return False
+-        if _is_stale_host_mount(p):
+-            return False
+-        next(p.iterdir(), None)
+-        return True
+-    except OSError:
+-        return False
+-
+-
+-def _result(
+-    *,
+-    ok: bool,
+-    helper: dict[str, Any],
+-    wanted: list[str],
+-    after: list[dict[str, Any]],
+-    refresh: dict[str, Any],
+-    waited: dict[str, Any],
+-    skipped_refresh: bool = False,
+-    required_path: str | None = None,
+-    path_ready: bool | None = None,
+-) -> dict[str, Any]:
+-    ready = mounted_letters(after)
+-    stale = [str(r["letter"]).upper() for r in after if r.get("exists") and r.get("stale")]
+-    missing = missing_windows_letters(helper, after) if helper.get("ok") else []
+-    if ok:
+-        message = (
+-            f"Drive Mount Agent: Windows attached {', '.join(wanted) or 'none'}; "
+-            f"Docker mounted {', '.join(ready) or 'none'}"
+-        )
+-        if skipped_refresh:
+-            message += " (already mounted — no remount)"
+-    elif missing:
+-        message = (
+-            "Drive Mount Agent: Windows has "
+-            f"{', '.join(wanted)} but Docker is missing {', '.join(missing)}. "
+-            + (helper.get("start_hint") or "Start scripts\\ensure-host-drive-helper.ps1")
+-        )
+-    else:
+-        message = (
+-            "Drive Mount Agent: no usable /host/<letter> yet. "
+-            + (helper.get("start_hint") or "Start scripts\\ensure-host-drive-helper.ps1")
+-        )
+-    if stale and missing:
+-        message += f" Empty stubs: {', '.join(stale)}"
+-    return {
+-        "ok": ok,
+-        "agent": "drive_mount_agent",
+-        "mounted": ready,
+-        "drives": wanted or ready,
+-        "windows_letters": wanted,
+-        "missing": missing,
+-        "stale": stale,
+-        "helper_online": bool(helper.get("ok")),
+-        "helper_drives": wanted,
+-        "helper_url": helper.get("helper_url"),
+-        "skipped_refresh": skipped_refresh,
+-        "required_path": required_path,
+-        "required_letter": windows_letter_from_path(required_path),
+-        "path_ready": bool(path_ready) if path_ready is not None else (ok and not required_path),
+-        "refresh": {
+-            "ok": refresh.get("ok"),
+-            "started": refresh.get("started"),
+-            "message": refresh.get("message"),
+-            "error": refresh.get("error"),
+-            "status": waited.get("status"),
+-        },
+-        "inspect": [
+-            r
+-            for r in after
+-            if r.get("exists") or r.get("letter") in {x.lower() for x in wanted}
+-        ],
+-        "message": message,
+-        "start_hint": helper.get("start_hint"),
+-    }
+-
+-
+-def ensure_path_mounted(required_path: str, *, wait_sec: float = 90.0) -> dict[str, Any]:
+-    """Remount the selected Windows letter until Docker can list that path.
+-
+-    Drive Mount (any letter) can be 100% while G: is a stale stub. Call this
+-    when the examiner picks a folder so the evidence letter itself is healed.
+-    """
+-    raw = (required_path or "").strip()
+-    if not raw:
+-        return {
+-            "ok": False,
+-            "path_ready": False,
+-            "mounted": mounted_letters(),
+-            "message": "No path specified",
+-            "agent": "drive_mount_agent",
+-            "skipped_refresh": True,
+-        }
+-
+-    helper = probe_helper()
+-    before = inspect_host_letters()
+-    wanted = windows_attached_letters(helper) if helper.get("ok") else []
+-    letter = windows_letter_from_path(raw)
+-    refresh: dict[str, Any] = {}
+-    waited: dict[str, Any] = {}
+-
+-    if path_is_readable(raw):
+-        result = _result(
+-            ok=True,
+-            helper=helper,
+-            wanted=wanted or mounted_letters(before),
+-            after=before,
+-            refresh=refresh,
+-            waited=waited,
+-            skipped_refresh=True,
+-            required_path=raw,
+-            path_ready=True,
+-        )
+-        log.info("ensure_path skip remount path=%s letter=%s", raw, letter)
+-        return result
+-
+-    ready = mounted_letters(before)
+-    if letter and letter in ready:
+-        result = _result(
+-            ok=False,
+-            helper=helper,
+-            wanted=wanted or ready,
+-            after=before,
+-            refresh=refresh,
+-            waited=waited,
+-            skipped_refresh=True,
+-            required_path=raw,
+-            path_ready=False,
+-        )
+-        result["message"] = (
+-            f"Docker already has {letter}: mounted but {raw} is not readable. "
+-            "Confirm the folder exists on the office forensic server."
+-        )
+-        log.info("ensure_path letter healthy but path missing path=%s letter=%s", raw, letter)
+-        return result
+-
+-    refresh = proxy_refresh_mounts(required_path=raw)
+-    if refresh.get("started") or refresh.get("ok"):
+-        waited = wait_for_refresh(timeout_sec=min(max(float(wait_sec), 8.0), 180.0))
+-    deadline = time.time() + max(float(wait_sec), 8.0)
+-    after = before
+-    while time.time() < deadline:
+-        after = inspect_host_letters()
+-        if path_is_readable(raw):
+-            break
+-        if refresh.get("ok") is False and not refresh.get("started"):
+-            break
+-        time.sleep(2.0)
+-
+-    after = inspect_host_letters()
+-    ready_path = path_is_readable(raw)
+-    letter_ok = bool(letter and letter in mounted_letters(after))
+-    result = _result(
+-        ok=bool(ready_path or letter_ok),
+-        helper=helper,
+-        wanted=wanted or mounted_letters(after),
+-        after=after,
+-        refresh=refresh,
+-        waited=waited,
+-        required_path=raw,
+-        path_ready=ready_path,
+-    )
+-    if not ready_path:
+-        result["ok"] = False
+-        loc = (letter or "?").lower()
+-        result["message"] = (
+-            f"Office server can see {raw}, but Docker cannot read it "
+-            f"(missing or stale /host/{loc}). HostDrive remount was attempted — "
+-            "start scripts\\ensure-host-drive-helper.ps1 on the office host if this persists."
+-        )
+-    log.info(
+-        "ensure_path path=%s letter=%s readable=%s mounted=%s missing=%s",
+-        raw,
+-        letter,
+-        ready_path,
+-        result.get("mounted"),
+-        result.get("missing"),
+-    )
+-    return result
+-
+-
+-def ensure_all_drives_mounted(
+-    *,
+-    wait_sec: float = 180.0,
+-    required_path: str | None = None,
+-    sync_attached: bool = False,
+-) -> dict[str, Any]:
+-    """Remount Windows letters into Docker.
+-
+-    Default (pipeline huddle): skip when any ``/host/<letter>`` is already
+-    usable so extract is not interrupted by an unused USB volume.
+-
+-    *sync_attached=True* (Create job / folder picker): remount when Windows has
+-    letters Docker cannot read yet (newly attached evidence disks).
+-
+-    When *required_path* is set, remount that evidence letter even if C:–F:
+-    are already healthy.
+-    """
+-    if required_path and str(required_path).strip():
+-        return ensure_path_mounted(str(required_path).strip(), wait_sec=wait_sec)
+-
+-    helper = probe_helper()
+-    before = inspect_host_letters()
+-    wanted = windows_attached_letters(helper) if helper.get("ok") else []
+-    ready = mounted_letters(before)
+-    missing = missing_windows_letters(helper, before) if helper.get("ok") else []
+-    refresh: dict[str, Any] = {}
+-    waited: dict[str, Any] = {}
+-    need_refresh = bool(missing) if sync_attached else not ready
+-
+-    if not need_refresh and ready:
+-        if not wanted:
+-            wanted = ready
+-        result = _result(
+-            ok=True,
+-            helper=helper,
+-            wanted=wanted,
+-            after=before,
+-            refresh=refresh,
+-            waited=waited,
+-            skipped_refresh=True,
+-        )
+-        result["newly_attached"] = missing
+-        log.info(
+-            "drive_mount skip remount windows=%s mounted=%s missing=%s sync=%s",
+-            wanted,
+-            ready,
+-            missing,
+-            sync_attached,
+-        )
+-        return result
+-
+-    refresh = proxy_refresh_mounts(
+-        required_path=_required_path_for_missing(missing[:1] if missing else wanted[:1] if wanted else [])
+-    )
+-    if refresh.get("started") or refresh.get("ok"):
+-        waited = wait_for_refresh(timeout_sec=min(max(float(wait_sec), 8.0), 180.0))
+-    deadline = time.time() + max(float(wait_sec), 8.0)
+-    after = before
+-    while time.time() < deadline:
+-        after = inspect_host_letters()
+-        if sync_attached:
+-            still_missing = missing_windows_letters(helper, after) if helper.get("ok") else []
+-            if not still_missing and mounted_letters(after):
+-                break
+-        elif mounted_letters(after):
+-            break
+-        if refresh.get("ok") is False and not refresh.get("started"):
+-            break
+-        time.sleep(2.0)
+-
+-    after = inspect_host_letters()
+-    ready = mounted_letters(after)
+-    result = _result(
+-        ok=bool(ready),
+-        helper=helper,
+-        wanted=wanted or ready,
+-        after=after,
+-        refresh=refresh,
+-        waited=waited,
+-    )
+-    result["newly_attached"] = missing
+-    log.info(
+-        "drive_mount helper=%s windows=%s mounted=%s missing=%s skipped=%s sync=%s",
+-        helper.get("ok"),
+-        wanted,
+-        ready,
+-        result.get("missing"),
+-        False,
+-        sync_attached,
+-    )
+-    return result
++"""Drive Mount Agent — consult Windows letters and remount every attached drive."""
++
++from __future__ import annotations
++
++import json
++import logging
++import os
++import re
++import string
++import time
++import urllib.request
++from pathlib import Path
++from typing import Any
++
++from app.services.host_evidence import (
++    _host_mount_prefix,
++    _is_stale_host_mount,
++    _safe_is_dir,
++)
++from app.services.hostdrive_agent import probe_helper, proxy_refresh_mounts, wait_for_refresh
++
++log = logging.getLogger("drive_mount_agent")
++
++_SKIP_DRIVE_TYPES = frozenset({"cdrom", "cd-rom", "cd_rom"})
++
++
++def inspect_local_host_letters() -> list[dict[str, Any]]:
++    """What THIS container can see under /host/<letter>."""
++    prefix = _host_mount_prefix()
++    out: list[dict[str, Any]] = []
++    for letter in string.ascii_lowercase:
++        path = prefix / letter
++        exists = _safe_is_dir(path)
++        stale = bool(exists and _is_stale_host_mount(path))
++        entries = 0
++        if exists and not stale:
++            try:
++                entries = sum(1 for _ in path.iterdir())
++            except OSError:
++                stale = True
++                entries = 0
++        out.append(
++            {
++                "letter": letter,
++                "path": str(path),
++                "exists": exists,
++                "stale": stale,
++                "mounted": bool(exists and not stale),
++                "entries": entries,
++            }
++        )
++    return out
++
++
++def _peer_api_bases() -> list[str]:
++    extra = (os.environ.get("FORENSIC_API_URL") or os.environ.get("API_INTERNAL_URL") or "").strip()
++    bases = [extra, "http://api:8080", "http://127.0.0.1:8080"]
++    seen: set[str] = set()
++    out: list[str] = []
++    for raw in bases:
++        base = raw.rstrip("/")
++        if not base or base in seen:
++            continue
++        seen.add(base)
++        out.append(base)
++    return out
++
++
++def inspect_peer_api_letters() -> list[dict[str, Any]] | None:
++    """Ask the API container — worker-agent has no /host binds of its own."""
++    for base in _peer_api_bases():
++        try:
++            req = urllib.request.Request(f"{base}/internal/host-mounts")
++            with urllib.request.urlopen(req, timeout=3.0) as resp:
++                data = json.loads(resp.read().decode("utf-8") or "{}")
++            rows = data.get("inspect") if isinstance(data, dict) else None
++            if isinstance(rows, list) and any(r.get("mounted") for r in rows if isinstance(r, dict)):
++                return [r for r in rows if isinstance(r, dict)]
++        except Exception as exc:
++            log.debug("peer host-mounts %s: %s", base, exc)
++    return None
++
++
++def inspect_host_letters() -> list[dict[str, Any]]:
++    """API-visible /host/<letter> mounts (local first, then the API peer)."""
++    local = inspect_local_host_letters()
++    if mounted_letters(local):
++        return local
++    peer = inspect_peer_api_letters()
++    return peer if peer else local
++
++
++def mounted_letters(rows: list[dict[str, Any]] | None = None) -> list[str]:
++    rows = rows if rows is not None else inspect_host_letters()
++    return [str(r["letter"]).upper() for r in rows if r.get("mounted")]
++
++
++def windows_attached_letters(helper: dict[str, Any] | None = None) -> list[str]:
++    """Drive letters Windows currently has attached (helper /drives + volumes)."""
++    helper = helper if helper is not None else probe_helper()
++    seen: set[str] = set()
++    letters: list[str] = []
++
++    def _add(raw: object) -> None:
++        letter = str(raw or "").strip().upper()[:1]
++        if letter.isalpha() and letter not in seen:
++            seen.add(letter)
++            letters.append(letter)
++
++    for vol in helper.get("volumes") or []:
++        if not isinstance(vol, dict):
++            continue
++        drive_type = str(vol.get("drive_type") or "").lower().replace(" ", "")
++        if drive_type in _SKIP_DRIVE_TYPES:
++            continue
++        _add(vol.get("letter"))
++    for raw in helper.get("drives") or []:
++        _add(raw)
++    return letters
++
++
++def missing_windows_letters(
++    helper: dict[str, Any] | None = None,
++    rows: list[dict[str, Any]] | None = None,
++) -> list[str]:
++    """Windows letters that Docker cannot read yet (stale stub or unmounted)."""
++    wanted = windows_attached_letters(helper)
++    mounted = set(mounted_letters(rows))
++    return [letter for letter in wanted if letter not in mounted]
++
++
++def mounts_ready(
++    rows: list[dict[str, Any]] | None = None,
++    helper: dict[str, Any] | None = None,
++) -> bool:
++    """True when Docker already has at least one usable /host/<letter>.
++
++    Extra Windows letters (USB, DVD, unused volumes) must not keep Drive Mount
++    running or remount the stack. List Folder can pick G: from the letters that
++    are already visible. ``helper`` is kept for callers; it is not a gate.
++    """
++    rows = rows if rows is not None else inspect_host_letters()
++    _ = helper
++    return bool(mounted_letters(rows))
++
++
++def _required_path_for_missing(missing: list[str]) -> str | None:
++    if not missing:
++        return None
++    return f"{missing[0]}:\\"
++
++
++_WINDOWS_LETTER_RE = re.compile(r"^([A-Za-z]):")
++
++
++def windows_letter_from_path(path: str | None) -> str | None:
++    match = _WINDOWS_LETTER_RE.match((path or "").strip())
++    if not match:
++        return None
++    return match.group(1).upper()
++
++
++def docker_path_for_windows(required_path: str) -> Path | None:
++    """Map ``G:\\DISK2\\folder`` onto ``/host/g/DISK2/folder`` inside Docker."""
++    match = re.match(r"^([A-Za-z]):[/\\]?(.*)$", (required_path or "").strip())
++    if not match:
++        return None
++    letter = match.group(1).lower()
++    rest = match.group(2).replace("\\", "/").strip("/")
++    base = _host_mount_prefix() / letter
++    return (base / rest) if rest else base
++
++
++def path_is_readable(required_path: str) -> bool:
++    """True when Docker can actually list/stat the selected Windows path."""
++    p = docker_path_for_windows(required_path)
++    if p is None:
++        return False
++    try:
++        if p.is_file():
++            return True
++        if not _safe_is_dir(p):
++            return False
++        if _is_stale_host_mount(p):
++            return False
++        next(p.iterdir(), None)
++        return True
++    except OSError:
++        return False
++
++
++def _result(
++    *,
++    ok: bool,
++    helper: dict[str, Any],
++    wanted: list[str],
++    after: list[dict[str, Any]],
++    refresh: dict[str, Any],
++    waited: dict[str, Any],
++    skipped_refresh: bool = False,
++    required_path: str | None = None,
++    path_ready: bool | None = None,
++) -> dict[str, Any]:
++    ready = mounted_letters(after)
++    stale = [str(r["letter"]).upper() for r in after if r.get("exists") and r.get("stale")]
++    missing = missing_windows_letters(helper, after) if helper.get("ok") else []
++    if ok:
++        message = (
++            f"Drive Mount Agent: Windows attached {', '.join(wanted) or 'none'}; "
++            f"Docker mounted {', '.join(ready) or 'none'}"
++        )
++        if skipped_refresh:
++            message += " (already mounted — no remount)"
++    elif missing:
++        message = (
++            "Drive Mount Agent: Windows has "
++            f"{', '.join(wanted)} but Docker is missing {', '.join(missing)}. "
++            + (helper.get("start_hint") or "Start scripts\\ensure-host-drive-helper.ps1")
++        )
++    else:
++        message = (
++            "Drive Mount Agent: no usable /host/<letter> yet. "
++            + (helper.get("start_hint") or "Start scripts\\ensure-host-drive-helper.ps1")
++        )
++    if stale and missing:
++        message += f" Empty stubs: {', '.join(stale)}"
++    return {
++        "ok": ok,
++        "agent": "drive_mount_agent",
++        "mounted": ready,
++        "drives": wanted or ready,
++        "windows_letters": wanted,
++        "missing": missing,
++        "stale": stale,
++        "helper_online": bool(helper.get("ok")),
++        "helper_drives": wanted,
++        "helper_url": helper.get("helper_url"),
++        "skipped_refresh": skipped_refresh,
++        "required_path": required_path,
++        "required_letter": windows_letter_from_path(required_path),
++        "path_ready": bool(path_ready) if path_ready is not None else (ok and not required_path),
++        "refresh": {
++            "ok": refresh.get("ok"),
++            "started": refresh.get("started"),
++            "message": refresh.get("message"),
++            "error": refresh.get("error"),
++            "status": waited.get("status"),
++        },
++        "inspect": [
++            r
++            for r in after
++            if r.get("exists") or r.get("letter") in {x.lower() for x in wanted}
++        ],
++        "message": message,
++        "start_hint": helper.get("start_hint"),
++    }
++
++
++def ensure_path_mounted(required_path: str, *, wait_sec: float = 90.0) -> dict[str, Any]:
++    """Remount the selected Windows letter until Docker can list that path.
++
++    Drive Mount (any letter) can be 100% while G: is a stale stub. Call this
++    when the examiner picks a folder so the evidence letter itself is healed.
++    """
++    raw = (required_path or "").strip()
++    if not raw:
++        return {
++            "ok": False,
++            "path_ready": False,
++            "mounted": mounted_letters(),
++            "message": "No path specified",
++            "agent": "drive_mount_agent",
++            "skipped_refresh": True,
++        }
++
++    helper = probe_helper()
++    before = inspect_host_letters()
++    wanted = windows_attached_letters(helper) if helper.get("ok") else []
++    letter = windows_letter_from_path(raw)
++    refresh: dict[str, Any] = {}
++    waited: dict[str, Any] = {}
++
++    if path_is_readable(raw):
++        result = _result(
++            ok=True,
++            helper=helper,
++            wanted=wanted or mounted_letters(before),
++            after=before,
++            refresh=refresh,
++            waited=waited,
++            skipped_refresh=True,
++            required_path=raw,
++            path_ready=True,
++        )
++        log.info("ensure_path skip remount path=%s letter=%s", raw, letter)
++        return result
++
++    # Do not trust a mounted drive letter as proof that the selected evidence is
++    # readable. Removable media can be swapped while /host/g remains a valid but
++    # stale bind. The exact selected path is the authority; if it is unreadable,
++    # ask the Windows HostDrive refresh job to resolve/remount that path.
++    refresh = proxy_refresh_mounts(required_path=raw)
++    if refresh.get("started") or refresh.get("ok"):
++        waited = wait_for_refresh(timeout_sec=min(max(float(wait_sec), 8.0), 180.0))
++    deadline = time.time() + max(float(wait_sec), 8.0)
++    after = before
++    refresh_failed = str(waited.get("status") or "").lower() == "error" or waited.get("ok") is False
++    while time.time() < deadline:
++        after = inspect_host_letters()
++        if path_is_readable(raw):
++            break
++        if refresh_failed or (refresh.get("ok") is False and not refresh.get("started")):
++            break
++        time.sleep(2.0)
++
++    after = inspect_host_letters()
++    ready_path = path_is_readable(raw)
++    letter_ok = bool(letter and letter in mounted_letters(after))
++    result = _result(
++        ok=bool(ready_path or letter_ok),
++        helper=helper,
++        wanted=wanted or mounted_letters(after),
++        after=after,
++        refresh=refresh,
++        waited=waited,
++        required_path=raw,
++        path_ready=ready_path,
++    )
++    if not ready_path:
++        result["ok"] = False
++        loc = (letter or "?").lower()
++        refresh_detail = str(
++            waited.get("error")
++            or waited.get("message")
++            or refresh.get("error")
++            or refresh.get("message")
++            or ""
++        ).strip()
++        result["refresh_error"] = refresh_detail or None
++        result["message"] = (
++            f"Office server can see {raw}, but Docker cannot read it "
++            f"(missing or stale /host/{loc})."
++        )
++        if refresh_detail:
++            result["message"] += f" Mount recovery detail: {refresh_detail}"
++        else:
++            result["message"] += " HostDrive remount did not make the selected path readable."
++    log.info(
++        "ensure_path path=%s letter=%s readable=%s mounted=%s missing=%s",
++        raw,
++        letter,
++        ready_path,
++        result.get("mounted"),
++        result.get("missing"),
++    )
++    return result
++
++
++def ensure_all_drives_mounted(
++    *,
++    wait_sec: float = 180.0,
++    required_path: str | None = None,
++    sync_attached: bool = False,
++) -> dict[str, Any]:
++    """Remount Windows letters into Docker.
++
++    Default (pipeline huddle): skip when any ``/host/<letter>`` is already
++    usable so extract is not interrupted by an unused USB volume.
++
++    *sync_attached=True* (Create job / folder picker): remount when Windows has
++    letters Docker cannot read yet (newly attached evidence disks).
++
++    When *required_path* is set, remount that evidence letter even if C:–F:
++    are already healthy.
++    """
++    if required_path and str(required_path).strip():
++        return ensure_path_mounted(str(required_path).strip(), wait_sec=wait_sec)
++
++    helper = probe_helper()
++    before = inspect_host_letters()
++    wanted = windows_attached_letters(helper) if helper.get("ok") else []
++    ready = mounted_letters(before)
++    missing = missing_windows_letters(helper, before) if helper.get("ok") else []
++    refresh: dict[str, Any] = {}
++    waited: dict[str, Any] = {}
++    need_refresh = bool(missing) if sync_attached else not ready
++
++    if not need_refresh and ready:
++        if not wanted:
++            wanted = ready
++        result = _result(
++            ok=True,
++            helper=helper,
++            wanted=wanted,
++            after=before,
++            refresh=refresh,
++            waited=waited,
++            skipped_refresh=True,
++        )
++        result["newly_attached"] = missing
++        log.info(
++            "drive_mount skip remount windows=%s mounted=%s missing=%s sync=%s",
++            wanted,
++            ready,
++            missing,
++            sync_attached,
++        )
++        return result
++
++    refresh = proxy_refresh_mounts(
++        required_path=_required_path_for_missing(missing[:1] if missing else wanted[:1] if wanted else [])
++    )
++    if refresh.get("started") or refresh.get("ok"):
++        waited = wait_for_refresh(timeout_sec=min(max(float(wait_sec), 8.0), 180.0))
++    deadline = time.time() + max(float(wait_sec), 8.0)
++    after = before
++    while time.time() < deadline:
++        after = inspect_host_letters()
++        if sync_attached:
++            still_missing = missing_windows_letters(helper, after) if helper.get("ok") else []
++            if not still_missing and mounted_letters(after):
++                break
++        elif mounted_letters(after):
++            break
++        if refresh.get("ok") is False and not refresh.get("started"):
++            break
++        time.sleep(2.0)
++
++    after = inspect_host_letters()
++    ready = mounted_letters(after)
++    result = _result(
++        ok=bool(ready),
++        helper=helper,
++        wanted=wanted or ready,
++        after=after,
++        refresh=refresh,
++        waited=waited,
++    )
++    result["newly_attached"] = missing
++    log.info(
++        "drive_mount helper=%s windows=%s mounted=%s missing=%s skipped=%s sync=%s",
++        helper.get("ok"),
++        wanted,
++        ready,
++        result.get("missing"),
++        False,
++        sync_attached,
++    )
++    return result
+--- a/backend/app/services/host_evidence.py
++++ b/backend/app/services/host_evidence.py
+@@ -2820,12 +2820,16 @@
+         if staged_source:
+             source_ds.update({
+                 "intake": "browser_upload",
++                "source_origin": "client_browser",
++                "transport_mode": "staged_upload",
+                 "source_residency": "client_uploaded_to_server",
+                 "cleanup_policy": "delete_after_pipeline_success",
+             })
+         else:
+             source_ds.update({
+                 "intake": "server_local",
++                "source_origin": "server_accessible",
++                "transport_mode": "zero_copy",
+                 "source_residency": "server_local",
+                 "cleanup_policy": "never_delete_source",
+                 "staging_purged": False,
+@@ -3167,6 +3171,8 @@
+     ds = dict(load_job_disk_source(row))
+     locs = staging_locations(job_id)
+     ds["intake"] = "browser_upload"
++    ds["source_origin"] = "client_browser"
++    ds["transport_mode"] = "staged_upload"
+     ds["source_residency"] = "client_uploaded_to_server"
+     ds["cleanup_policy"] = "delete_after_pipeline_success"
+     ds["upload_parallelism"] = 5
+@@ -3233,6 +3239,8 @@
+         )
+     locs = staging_locations(job_id)
+     ds["intake"] = "browser_upload"
++    ds["source_origin"] = "client_browser"
++    ds["transport_mode"] = "staged_upload"
+     ds["source_residency"] = "client_uploaded_to_server"
+     ds["cleanup_policy"] = "delete_after_pipeline_success"
+     ds["upload_parallelism"] = 5
+@@ -3271,6 +3279,8 @@
+     row = fetchone(db, "SELECT disk_source FROM jobs WHERE id=:job_id", {"job_id": job_id}) or {}
+     ds = dict(load_job_disk_source(row))
+     ds["intake"] = "browser_upload"
++    ds["source_origin"] = "client_browser"
++    ds["transport_mode"] = "staged_upload"
+     ds["source_residency"] = "client_uploaded_to_server"
+     ds["cleanup_policy"] = "delete_after_pipeline_success"
+     ds["upload_parallelism"] = 5
+--- a/backend/tests/test_drive_mount_agent.py
++++ b/backend/tests/test_drive_mount_agent.py
+@@ -1,265 +1,308 @@
+-from app.services.drive_mount_agent import (
+-    ensure_all_drives_mounted,
+-    ensure_path_mounted,
+-    missing_windows_letters,
+-    mounts_ready,
+-    windows_attached_letters,
+-)
+-
+-
+-def _row(letter: str, *, mounted: bool, stale: bool = False) -> dict:
+-    return {
+-        "letter": letter.lower(),
+-        "path": f"/host/{letter.lower()}",
+-        "exists": mounted or stale,
+-        "stale": stale,
+-        "mounted": mounted,
+-        "entries": 3 if mounted else 0,
+-    }
+-
+-
+-def test_windows_attached_letters_include_external_and_skip_cdrom():
+-    helper = {
+-        "ok": True,
+-        "drives": ["C", "D", "G"],
+-        "volumes": [
+-            {"letter": "C", "drive_type": "fixed"},
+-            {"letter": "G", "drive_type": "fixed", "label": "New Volume"},
+-            {"letter": "E", "drive_type": "cdrom"},
+-        ],
+-    }
+-    assert windows_attached_letters(helper) == ["C", "G", "D"]
+-
+-
+-def test_missing_windows_letters_when_g_is_stale_stub():
+-    helper = {"ok": True, "drives": ["C", "D", "E", "F", "G"]}
+-    rows = [_row(L, mounted=True) for L in "CDEF"] + [_row("G", mounted=False, stale=True)]
+-    assert missing_windows_letters(helper, rows) == ["G"]
+-    assert mounts_ready(rows, helper) is True
+-
+-
+-def test_mounts_ready_when_any_docker_letter_is_up():
+-    helper = {"ok": True, "drives": ["C", "G"]}
+-    only_c = [_row("C", mounted=True), _row("G", mounted=False)]
+-    both = [_row("C", mounted=True), _row("G", mounted=True)]
+-    none = [_row("C", mounted=False), _row("G", mounted=False)]
+-    assert mounts_ready(only_c, helper) is True
+-    assert mounts_ready(both, helper) is True
+-    assert mounts_ready(none, helper) is False
+-
+-
+-def test_ensure_all_remounts_only_when_nothing_is_mounted(monkeypatch):
+-    inspect_n = {"n": 0}
+-
+-    def fake_inspect():
+-        inspect_n["n"] += 1
+-        if inspect_n["n"] < 3:
+-            return [_row(L, mounted=False) for L in "cdefg"]
+-        return [_row(L, mounted=True) for L in "cdefg"]
+-
+-    monkeypatch.setattr(
+-        "app.services.drive_mount_agent.probe_helper",
+-        lambda: {
+-            "ok": True,
+-            "helper_url": "http://host.docker.internal:9876",
+-            "drives": ["C", "D", "E", "F", "G"],
+-            "volumes": [{"letter": "G", "drive_type": "fixed", "label": "New Volume"}],
+-            "start_hint": "hint",
+-        },
+-    )
+-    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", fake_inspect)
+-    monkeypatch.setattr(
+-        "app.services.drive_mount_agent.proxy_refresh_mounts",
+-        lambda required_path=None: {"ok": True, "started": True, "required_path": required_path},
+-    )
+-    monkeypatch.setattr(
+-        "app.services.drive_mount_agent.wait_for_refresh",
+-        lambda timeout_sec=150: {"status": "done"},
+-    )
+-    monkeypatch.setattr("app.services.drive_mount_agent.time.sleep", lambda _s: None)
+-
+-    result = ensure_all_drives_mounted(wait_sec=8)
+-    assert result["ok"] is True
+-    assert result["skipped_refresh"] is False
+-    assert "C" in result["mounted"]
+-
+-
+-def test_ensure_all_skips_refresh_when_partial_letters_already_mounted(monkeypatch):
+-    rows = [_row(L, mounted=True) for L in "CDEF"]
+-    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", lambda: rows)
+-    monkeypatch.setattr(
+-        "app.services.drive_mount_agent.probe_helper",
+-        lambda: {"ok": True, "drives": ["C", "D", "E", "F", "G"]},
+-    )
+-    calls = {"n": 0}
+-
+-    def boom(**_kwargs):
+-        calls["n"] += 1
+-        raise AssertionError("refresh must not run when Docker already has letters")
+-
+-    monkeypatch.setattr("app.services.drive_mount_agent.proxy_refresh_mounts", boom)
+-    result = ensure_all_drives_mounted(wait_sec=8)
+-    assert result["ok"] is True
+-    assert result["skipped_refresh"] is True
+-    assert calls["n"] == 0
+-
+-
+-def test_ensure_all_sync_attached_remounts_missing_g(monkeypatch):
+-    stale = [_row(L, mounted=True) for L in "CDEF"] + [_row("G", mounted=False, stale=True)]
+-    healthy = [_row(L, mounted=True) for L in "CDEFG"]
+-    inspect_n = {"n": 0}
+-
+-    def fake_inspect():
+-        inspect_n["n"] += 1
+-        return stale if inspect_n["n"] < 3 else healthy
+-
+-    refresh_calls: list[str | None] = []
+-    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", fake_inspect)
+-    monkeypatch.setattr(
+-        "app.services.drive_mount_agent.probe_helper",
+-        lambda: {"ok": True, "drives": ["C", "D", "E", "F", "G"]},
+-    )
+-    monkeypatch.setattr(
+-        "app.services.drive_mount_agent.proxy_refresh_mounts",
+-        lambda required_path=None: refresh_calls.append(required_path) or {"ok": True, "started": True},
+-    )
+-    monkeypatch.setattr(
+-        "app.services.drive_mount_agent.wait_for_refresh",
+-        lambda timeout_sec=150: {"status": "done"},
+-    )
+-    monkeypatch.setattr("app.services.drive_mount_agent.time.sleep", lambda _s: None)
+-
+-    result = ensure_all_drives_mounted(wait_sec=8, sync_attached=True)
+-    assert refresh_calls == ["G:\\"]
+-    assert result["ok"] is True
+-    assert result["skipped_refresh"] is False
+-    assert "G" in result["mounted"]
+-    assert result.get("newly_attached") == ["G"]
+-
+-
+-def test_ensure_all_skips_refresh_when_already_mounted(monkeypatch):
+-    rows = [_row(L, mounted=True) for L in "CDEFG"]
+-    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", lambda: rows)
+-    monkeypatch.setattr(
+-        "app.services.drive_mount_agent.probe_helper",
+-        lambda: {"ok": True, "drives": ["C", "D", "E", "F", "G"]},
+-    )
+-    calls = {"n": 0}
+-
+-    def boom(**_kwargs):
+-        calls["n"] += 1
+-        raise AssertionError("refresh must not run when every Windows letter is mounted")
+-
+-    monkeypatch.setattr("app.services.drive_mount_agent.proxy_refresh_mounts", boom)
+-    result = ensure_all_drives_mounted(wait_sec=8)
+-    assert result["ok"] is True
+-    assert result["skipped_refresh"] is True
+-    assert calls["n"] == 0
+-
+-
+-def test_ensure_all_ok_when_helper_offline_if_api_already_has_mounts(monkeypatch):
+-    rows = [_row(L, mounted=True) for L in "CDEFG"]
+-    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", lambda: rows)
+-    monkeypatch.setattr(
+-        "app.services.drive_mount_agent.probe_helper",
+-        lambda: {"ok": False, "drives": [], "start_hint": "hint"},
+-    )
+-    result = ensure_all_drives_mounted(wait_sec=8)
+-    assert result["ok"] is True
+-    assert "G" in result["mounted"]
+-    assert result["skipped_refresh"] is True
+-
+-
+-def test_ensure_path_remounts_when_required_letter_is_stale(monkeypatch):
+-    stale = [_row(L, mounted=True) for L in "CDEF"] + [_row("G", mounted=False, stale=True)]
+-    healthy = [_row(L, mounted=True) for L in "CDEFG"]
+-    inspect_n = {"n": 0}
+-
+-    def fake_inspect():
+-        inspect_n["n"] += 1
+-        return stale if inspect_n["n"] < 3 else healthy
+-
+-    readable = {"n": 0}
+-
+-    def fake_readable(_path: str) -> bool:
+-        readable["n"] += 1
+-        return readable["n"] >= 3
+-
+-    refresh_calls: list[str | None] = []
+-
+-    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", fake_inspect)
+-    monkeypatch.setattr("app.services.drive_mount_agent.path_is_readable", fake_readable)
+-    monkeypatch.setattr(
+-        "app.services.drive_mount_agent.probe_helper",
+-        lambda: {
+-            "ok": True,
+-            "drives": ["C", "D", "E", "F", "G"],
+-            "volumes": [{"letter": "G", "drive_type": "fixed", "label": "New Volume"}],
+-            "start_hint": "hint",
+-        },
+-    )
+-    monkeypatch.setattr(
+-        "app.services.drive_mount_agent.proxy_refresh_mounts",
+-        lambda required_path=None: refresh_calls.append(required_path) or {"ok": True, "started": True},
+-    )
+-    monkeypatch.setattr(
+-        "app.services.drive_mount_agent.wait_for_refresh",
+-        lambda timeout_sec=150: {"status": "done"},
+-    )
+-    monkeypatch.setattr("app.services.drive_mount_agent.time.sleep", lambda _s: None)
+-
+-    selected = r"G:\DISK2\DataExtration\SegerEx-1"
+-    result = ensure_path_mounted(selected, wait_sec=8)
+-    assert refresh_calls == [selected]
+-    assert result["ok"] is True
+-    assert result["path_ready"] is True
+-    assert result["skipped_refresh"] is False
+-    assert "G" in result["mounted"]
+-
+-
+-def test_ensure_all_with_required_path_remounts_stale_g(monkeypatch):
+-    rows = [_row(L, mounted=True) for L in "CDEF"] + [_row("G", mounted=False, stale=True)]
+-    calls = {"n": 0}
+-
+-    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", lambda: rows)
+-    monkeypatch.setattr("app.services.drive_mount_agent.path_is_readable", lambda _p: False)
+-    monkeypatch.setattr(
+-        "app.services.drive_mount_agent.probe_helper",
+-        lambda: {"ok": True, "drives": ["C", "D", "E", "F", "G"]},
+-    )
+-
+-    def fake_refresh(required_path=None):
+-        calls["n"] += 1
+-        calls["path"] = required_path
+-        return {"ok": True, "started": True}
+-
+-    monkeypatch.setattr("app.services.drive_mount_agent.proxy_refresh_mounts", fake_refresh)
+-    monkeypatch.setattr(
+-        "app.services.drive_mount_agent.wait_for_refresh",
+-        lambda timeout_sec=150: {"status": "done"},
+-    )
+-    monkeypatch.setattr("app.services.drive_mount_agent.time.sleep", lambda _s: None)
+-
+-    result = ensure_all_drives_mounted(wait_sec=8, required_path=r"G:\Evidence")
+-    assert calls["n"] == 1
+-    assert calls["path"] == r"G:\Evidence"
+-    assert result["skipped_refresh"] is False
+-
+-
+-def test_ensure_path_skips_refresh_when_letter_already_healthy(monkeypatch):
+-    rows = [_row(L, mounted=True) for L in "CDEFG"]
+-    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", lambda: rows)
+-    monkeypatch.setattr("app.services.drive_mount_agent.path_is_readable", lambda _p: False)
+-    monkeypatch.setattr(
+-        "app.services.drive_mount_agent.probe_helper",
+-        lambda: {"ok": True, "drives": ["C", "D", "E", "F", "G"]},
+-    )
+-
+-    def boom(**_kwargs):
+-        raise AssertionError("must not remount a healthy letter for a missing subfolder")
+-
+-    monkeypatch.setattr("app.services.drive_mount_agent.proxy_refresh_mounts", boom)
+-    result = ensure_path_mounted(r"G:\does-not-exist", wait_sec=8)
+-    assert result["ok"] is False
+-    assert result["skipped_refresh"] is True
+-    assert result["path_ready"] is False
++from app.services.drive_mount_agent import (
++    ensure_all_drives_mounted,
++    ensure_path_mounted,
++    missing_windows_letters,
++    mounts_ready,
++    windows_attached_letters,
++)
++
++
++def _row(letter: str, *, mounted: bool, stale: bool = False) -> dict:
++    return {
++        "letter": letter.lower(),
++        "path": f"/host/{letter.lower()}",
++        "exists": mounted or stale,
++        "stale": stale,
++        "mounted": mounted,
++        "entries": 3 if mounted else 0,
++    }
++
++
++def test_windows_attached_letters_include_external_and_skip_cdrom():
++    helper = {
++        "ok": True,
++        "drives": ["C", "D", "G"],
++        "volumes": [
++            {"letter": "C", "drive_type": "fixed"},
++            {"letter": "G", "drive_type": "fixed", "label": "New Volume"},
++            {"letter": "E", "drive_type": "cdrom"},
++        ],
++    }
++    assert windows_attached_letters(helper) == ["C", "G", "D"]
++
++
++def test_missing_windows_letters_when_g_is_stale_stub():
++    helper = {"ok": True, "drives": ["C", "D", "E", "F", "G"]}
++    rows = [_row(L, mounted=True) for L in "CDEF"] + [_row("G", mounted=False, stale=True)]
++    assert missing_windows_letters(helper, rows) == ["G"]
++    assert mounts_ready(rows, helper) is True
++
++
++def test_mounts_ready_when_any_docker_letter_is_up():
++    helper = {"ok": True, "drives": ["C", "G"]}
++    only_c = [_row("C", mounted=True), _row("G", mounted=False)]
++    both = [_row("C", mounted=True), _row("G", mounted=True)]
++    none = [_row("C", mounted=False), _row("G", mounted=False)]
++    assert mounts_ready(only_c, helper) is True
++    assert mounts_ready(both, helper) is True
++    assert mounts_ready(none, helper) is False
++
++
++def test_ensure_all_remounts_only_when_nothing_is_mounted(monkeypatch):
++    inspect_n = {"n": 0}
++
++    def fake_inspect():
++        inspect_n["n"] += 1
++        if inspect_n["n"] < 3:
++            return [_row(L, mounted=False) for L in "cdefg"]
++        return [_row(L, mounted=True) for L in "cdefg"]
++
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.probe_helper",
++        lambda: {
++            "ok": True,
++            "helper_url": "http://host.docker.internal:9876",
++            "drives": ["C", "D", "E", "F", "G"],
++            "volumes": [{"letter": "G", "drive_type": "fixed", "label": "New Volume"}],
++            "start_hint": "hint",
++        },
++    )
++    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", fake_inspect)
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.proxy_refresh_mounts",
++        lambda required_path=None: {"ok": True, "started": True, "required_path": required_path},
++    )
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.wait_for_refresh",
++        lambda timeout_sec=150: {"status": "done"},
++    )
++    monkeypatch.setattr("app.services.drive_mount_agent.time.sleep", lambda _s: None)
++
++    result = ensure_all_drives_mounted(wait_sec=8)
++    assert result["ok"] is True
++    assert result["skipped_refresh"] is False
++    assert "C" in result["mounted"]
++
++
++def test_ensure_all_skips_refresh_when_partial_letters_already_mounted(monkeypatch):
++    rows = [_row(L, mounted=True) for L in "CDEF"]
++    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", lambda: rows)
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.probe_helper",
++        lambda: {"ok": True, "drives": ["C", "D", "E", "F", "G"]},
++    )
++    calls = {"n": 0}
++
++    def boom(**_kwargs):
++        calls["n"] += 1
++        raise AssertionError("refresh must not run when Docker already has letters")
++
++    monkeypatch.setattr("app.services.drive_mount_agent.proxy_refresh_mounts", boom)
++    result = ensure_all_drives_mounted(wait_sec=8)
++    assert result["ok"] is True
++    assert result["skipped_refresh"] is True
++    assert calls["n"] == 0
++
++
++def test_ensure_all_sync_attached_remounts_missing_g(monkeypatch):
++    stale = [_row(L, mounted=True) for L in "CDEF"] + [_row("G", mounted=False, stale=True)]
++    healthy = [_row(L, mounted=True) for L in "CDEFG"]
++    inspect_n = {"n": 0}
++
++    def fake_inspect():
++        inspect_n["n"] += 1
++        return stale if inspect_n["n"] < 3 else healthy
++
++    refresh_calls: list[str | None] = []
++    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", fake_inspect)
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.probe_helper",
++        lambda: {"ok": True, "drives": ["C", "D", "E", "F", "G"]},
++    )
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.proxy_refresh_mounts",
++        lambda required_path=None: refresh_calls.append(required_path) or {"ok": True, "started": True},
++    )
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.wait_for_refresh",
++        lambda timeout_sec=150: {"status": "done"},
++    )
++    monkeypatch.setattr("app.services.drive_mount_agent.time.sleep", lambda _s: None)
++
++    result = ensure_all_drives_mounted(wait_sec=8, sync_attached=True)
++    assert refresh_calls == ["G:\\"]
++    assert result["ok"] is True
++    assert result["skipped_refresh"] is False
++    assert "G" in result["mounted"]
++    assert result.get("newly_attached") == ["G"]
++
++
++def test_ensure_all_skips_refresh_when_already_mounted(monkeypatch):
++    rows = [_row(L, mounted=True) for L in "CDEFG"]
++    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", lambda: rows)
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.probe_helper",
++        lambda: {"ok": True, "drives": ["C", "D", "E", "F", "G"]},
++    )
++    calls = {"n": 0}
++
++    def boom(**_kwargs):
++        calls["n"] += 1
++        raise AssertionError("refresh must not run when every Windows letter is mounted")
++
++    monkeypatch.setattr("app.services.drive_mount_agent.proxy_refresh_mounts", boom)
++    result = ensure_all_drives_mounted(wait_sec=8)
++    assert result["ok"] is True
++    assert result["skipped_refresh"] is True
++    assert calls["n"] == 0
++
++
++def test_ensure_all_ok_when_helper_offline_if_api_already_has_mounts(monkeypatch):
++    rows = [_row(L, mounted=True) for L in "CDEFG"]
++    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", lambda: rows)
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.probe_helper",
++        lambda: {"ok": False, "drives": [], "start_hint": "hint"},
++    )
++    result = ensure_all_drives_mounted(wait_sec=8)
++    assert result["ok"] is True
++    assert "G" in result["mounted"]
++    assert result["skipped_refresh"] is True
++
++
++def test_ensure_path_remounts_when_required_letter_is_stale(monkeypatch):
++    stale = [_row(L, mounted=True) for L in "CDEF"] + [_row("G", mounted=False, stale=True)]
++    healthy = [_row(L, mounted=True) for L in "CDEFG"]
++    inspect_n = {"n": 0}
++
++    def fake_inspect():
++        inspect_n["n"] += 1
++        return stale if inspect_n["n"] < 3 else healthy
++
++    readable = {"n": 0}
++
++    def fake_readable(_path: str) -> bool:
++        readable["n"] += 1
++        return readable["n"] >= 3
++
++    refresh_calls: list[str | None] = []
++
++    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", fake_inspect)
++    monkeypatch.setattr("app.services.drive_mount_agent.path_is_readable", fake_readable)
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.probe_helper",
++        lambda: {
++            "ok": True,
++            "drives": ["C", "D", "E", "F", "G"],
++            "volumes": [{"letter": "G", "drive_type": "fixed", "label": "New Volume"}],
++            "start_hint": "hint",
++        },
++    )
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.proxy_refresh_mounts",
++        lambda required_path=None: refresh_calls.append(required_path) or {"ok": True, "started": True},
++    )
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.wait_for_refresh",
++        lambda timeout_sec=150: {"status": "done"},
++    )
++    monkeypatch.setattr("app.services.drive_mount_agent.time.sleep", lambda _s: None)
++
++    selected = r"G:\DISK2\DataExtration\SegerEx-1"
++    result = ensure_path_mounted(selected, wait_sec=8)
++    assert refresh_calls == [selected]
++    assert result["ok"] is True
++    assert result["path_ready"] is True
++    assert result["skipped_refresh"] is False
++    assert "G" in result["mounted"]
++
++
++def test_ensure_all_with_required_path_remounts_stale_g(monkeypatch):
++    rows = [_row(L, mounted=True) for L in "CDEF"] + [_row("G", mounted=False, stale=True)]
++    calls = {"n": 0}
++
++    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", lambda: rows)
++    monkeypatch.setattr("app.services.drive_mount_agent.path_is_readable", lambda _p: False)
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.probe_helper",
++        lambda: {"ok": True, "drives": ["C", "D", "E", "F", "G"]},
++    )
++
++    def fake_refresh(required_path=None):
++        calls["n"] += 1
++        calls["path"] = required_path
++        return {"ok": True, "started": True}
++
++    monkeypatch.setattr("app.services.drive_mount_agent.proxy_refresh_mounts", fake_refresh)
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.wait_for_refresh",
++        lambda timeout_sec=150: {"status": "done"},
++    )
++    monkeypatch.setattr("app.services.drive_mount_agent.time.sleep", lambda _s: None)
++
++    result = ensure_all_drives_mounted(wait_sec=8, required_path=r"G:\Evidence")
++    assert calls["n"] == 1
++    assert calls["path"] == r"G:\Evidence"
++    assert result["skipped_refresh"] is False
++
++
++def test_ensure_path_refreshes_when_letter_is_mounted_but_exact_path_is_unreadable(monkeypatch):
++    rows = [_row(L, mounted=True) for L in "CDEFG"]
++    calls = {"n": 0}
++    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", lambda: rows)
++    monkeypatch.setattr("app.services.drive_mount_agent.path_is_readable", lambda _p: False)
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.probe_helper",
++        lambda: {"ok": True, "drives": ["C", "D", "E", "F", "G"]},
++    )
++
++    def refresh(required_path=None):
++        calls["n"] += 1
++        return {"ok": True, "started": True, "required_path": required_path}
++
++    monkeypatch.setattr("app.services.drive_mount_agent.proxy_refresh_mounts", refresh)
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.wait_for_refresh",
++        lambda timeout_sec=150: {"status": "error", "ok": False, "error": "Windows path missing or stale bind"},
++    )
++    monkeypatch.setattr("app.services.drive_mount_agent.time.sleep", lambda _s: None)
++    result = ensure_path_mounted(r"G:\does-not-exist", wait_sec=8)
++    assert calls["n"] == 1
++    assert result["ok"] is False
++    assert result["path_ready"] is False
++    assert "Windows path missing or stale bind" in result["message"]
++
++
++def test_ensure_path_surfaces_refresh_job_error_without_waiting_for_ttl(monkeypatch):
++    rows = [_row(L, mounted=True) for L in "CDEF"] + [_row("G", mounted=False, stale=True)]
++    sleeps = {"n": 0}
++
++    monkeypatch.setattr("app.services.drive_mount_agent.inspect_host_letters", lambda: rows)
++    monkeypatch.setattr("app.services.drive_mount_agent.path_is_readable", lambda _p: False)
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.probe_helper",
++        lambda: {"ok": True, "drives": ["C", "D", "E", "F", "G"]},
++    )
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.proxy_refresh_mounts",
++        lambda required_path=None: {"ok": True, "started": True, "required_path": required_path},
++    )
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.wait_for_refresh",
++        lambda timeout_sec=150: {
++            "status": "error",
++            "ok": False,
++            "error": "exact G evidence folder could not be bound read-only",
++        },
++    )
++    monkeypatch.setattr(
++        "app.services.drive_mount_agent.time.sleep",
++        lambda _s: sleeps.__setitem__("n", sleeps["n"] + 1),
++    )
++
++    result = ensure_path_mounted(r"G:\\Evidence\\Disk01.E01", wait_sec=90)
++    assert result["ok"] is False
++    assert result["path_ready"] is False
++    assert result["refresh_error"] == "exact G evidence folder could not be bound read-only"
++    assert "Mount recovery detail" in result["message"]
++    assert sleeps["n"] == 0
+--- /dev/null
++++ b/backend/tests/test_server_source_mode_mount_v29_5.py
+@@ -0,0 +1,85 @@
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[2]
++
++
++def read(rel: str) -> str:
++    return (ROOT / rel).read_text(encoding="utf-8")
++
++
++def test_required_drive_is_kept_for_exact_path_resolution_before_root_bind_succeeds():
++    generator = read("scripts/generate-drive-mounts.ps1")
++    refresh = read("scripts/refresh-drive-mounts-job.ps1")
++    assert "KeepRequiredForResolution" in generator
++    assert "$requested -contains $letter" in generator
++    assert "-KeepRequiredForResolution" in refresh
++    # Exact selected path resolution must happen after the first discovery pass.
++    assert "Invoke-DriveSourceResolver -Letter $letter -ExactPath $exact" in refresh
++
++
++def test_selected_file_can_be_bound_as_narrow_read_only_parent_folder():
++    resolver = read("scripts/resolve-docker-drive-source.ps1")
++    generator = read("scripts/generate-drive-mounts.ps1")
++    assert "function Get-ExactMountPlan" in resolver
++    assert 'mode           = "docker-exact-path"' in resolver
++    assert 'source_scope   = "selected-folder"' in resolver
++    assert "sibling E02/E03 segments remain" in resolver
++    assert "mount_target" in generator
++    assert "read_only: true" in generator
++
++
++def test_exact_path_mount_does_not_require_whole_host_drive_root_mount():
++    refresh = read("scripts/refresh-drive-mounts-job.ps1")
++    assert "Test-IsExactPathMount" in refresh
++    assert "$rootVerifyLetters" in refresh
++    assert "Get-StateMountTarget" in refresh
++    assert "Test-RequiredPathInContainer -Path $normalizedRequiredPath" in refresh
++
++
++def test_server_source_clears_client_download_activity_and_client_source_is_explicit():
++    panel = read("frontend/src/components/forensic/HostEvidencePanel.tsx")
++    session = read("frontend/src/lib/jobUploadSession.ts")
++    page = read("frontend/src/pages/forensic/JobDetailPage.tsx")
++    activity = read("frontend/src/components/forensic/JobActivityPanel.tsx")
++    assert "resetForServerSource" in session
++    assert 'onSourceModeChange?.("server")' in panel
++    assert 'onSourceModeChange?.("client")' in panel
++    assert 'showUploadActivity={evidenceTransferMode === "client"}' in page
++    assert "showUploadActivity &&" in activity
++
++
++def test_disk_pipeline_download_stage_exists_only_for_browser_upload_intake():
++    stages = read("frontend/src/lib/orchestrationStages.ts")
++    assert 'const clientUpload = String(ds.intake || "") === "browser_upload"' in stages
++    assert 'if (!mobile && id === "download_agent") return clientUpload' in stages
++
++
++def test_mount_failure_surfaces_background_refresh_error():
++    agent = read("backend/app/services/drive_mount_agent.py")
++    assert "refresh_failed" in agent
++    assert 'result["refresh_error"]' in agent
++    assert "Mount recovery detail:" in agent
++
++
++def test_manual_server_path_repair_script_is_powershell_51_compatible():
++    script = read("scripts/repair-server-evidence-path.ps1")
++    assert "refresh-drive-mounts-job.ps1" in script
++    assert "-RequiredPath $RequiredPath" in script
++    assert "??" not in script
++    assert "Test-Path -LiteralPath $RequiredPath" in script
++
++
++def test_backend_persists_transport_boundary_in_job_metadata():
++    evidence = read("backend/app/services/host_evidence.py")
++    assert '"source_origin": "server_accessible"' in evidence
++    assert '"transport_mode": "zero_copy"' in evidence
++    assert '"source_origin": "client_browser"' in evidence
++    assert '"transport_mode": "staged_upload"' in evidence
++
++
++def test_first_pass_drive_discovery_does_not_overwrite_active_compose_override():
++    refresh = read("scripts/refresh-drive-mounts-job.ps1")
++    assert 'docker-compose.drives.detect.yml' in refresh
++    first = refresh.split("# Discovery writes to a disposable override", 1)[1].split("$detectedLetters", 1)[0]
++    assert "-OutputPath $detectCompose" in first
++    assert "-KeepRequiredForResolution" in first
+--- a/frontend/src/components/forensic/HostEvidencePanel.tsx
++++ b/frontend/src/components/forensic/HostEvidencePanel.tsx
+@@ -154,6 +154,8 @@
+   onRegisterError?: (message: string) => void;
+   onProcessingError?: (message: string) => void;
+   onReceivingSegmentsStarted?: () => void;
++  /** Explicit evidence transport boundary for the parent activity UI. */
++  onSourceModeChange?: (mode: "server" | "client") => void;
+ }
+ 
+ export type HostEvidencePanelHandle = {
+@@ -333,6 +335,7 @@
+       onRegisterError,
+       onProcessingError,
+       onReceivingSegmentsStarted,
++      onSourceModeChange,
+     },
+     ref
+   ) {
+@@ -818,6 +821,9 @@
+       const segmentFiles = incoming.filter((f) => isSegmentFilename(f.name));
+       const toUpload =
+         isHostSegmentSource(sourceType) && segmentFiles.length ? segmentFiles : incoming;
++      // Browser/File API evidence is the client-transfer path. Only this path
++      // may expose Download Agent / Upload Activity.
++      onSourceModeChange?.("client");
+       // jobUploadSession starts the server-side Download Agent gate before the
+       // first byte. If that gate cannot be established, the upload fails closed
+       // and no extraction/RAG/report action is allowed to start.
+@@ -900,6 +906,7 @@
+       onRegisterError,
+       onRegisterProgress,
+       onRegistered,
++      onSourceModeChange,
+       sourceType,
+     ]
+   );
+@@ -1227,6 +1234,7 @@
+     const looksLikeClientDump =
+       /(?:^|\/)(?:data\/)?uploads\//i.test(dumpPath) || dumpPath.includes("/app/data/uploads/");
+     if (looksLikeClientDump) {
++      onSourceModeChange?.("client");
+       setRegistering(true);
+       beginReceivingSegments();
+       try {
+@@ -1252,6 +1260,17 @@
+       }
+       return;
+     }
++    // Explicit server-side boundary: this path is already visible to the
++    // forensic server (local disk, removable disk, or server-accessible network
++    // drive). Never retain or display an old browser Download Agent session.
++    if (!jobUploadSession.resetForServerSource(jobId)) {
++      const msg = "A client upload is still running for this job. Finish or stop that transfer before switching to server-side evidence.";
++      onRegisterError?.(msg);
++      toastRef.current.error(msg);
++      return;
++    }
++    onSourceModeChange?.("server");
++
+     // Keep the local button busy while checking Docker, but do not open the
+     // pipeline modal yet. The user should only see List folder / Receiving
+     // segments after the exact selected Windows path is confirmed in Docker.
+@@ -1526,6 +1545,13 @@
+   }
+ 
+   async function registerFromBrowse(res: HostBrowse, segments: string[]) {
++    if (!jobUploadSession.resetForServerSource(jobId)) {
++      const msg = "A client upload is still running for this job. Finish or stop that transfer before switching to server-side evidence.";
++      onRegisterError?.(msg);
++      toastRef.current.error(msg);
++      return;
++    }
++    onSourceModeChange?.("server");
+     setRegistering(true);
+     const label = res.display_path || `${segments.length} segment(s)`;
+     try {
+--- a/frontend/src/components/forensic/JobActivityPanel.tsx
++++ b/frontend/src/components/forensic/JobActivityPanel.tsx
+@@ -15,6 +15,8 @@
+   uploadLines: ActivityLine[];
+   uploadProgress: UploadProgressState | null;
+   uploading: boolean;
++  /** Only true for evidence that is being transferred from a client/browser. */
++  showUploadActivity?: boolean;
+   extractionLogs?: ExtractionLog[];
+   extractionLogsLoading?: boolean;
+   registering?: boolean;
+@@ -49,14 +51,15 @@
+   uploadLines,
+   uploadProgress,
+   uploading,
++  showUploadActivity = false,
+   extractionLogs,
+   extractionLogsLoading,
+   registering = false,
+   onRefreshLogs,
+   panelHeight,
+ }: JobActivityPanelProps) {
+-  const showUpload = uploading || uploadLines.length > 0 || uploadProgress !== null;
+-  const uploadExpanded = uploading || uploadLines.length > 0;
++  const showUpload = showUploadActivity && (uploading || uploadLines.length > 0 || uploadProgress !== null);
++  const uploadExpanded = showUploadActivity && (uploading || uploadLines.length > 0);
+   const overallPct = uploadProgress
+     ? Math.round(((uploadProgress.index + uploadProgress.filePct / 100) / uploadProgress.total) * 100)
+     : 0;
+--- a/frontend/src/lib/hostDriveHelper.ts
++++ b/frontend/src/lib/hostDriveHelper.ts
+@@ -1106,15 +1106,17 @@
+       missing?: string[];
+       message?: string;
+       required_letter?: string | null;
++      refresh_error?: string | null;
+     }>("/api/hostdrive/ensure-path", { required_path: requiredPath }, { timeoutMs: 180_000 });
+     const letter = requiredPath.match(/^([A-Za-z]):/)?.[1]?.toUpperCase();
+-    const mounted = (ensured.mounted || []).map((x) => x.toUpperCase());
+-    if (ensured.path_ready || (letter && mounted.includes(letter))) {
++    // Exact evidence readability is authoritative. A mounted G: root can be a
++    // stale bind left from a previously attached removable disk.
++    if (ensured.ok !== false && ensured.path_ready === true) {
+       return {
+         ok: true,
+-        path_ready: Boolean(ensured.path_ready),
++        path_ready: true,
+         mounted: ensured.mounted,
+-        message: ensured.message || `Docker can read ${letter}:`,
++        message: ensured.message || `Docker can read ${requiredPath}`,
+         drives: ensured.mounted,
+       };
+     }
+@@ -1123,6 +1125,7 @@
+       path_ready: Boolean(ensured.path_ready),
+       mounted: ensured.mounted,
+       error:
++        ensured.refresh_error ||
+         ensured.message ||
+         `Office Docker could not read ${requiredPath}` +
+           (ensured.missing?.length ? ` (missing ${ensured.missing.join(", ")})` : ""),
+--- a/frontend/src/lib/jobUploadSession.ts
++++ b/frontend/src/lib/jobUploadSession.ts
+@@ -169,6 +169,27 @@
+     return this.runners.has(jobId);
+   }
+ 
++  /**
++   * Clear browser/client-transfer state when the examiner explicitly switches
++   * to evidence that is already accessible from the forensic server.
++   *
++   * Server/local-network/removable evidence is processed in place and must not
++   * retain an old Download Agent log/progress card from a previous client
++   * upload attempt. Never clear a transfer that is genuinely still running.
++   */
++  resetForServerSource(jobId: string): boolean {
++    if (this.runners.has(jobId)) return false;
++    this.sessions.set(jobId, { lines: [], progress: null, uploading: false, files: [] });
++    this.fileBlobs.delete(jobId);
++    try {
++      sessionStorage.removeItem(STORAGE_PREFIX + jobId);
++    } catch {
++      // sessionStorage can be unavailable in hardened/private browser contexts.
++    }
++    this.notify(jobId);
++    return true;
++  }
++
+   async startUpload(
+     jobId: string,
+     mode: "files" | "directory",
+--- a/frontend/src/lib/orchestrationStages.ts
++++ b/frontend/src/lib/orchestrationStages.ts
+@@ -119,10 +119,16 @@
+ export function agentOrderForJob(job: Job): Array<{ id: string; label: string }> {
+   const mobile = isMobilePipelineJob(job);
+   const platform = mobileJobPlatform(job);
++  const ds = (job.disk_source || {}) as Record<string, unknown>;
++  const clientUpload = String(ds.intake || "") === "browser_upload";
+   return AGENT_ORDER.filter(({ id }) => {
+     if (id === "iosagent") return mobile && platform !== "android";
+     if (id === "androidagent") return mobile && platform !== "ios";
+     if (mobile && DISK_ONLY_AGENT_IDS.has(id)) return false;
++    // Download Agent is a client-transfer stage only. A server/local-network/
++    // removable source is registered and processed in place, so showing a
++    // Download stage there is both misleading and can preserve stale UI state.
++    if (!mobile && id === "download_agent") return clientUpload;
+     return !mobile ? id !== "iosagent" && id !== "androidagent" : true;
+   });
+ }
+--- a/frontend/src/pages/forensic/JobDetailPage.tsx
++++ b/frontend/src/pages/forensic/JobDetailPage.tsx
+@@ -178,6 +178,7 @@
+   const [refreshingArtifacts, setRefreshingArtifacts] = useState(false);
+   const [receivingSegmentsStarted, setReceivingSegmentsStarted] = useState(false);
+   const [logPanelHeight, setLogPanelHeight] = useState<number | undefined>();
++  const [evidenceTransferMode, setEvidenceTransferMode] = useState<"none" | "server" | "client">("none");
+ 
+   pollStoppedRef.current = pollStopped;
+ 
+@@ -194,7 +195,17 @@
+ 
+   const uploadSession = useJobUploadSession(jobId ?? "");
+ 
+-  const pipelineSteps = usePipelineStepTracker(job, {
++  // The current examiner choice is authoritative for presentation even before
++  // a server mount/register request finishes. This prevents stale browser-upload
++  // metadata from showing Download Agent after the examiner selects a server HDD.
++  const pipelineDisplayJob = useMemo(() => {
++    if (!job || evidenceTransferMode === "none") return job;
++    const diskSource = { ...(job.disk_source || {}) };
++    diskSource.intake = evidenceTransferMode === "client" ? "browser_upload" : "server_local";
++    return { ...job, disk_source: diskSource };
++  }, [job, evidenceTransferMode]);
++
++  const pipelineSteps = usePipelineStepTracker(pipelineDisplayJob, {
+     registering: registerProgress.active && registerProgress.phase !== "listing",
+     receivingSegmentsStarted,
+     processRequested,
+@@ -202,10 +213,11 @@
+     pipelineErrorStep,
+     listingFolder: registerProgress.phase === "listing",
+     mountingDrive: registerProgress.phase === "mounting",
+-    uploading: uploadSession.uploading || uploadSession.isRunning,
+-    uploadDetail: uploadSession.progress
++    uploading:
++      evidenceTransferMode === "client" && (uploadSession.uploading || uploadSession.isRunning),
++    uploadDetail: evidenceTransferMode === "client" && uploadSession.progress
+       ? `Uploading ${uploadSession.progress.index + 1}/${uploadSession.progress.total}: ${uploadSession.progress.fileName} (${uploadSession.progress.filePct}%)`
+-      : uploadSession.uploading
++      : evidenceTransferMode === "client" && uploadSession.uploading
+         ? "Uploading evidence files from this computer…"
+         : null,
+   });
+@@ -325,8 +337,18 @@
+     setJobNotFound(false);
+     setLoadError(null);
+     setPollStopped(false);
++    setEvidenceTransferMode("none");
+   }, [jobId]);
+ 
++  // Restore transport mode after a reload, but never overwrite an explicit
++  // selection made on this page (server browser vs client upload control).
++  useEffect(() => {
++    if (!job || evidenceTransferMode !== "none") return;
++    const intake = String(job.disk_source?.intake || "");
++    if (intake === "browser_upload") setEvidenceTransferMode("client");
++    else if (intake === "server_local") setEvidenceTransferMode("server");
++  }, [job, evidenceTransferMode]);
++
+   useEffect(() => {
+     if (!job || !receivingSegmentsStarted) return;
+     if (
+@@ -1146,14 +1168,14 @@
+ 
+       {showTopProgressBanner ? (
+       <JobProgressBanner
+-        job={job}
++        job={pipelineDisplayJob ?? job}
+         enrichSubProgress={enrichSubProgress}
+         latestLog={latestLogMessage}
+         registering={registerProgress.active}
+         registerPct={registerProgress.pct}
+         registerFileName={registerProgress.fileName}
+-        uploading={uploadSession.uploading || uploadSession.isRunning}
+-        uploadProgress={uploadSession.progress}
++        uploading={evidenceTransferMode === "client" && (uploadSession.uploading || uploadSession.isRunning)}
++        uploadProgress={evidenceTransferMode === "client" ? uploadSession.progress : null}
+         processRequested={processRequested}
+         pollStopped={pollStopped}
+         pathProgress={pathProgressLabel}
+@@ -1211,6 +1233,7 @@
+               }
+               capabilityLabel={capabilityLabel}
+               mobileOsLabel={mobileOsLabel}
++              onSourceModeChange={(mode) => setEvidenceTransferMode(mode)}
+               onRegistered={() => load({ silent: true })}
+               onProcessingStarted={async () => {
+                 setPipelineError(null);
+@@ -1253,7 +1276,7 @@
+       <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+         <div ref={pipelinePanelRef} className="min-h-0">
+           <AgentPipelineBanner
+-            job={job}
++            job={pipelineDisplayJob ?? job}
+             processRequested={processRequested}
+             latestLog={latestLogMessage}
+             pathProgress={pathProgressLabel}
+@@ -1274,6 +1297,7 @@
+               uploadLines={uploadSession.lines}
+               uploadProgress={uploadSession.progress}
+               uploading={uploadSession.uploading || uploadSession.isRunning}
++              showUploadActivity={evidenceTransferMode === "client"}
+               extractionLogs={logs}
+               extractionLogsLoading={logsLoading || registerProgress.active}
+               registering={registerProgress.active}
+--- a/scripts/generate-drive-mounts.ps1
++++ b/scripts/generate-drive-mounts.ps1
+@@ -17,7 +17,8 @@
+     [string]$SourceMapPath = "",
+     [ValidateSet("Windows", "Wsl")][string]$ExecutionMode = "Windows",
+     [string]$OutputPath = "",
+-    [string[]]$ServiceNames = @()
++    [string[]]$ServiceNames = @(),
++    [switch]$KeepRequiredForResolution
+ )
+ 
+ # `powershell -File` only binds the first token of an array. Allow a comma-separated
+@@ -82,6 +83,8 @@
+                         mode = $mode
+                         wsl_distro = $(if ($value -and ($value.PSObject.Properties.Name -contains 'wsl_distro') -and $value.wsl_distro) { [string]$value.wsl_distro } else { '' })
+                         wsl_mount = $(if ($value -and ($value.PSObject.Properties.Name -contains 'wsl_mount') -and $value.wsl_mount) { [string]$value.wsl_mount } else { '' })
++                        mount_target = $(if ($value -and ($value.PSObject.Properties.Name -contains 'mount_target') -and $value.mount_target) { [string]$value.mount_target } else { '' })
++                        source_scope = $(if ($value -and ($value.PSObject.Properties.Name -contains 'source_scope') -and $value.source_scope) { [string]$value.source_scope } else { '' })
+                     }
+                 }
+             }
+@@ -244,9 +247,28 @@
+         Sort-Object -Unique
+ )
+ 
++# Resolve the source map before the generic Windows-root bind test.  The
++# refresh job may already have proven a safer source for a removable drive
++# (Docker daemon path, WSL-integrated path, or an exact selected folder).  Do
++# not throw that verified source away merely because a second probe of G:/ is
++# empty/stale -- that is the failure this recovery path is designed to heal.
++$sourceMap = Read-DriveSourceMap -Path $SourceMapPath
++
+ $kept = New-Object System.Collections.Generic.List[string]
+ $skippedDocker = New-Object System.Collections.Generic.List[string]
+ foreach ($letter in $letters) {
++    $resolved = if ($sourceMap.ContainsKey($letter)) { $sourceMap[$letter] } else { $null }
++    if ($resolved -and [string]$resolved.source) {
++        $kept.Add($letter) | Out-Null
++        continue
++    }
++    # First-pass refresh discovery must not discard the examiner-selected drive
++    # just because the whole drive root is not bindable. The resolver that runs
++    # immediately afterwards can prove an exact selected-folder or WSL source.
++    if ($KeepRequiredForResolution -and ($requested -contains $letter)) {
++        $kept.Add($letter) | Out-Null
++        continue
++    }
+     if (Test-DockerBindableWindowsDrive $letter) {
+         $kept.Add($letter) | Out-Null
+     } else {
+@@ -255,14 +277,12 @@
+ }
+ $letters = @($kept)
+ if ($skippedDocker.Count) {
+-    Write-Warning ("Skipping drive(s) Docker Desktop cannot bind-mount: {0}. Share them in Docker Desktop > Settings > Resources > File sharing, then restart the stack." -f ($skippedDocker -join ', '))
++    Write-Warning ("Skipping unresolved drive(s) Docker Desktop cannot bind-mount: {0}. A drive with a verified HostDrive/WSL source is kept automatically." -f ($skippedDocker -join ', '))
+ }
+ 
+ if (-not $letters.Count) {
+     throw "No ready Windows drive letters found."
+ }
+-
+-$sourceMap = Read-DriveSourceMap -Path $SourceMapPath
+ $serviceNames = if ($ServiceNames -and $ServiceNames.Count) {
+     $ServiceNames
+ } else {
+@@ -298,9 +318,12 @@
+         $mode = if ($entry -and $entry.mode) { [string]$entry.mode } else { 'docker-direct' }
+         $daemonPath = $source.StartsWith('/')
+     }
++    $target = if ($entry -and $entry.mount_target) { [string]$entry.mount_target } else { "/host/$lower" }
+     $driveMounts[$letter] = @{
+         source = $source
+         mode = $mode
++        target = $target
++        source_scope = $(if ($entry -and $entry.source_scope) { [string]$entry.source_scope } else { 'drive' })
+         daemon_path = $daemonPath
+         volume_name = $(if ($daemonPath) { Get-DaemonVolumeName -Letter $letter -Source $source } else { "" })
+     }
+@@ -322,7 +345,7 @@
+         if ($m.daemon_path) {
+             $lines.Add('      - type: volume') | Out-Null
+             $lines.Add(("        source: {0}" -f $m.volume_name)) | Out-Null
+-            $lines.Add("        target: /host/${lower}") | Out-Null
++            $lines.Add(('        target: {0}' -f (Convert-ToYamlSingleQuoted ([string]$m.target)))) | Out-Null
+             $lines.Add('        read_only: true') | Out-Null
+             $lines.Add('        volume:') | Out-Null
+             $lines.Add('          nocopy: true') | Out-Null
+@@ -330,7 +353,7 @@
+         else {
+             $lines.Add('      - type: bind') | Out-Null
+             $lines.Add(('        source: {0}' -f (Convert-ToYamlSingleQuoted ([string]$m.source)))) | Out-Null
+-            $lines.Add("        target: /host/${lower}") | Out-Null
++            $lines.Add(('        target: {0}' -f (Convert-ToYamlSingleQuoted ([string]$m.target)))) | Out-Null
+             $lines.Add('        read_only: true') | Out-Null
+             $lines.Add('        bind:') | Out-Null
+             $lines.Add('          create_host_path: false') | Out-Null
+--- a/scripts/refresh-drive-mounts-job.ps1
++++ b/scripts/refresh-drive-mounts-job.ps1
+@@ -22,8 +22,8 @@
+ # Version marker. host-drive-helper.ps1 reports it on /health as
+ # job_script_version and ensure-host-drive-helper.ps1 restarts a helper whose
+ # loaded job script is older than the one on disk.
+-# AETHERIS_JOB_VERSION: 4.12
+-$script:JobVersion = "4.12"
++# AETHERIS_JOB_VERSION: 4.14
++$script:JobVersion = "4.14"
+ 
+ # Docker Compose writes progress ("Container x Recreate", "Waiting", ...) to
+ # stderr. Keep that output plain so it can be logged and filtered reliably.
+@@ -106,6 +106,7 @@
+ $composeDrivesWsl = Join-Path $Root "docker-compose.drives.wsl.generated.yml"
+ $stateDir = Join-Path $env:LOCALAPPDATA "Aetheris"
+ $sourceStateFile = Join-Path $stateDir "docker-drive-sources.json"
++$detectCompose = Join-Path $stateDir "docker-compose.drives.detect.yml"
+ New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+ 
+ $script:ComposeBase = Join-Path $Root "docker-compose.yml"
+@@ -347,13 +348,32 @@
+     $letters = @()
+     if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return @() }
+     foreach ($line in @(Get-Content -LiteralPath $Path -ErrorAction SilentlyContinue)) {
+-        if (("$line") -match 'target:\s*/host/([a-zA-Z])\s*$') {
++        if (("$line") -match 'target:\s*[''"]?/host/([a-zA-Z])(?:/|[''"]?\s*$)') {
+             $letters += $Matches[1].ToUpper()
+         }
+     }
+     return @($letters | Sort-Object -Unique)
+ }
+ 
++
++function Get-StateMountTarget {
++    param([hashtable]$State, [string]$Letter)
++    $upper = ("$Letter").ToUpper()
++    if ($State.ContainsKey($upper)) {
++        $entry = $State[$upper]
++        if ($entry.mount_target) { return [string]$entry.mount_target }
++    }
++    return "/host/$($upper.ToLower())"
++}
++
++function Test-IsExactPathMount {
++    param([hashtable]$State, [string]$Letter)
++    $upper = ("$Letter").ToUpper()
++    if (-not $State.ContainsKey($upper)) { return $false }
++    $entry = $State[$upper]
++    return ([string]$entry.mode -eq 'docker-exact-path' -or [string]$entry.source_scope -eq 'selected-folder')
++}
++
+ function Get-ComposeArgs {
+     # Reuse the exact Compose file stack of the running API, then append only
+     # the generated drive override. This preserves HTTPS/public/site overrides.
+@@ -497,11 +517,13 @@
+                 }
+                 elseif ($value.PSObject.Properties.Name -contains 'source') {
+                     $state[$letter] = @{
+-                        source      = [string]$value.source
+-                        mode        = $(if ($value.mode) { [string]$value.mode } else { 'unknown' })
+-                        wsl_distro  = $(if ($value.wsl_distro) { [string]$value.wsl_distro } else { '' })
+-                        wsl_mount   = $(if ($value.wsl_mount) { [string]$value.wsl_mount } else { '' })
+-                        updated_utc = $(if ($value.updated_utc) { [string]$value.updated_utc } else { '' })
++                        source       = [string]$value.source
++                        mode         = $(if ($value.mode) { [string]$value.mode } else { 'unknown' })
++                        wsl_distro   = $(if ($value.wsl_distro) { [string]$value.wsl_distro } else { '' })
++                        wsl_mount    = $(if ($value.wsl_mount) { [string]$value.wsl_mount } else { '' })
++                        mount_target = $(if ($value.mount_target) { [string]$value.mount_target } else { '' })
++                        source_scope = $(if ($value.source_scope) { [string]$value.source_scope } else { '' })
++                        updated_utc  = $(if ($value.updated_utc) { [string]$value.updated_utc } else { '' })
+                     }
+                 }
+             }
+@@ -613,11 +635,13 @@
+     param([hashtable]$State, [object]$Result)
+     $letter = ([string]$Result.drive).ToUpper()
+     $State[$letter] = @{
+-        source      = [string]$Result.source
+-        mode        = [string]$Result.mode
+-        wsl_distro  = $(if ($Result.wsl_distro) { [string]$Result.wsl_distro } else { '' })
+-        wsl_mount   = $(if ($Result.wsl_mount) { [string]$Result.wsl_mount } else { '' })
+-        updated_utc = (Get-Date).ToUniversalTime().ToString('o')
++        source       = [string]$Result.source
++        mode         = [string]$Result.mode
++        wsl_distro   = $(if ($Result.wsl_distro) { [string]$Result.wsl_distro } else { '' })
++        wsl_mount    = $(if ($Result.wsl_mount) { [string]$Result.wsl_mount } else { '' })
++        mount_target = $(if ($Result.mount_target) { [string]$Result.mount_target } else { '' })
++        source_scope = $(if ($Result.source_scope) { [string]$Result.source_scope } else { '' })
++        updated_utc  = (Get-Date).ToUniversalTime().ToString('o')
+     }
+ }
+ 
+@@ -626,7 +650,8 @@
+         [string[]]$Required = @(),
+         [string[]]$Excluded = @(),
+         [ValidateSet('Windows','Wsl')][string]$ExecutionMode = 'Windows',
+-        [string]$OutputPath = ''
++        [string]$OutputPath = '',
++        [switch]$KeepRequiredForResolution
+     )
+     # Invoke the .ps1 directly so Windows PowerShell 5.1 can bind string[]
+     # parameters correctly. powershell.exe -File cannot reliably pass multiple
+@@ -637,6 +662,7 @@
+         if ($Excluded.Count) { $invokeParams.ExcludeDrive = @($Excluded) }
+         if ($OutputPath) { $invokeParams.OutputPath = $OutputPath }
+         else { $invokeParams.OutputPath = $script:ComposeDrivesFile }
++        if ($KeepRequiredForResolution) { $invokeParams.KeepRequiredForResolution = $true }
+         if ($script:RemountServices.Count) { $invokeParams.ServiceNames = @($script:RemountServices) }
+         $output = & $generateScript @invokeParams 2>&1
+     }
+@@ -661,7 +687,7 @@
+     if (-not $letters.Count -and (Test-Path -LiteralPath $yamlPath)) {
+         $fromYaml = @()
+         foreach ($yamlLine in @(Get-Content -LiteralPath $yamlPath -ErrorAction Stop)) {
+-            if (("$yamlLine") -match '^\s*target:\s*/host/([a-zA-Z])\s*$') {
++            if (("$yamlLine") -match '^\s*target:\s*[''"]?/host/([a-zA-Z])(?:/|[''"]?\s*$)') {
+                 $fromYaml += $Matches[1].ToUpper()
+             }
+         }
+@@ -800,7 +826,14 @@
+     if (-not (Test-Path -LiteralPath $sourceStateFile)) {
+         Save-SourceState -State @{}
+     }
+-    $first = Invoke-DriveGenerator -Required $(if ($requiredLetter) { @($requiredLetter) } else { @() })
++    # Discovery writes to a disposable override. The selected removable drive
++    # may intentionally be unbindable at its root until exact-path resolution
++    # succeeds, so never overwrite the active Compose override with that
++    # provisional source.
++    $first = Invoke-DriveGenerator `
++        -Required $(if ($requiredLetter) { @($requiredLetter) } else { @() }) `
++        -KeepRequiredForResolution `
++        -OutputPath $detectCompose
+     $detectedLetters = @($first.letters)
+     if (-not $detectedLetters.Count) {
+         throw 'Drive generator returned no drive letters.'
+@@ -915,9 +948,17 @@
+     Push-Location $Root
+     try {
+         $verifyLetters = if ($requiredLetter) { @($requiredLetter) } else { @($letters) }
++        $exactRequiredMount = [bool]($requiredLetter -and (Test-IsExactPathMount -State $sourceState -Letter $requiredLetter))
++        $rootVerifyLetters = if ($exactRequiredMount -and $requiredLetter) {
++            @($verifyLetters | Where-Object { $_ -ne $requiredLetter })
++        } else {
++            @($verifyLetters)
++        }
+         $missingBefore = @()
+-        try { $missingBefore = @(Test-ContainerDriveMounts -Letters $verifyLetters) }
+-        catch { $missingBefore = @($verifyLetters) }
++        if ($rootVerifyLetters.Count) {
++            try { $missingBefore = @(Test-ContainerDriveMounts -Letters $rootVerifyLetters) }
++            catch { $missingBefore = @($rootVerifyLetters) }
++        }
+ 
+         $requiredVisible = $true
+         if ($normalizedRequiredPath) {
+@@ -926,7 +967,9 @@
+         }
+ 
+         # Compare the currently running container mount sources with the final
+-        # desired sources instead of relying only on YAML file timestamps.
++        # desired sources instead of relying only on YAML file timestamps. An
++        # exact-folder mount intentionally has no /host/G root mount; the exact
++        # evidence path is the authority in that mode.
+         $mustRecreate = $missingBefore.Count -gt 0 -or -not $requiredVisible
+         if ($requiredLetter -and ($lettersBeforeGenerate -notcontains $requiredLetter)) {
+             $mustRecreate = $true
+@@ -942,7 +985,7 @@
+                     $inspectRun = Invoke-NativeCapture -FilePath 'docker' -ArgumentList @('inspect', $apiId)
+                     if ($inspectRun.ExitCode -ne 0 -or -not $inspectRun.Text) { throw "docker inspect failed for api container $apiId" }
+                     $inspect = ($inspectRun.Text | ConvertFrom-Json)[0]
+-                    $target = "/host/$($requiredLetter.ToLower())"
++                    $target = Get-StateMountTarget -State $sourceState -Letter $requiredLetter
+                     $actual = @($inspect.Mounts | Where-Object { $_.Destination -eq $target } | Select-Object -First 1)
+                     if (-not $actual -or -not $actual[0].Source) {
+                         $mustRecreate = $true
+@@ -989,7 +1032,10 @@
+             $composeOutput = @('Existing container mount already satisfies the selected path.')
+         }
+ 
+-        $missingAfter = @(Test-ContainerDriveMounts -Letters $verifyLetters)
++        $missingAfter = @()
++        if ($rootVerifyLetters.Count) {
++            $missingAfter = @(Test-ContainerDriveMounts -Letters $rootVerifyLetters)
++        }
+         if ($missingAfter.Count) {
+             throw "Docker did not attach required drive mount(s): $($missingAfter -join ', ')."
+         }
+--- a/scripts/resolve-docker-drive-source.ps1
++++ b/scripts/resolve-docker-drive-source.ps1
+@@ -124,6 +124,35 @@
+     return (($Matches[2] -replace '\\', '/').Trim('/'))
+ }
+ 
++
++function Get-ExactMountPlan {
++    param([string]$Path, [string]$Letter)
++    $text = ("$Path").Trim()
++    if (-not $text) { return $null }
++    $norm = $text -replace '/', '\\'
++    if ($norm -notmatch '^([A-Za-z]):[\\/](.*)$') { return $null }
++    if ($Matches[1].ToUpper() -ne $Letter.ToUpper()) { return $null }
++
++    $item = $null
++    try { $item = Get-Item -LiteralPath $norm -Force -ErrorAction Stop } catch { return $null }
++    $source = if ($item.PSIsContainer) { [string]$item.FullName } else { [string]$item.DirectoryName }
++    if (-not $source) { return $null }
++
++    $sourceNorm = $source -replace '/', '\\'
++    if ($sourceNorm -notmatch '^([A-Za-z]):[\\/]?(.*)$') { return $null }
++    $sourceRel = (($Matches[2] -replace '\\', '/').Trim('/'))
++    $lower = $Letter.ToLower()
++    $target = if ($sourceRel) { "/host/$lower/$sourceRel" } else { "/host/$lower" }
++    $probeRelative = if ($item.PSIsContainer) { "" } else { [string]$item.Name }
++
++    return @{
++        source = $source
++        target = $target
++        probe_relative = $probeRelative
++        selected_is_file = (-not [bool]$item.PSIsContainer)
++    }
++}
++
+ function Get-RootSentinelRelativePath {
+     param([string]$Letter)
+     $rootPath = "${Letter}:\"
+@@ -562,6 +591,41 @@
+ $lower = $letter.ToLower()
+ $attempts = @()
+ 
++# Prefer a narrow, read-only bind of the exact selected folder before trying to
++# share the entire removable drive root. Docker Desktop can reject or expose an
++# empty G:/ root while still accepting G:\Case\Evidence directly. For a
++# selected E01 file we bind its parent folder so sibling E02/E03 segments remain
++# available without copying evidence bytes.
++if (-not $ForceWslBridge -and $normalizedRequired) {
++    $exactPlan = Get-ExactMountPlan -Path $normalizedRequired -Letter $letter
++    if ($exactPlan) {
++        $exactProbe = Test-DockerSource -Source ([string]$exactPlan.source) -Image $image -RelativePath ([string]$exactPlan.probe_relative)
++        $attempts += [pscustomobject]@{
++            source = [string]$exactPlan.source
++            mode = "docker-exact-path"
++            target = [string]$exactPlan.target
++            ok = [bool]$exactProbe.ok
++            detail = $exactProbe.output
++        }
++        if ($exactProbe.ok) {
++            Write-Result @{
++                ok             = $true
++                drive          = $letter
++                source         = [string]$exactPlan.source
++                mode           = "docker-exact-path"
++                mount_target   = [string]$exactPlan.target
++                source_scope   = "selected-folder"
++                required_path  = $normalizedRequired
++                probe_relative = [string]$exactPlan.probe_relative
++                api_image      = $image
++                attempts       = $attempts
++                message        = "Docker can read the selected ${letter}: evidence folder directly; mounting only that folder read-only."
++            }
++            exit 0
++        }
++    }
++}
++
+ if ($RemountOnly) {
+     $ok = Ensure-DockerDesktopHostLetter -Letter $letter
+     Write-Result @{
+@@ -605,6 +669,8 @@
+                 drive          = $letter
+                 source         = $source
+                 mode           = "docker-direct"
++                mount_target   = "/host/$lower"
++                source_scope   = "drive"
+                 required_path  = $(if ($normalizedRequired) { $normalizedRequired } else { $null })
+                 probe_relative = $relative
+                 api_image      = $image
+@@ -669,6 +735,8 @@
+             drive          = $letter
+             source         = $autoMount
+             mode           = "wsl-compose"
++            mount_target   = "/host/$lower"
++            source_scope   = "drive"
+             wsl_distro     = $distro
+             wsl_mount      = $autoMount
+             wsl_bridge_read_only = $false
+@@ -710,6 +778,8 @@
+             drive          = $letter
+             source         = $mountPoint
+             mode           = "wsl-compose"
++            mount_target   = "/host/$lower"
++            source_scope   = "drive"
+             wsl_distro     = $distro
+             wsl_mount      = $mountPoint
+             wsl_bridge_read_only = [bool]$bridge.read_only
+--- /dev/null
++++ b/scripts/repair-server-evidence-path.ps1
+@@ -0,0 +1,50 @@
++<#
++.SYNOPSIS
++  Repair and verify one server-accessible evidence path without copying evidence.
++
++.EXAMPLE
++  powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\repair-server-evidence-path.ps1 -RequiredPath "G:\Cases\Disk01.E01"
++#>
++param(
++    [Parameter(Mandatory = $true)][string]$RequiredPath
++)
++
++$ErrorActionPreference = 'Stop'
++$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
++$refresh = Join-Path $root 'scripts\refresh-drive-mounts-job.ps1'
++$statusDir = Join-Path $root '.runtime\hostdrive'
++$status = Join-Path $statusDir 'manual-repair.json'
++
++if (-not (Test-Path -LiteralPath $RequiredPath)) {
++    throw "Windows cannot see the selected evidence path: $RequiredPath"
++}
++if (-not (Test-Path -LiteralPath $refresh)) {
++    throw "Missing refresh script: $refresh"
++}
++New-Item -ItemType Directory -Force -Path $statusDir | Out-Null
++Remove-Item -LiteralPath $status -Force -ErrorAction SilentlyContinue
++
++Write-Host "[1/2] Repairing Docker read-only access to: $RequiredPath" -ForegroundColor Cyan
++& $refresh -Root $root -StatusFile $status -RequiredPath $RequiredPath
++$rc = $LASTEXITCODE
++
++Write-Host "[2/2] Result" -ForegroundColor Cyan
++if (Test-Path -LiteralPath $status) {
++    $raw = Get-Content -LiteralPath $status -Raw
++    Write-Host $raw
++    try {
++        $result = $raw | ConvertFrom-Json
++        if (-not $result.ok) {
++            throw $(if ($result.error) { [string]$result.error } elseif ($result.message) { [string]$result.message } else { 'Server evidence mount repair failed' })
++        }
++        Write-Host ("[OK] mode={0} source={1}" -f $result.mount_mode, $result.mount_source) -ForegroundColor Green
++    }
++    catch {
++        if ($rc -ne 0) { throw }
++    }
++}
++elseif ($rc -ne 0) {
++    throw "Drive refresh failed with exit code $rc and produced no status file."
++}
++
++if ($rc -ne 0) { exit $rc }
+--- /dev/null
++++ b/SERVER_SOURCE_MODE_MOUNT_FIX_V29_5_20260926.md
+@@ -0,0 +1,54 @@
++# Polaron V29.5 — Server source mode and removable-drive mount repair
++
++## What this fixes
++
++V29.5 makes the evidence transport boundary explicit:
++
++- **Server-accessible source**: Windows server disk, server-attached HDD/SSD/USB/pendrive, or a mapped network drive visible to the forensic server. The application registers and processes the evidence in place. There is no browser download/upload activity and no duplicate source image.
++- **Client source**: evidence chosen through the browser file/folder picker on a different examiner/client computer. The client transfer screen is shown, up to five files are transferred concurrently, and the forensic pipeline remains held until the entire declared segment set is present and verified.
++
++The selected source mode, not the browser's network address, decides the transport path. Jobs persist `source_origin=server_accessible, transport_mode=zero_copy` for server sources and `source_origin=client_browser, transport_mode=staged_upload` for client sources. Browser File APIs intentionally do not reveal a trustworthy original local path, so the explicit client-upload control is the only path that can invoke Download Agent.
++
++## G: stale/missing mount root cause
++
++A newly inserted removable disk can be visible to Windows as `G:` while an existing Docker container still has an old or empty `/host/g` bind. The old first-pass drive generator could discard `G:` when a whole-root `G:/` Docker bind probe failed, which prevented the later exact-path recovery from ever running.
++
++V29.5 fixes this by retaining the examiner-selected drive for source resolution. It first attempts a narrow read-only bind of the exact selected evidence folder. For a selected E01 file, its parent folder is mounted so E02/E03/... siblings remain accessible. If direct Docker Desktop sharing is unavailable, the existing WSL/DrvFs fallback remains available.
++
++No evidence bytes are copied by either recovery mode.
++
++## Exact-path authority
++
++A mounted `/host/g` root is no longer treated as proof that the selected evidence is ready. The exact selected path must be readable from API, disk worker, parse worker, report worker, and agent worker before the pipeline is released.
++
++This is important when removable media is swapped while Docker keeps an older bind alive.
++
++## UI behavior
++
++When a server source is selected:
++
++- any stale browser upload session is cleared;
++- **Upload/Download Activity** is hidden;
++- **Download** is removed from the Disk processing pipeline;
++- only server stages such as Drive mount, List folder, Get segments, Virtual disk, Extraction, Parse, OCR and RAG remain.
++
++When the explicit **Upload from client computer** control is used, Download Agent and Upload Activity are shown normally.
++
++## Manual repair / verification
++
++After applying V29.5, the UI performs this recovery automatically. To validate a path manually on the Windows forensic server:
++
++```powershell
++powershell.exe -NoProfile -ExecutionPolicy Bypass `
++  -File .\scripts\repair-server-evidence-path.ps1 `
++  -RequiredPath "G:\2026SEP-11\E-Drive\data\Image of Ex-5 Histotechlab1 512GB.E01"
++```
++
++A successful result reports a mount mode such as `docker-exact-path`, `docker-direct`, or `wsl-compose`. The selected evidence remains on its original disk and is mounted read-only.
++
++## Validation
++
++- V29.5 server-source, HostDrive, client-intake and residency regression set: 59 passed.
++- Changed Python modules compile successfully.
++- Six changed TypeScript/TSX files pass TypeScript 5.8.3 ES2020 syntax transpilation.
++- The broader legacy dynamic-drive test module contains five assertions that already fail on the V29.4 baseline because they describe older implementation strings/runtime sample YAML; these are not V29.5 regressions.

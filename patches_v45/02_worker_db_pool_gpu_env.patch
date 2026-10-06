@@ -1,0 +1,144 @@
+--- a/docker-compose.yml	2026-10-04 13:40:18.626241418 +0000
++++ b/docker-compose.yml	2026-10-04 13:40:48.351971521 +0000
+@@ -42,10 +42,14 @@
+   RESOURCE_GOVERNOR_CPU_MAX_SLOTS: ${RESOURCE_GOVERNOR_CPU_MAX_SLOTS:-10}
+   RESOURCE_GOVERNOR_GPU_MAX_SLOTS: ${RESOURCE_GOVERNOR_GPU_MAX_SLOTS:-4}
+   GPU_RELEASE_MODEL_AFTER_TASK: ${GPU_RELEASE_MODEL_AFTER_TASK:-true}
+-  # Small per-process pools prevent Celery prefork children from exhausting Postgres.
+-  DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-2}
+-  DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-2}
+-  DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30}
++  # V45: one extraction task runs main + flusher + stop-poller + heartbeat sessions.
++  # The old 2+2 pool was fully consumed by those four, so the first shard thread that
++  # needed a connection died with "QueuePool limit of size 2 overflow 2 reached".
++  # Shard threads are now DB-free (extract_shard_v45); 4+8 leaves headroom for
++  # phase-3 hand-offs. Budget: worker-disk 8 x 12 + worker-parse 6 x 12 < max_connections=200.
++  DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-4}
++  DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-8}
++  DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-90}
+   MINIO_ENDPOINT: minio:9000
+   MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+   MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+@@ -458,6 +462,11 @@
+       - type: bind
+         source: ${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/uploads
+         target: /app/data/uploads
++      # V45: scratch for shard spool/parts. Point EXTRACT_SCRATCH_HOST_DIR at an NVMe/SSD
++      # folder when the evidence drive is a USB HDD so reads and temp writes never share spindles.
++      - type: bind
++        source: ${EXTRACT_SCRATCH_HOST_DIR:-${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/scratch}
++        target: /scratch
+     depends_on:
+       api:
+         condition: service_healthy
+--- a/.env	2026-10-04 13:40:18.629781035 +0000
++++ b/.env	2026-10-04 13:40:48.352292852 +0000
+@@ -28,22 +28,25 @@
+ 
+ # Disk extraction (I/O-bound ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â GPU does not speed this stage; restart worker-disk after changes)
+ # Per-job shard workers; auto-halved when 2ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ3 disks run together.
+-EXTRACT_DISK_WORKERS=12
++EXTRACT_DISK_WORKERS=8
+ # Mobile/UFED zip dumps: up to 2ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ3 parallel ZipFile readers. Live perf plan drops to 1 when CPU hot.
+ EXTRACT_MOBILE_WORKERS=12
+ EXTRACT_SHARD_COUNT=14
+-EXTRACT_UPLOAD_CONCURRENCY=10
++EXTRACT_UPLOAD_CONCURRENCY=4
+ EXTRACT_ZSTD_LEVEL=1
+ MAX_CONCURRENT_DISK_BUILDS=4
+ # Fresh inode-ordered sequential shards + streamed Phase3/RAG (NVMe ~1h target)
+ EXTRACT_REPLAN_ON_RESUME=false
+ # forensic = RAG evidence set only (skips WinSxS/DLL noise). defensible = court-safe superset. full = every file.
+ EXTRACT_MODE=defensible
+-EXTRACT_UNCERTAIN_MAX_BYTES=16777216
++EXTRACT_UNCERTAIN_MAX_BYTES=4194304
+ # SHA-256 every file roughly doubles CPU work; disable for speed (re-enable if you need digests).
+ EXTRACT_HASH_FILES=false
+ EXTRACT_MAX_FILE_BYTES=100000000
+ EXTRACT_SKIP_SYSTEM_PATHS=false
++# V45: AXIOM-aligned tree-level OS/vendor exclusion (scope-pack artifacts are never dropped)
++EXTRACT_OS_VENDOR_TREES=skip
++EXTRACT_OS_VENDOR_SMALL_KEEP_BYTES=0
+ PARSE_DRAIN_MAX_ROUNDS=40
+ PARSE_BATCH_LIMIT=8000
+ PARSE_DRAIN_BATCH_LIMIT=2500
+@@ -63,6 +66,15 @@
+ PHASE3_STREAM_OCR_DURING_EXTRACT=false
+ EXTRACT_PROGRESS_STEP=2000
+ EXTRACT_STOP_CHECK_INTERVAL=1000
++# V45 streaming shard worker
++EXTRACT_READ_SEMAPHORE=8
++EXTRACT_HDD_READERS=2
++EXTRACT_HDD_CHUNK_BYTES=8388608
++EXTRACT_READ_CHUNK_BYTES=4194304
++EXTRACT_SPOOL_MAX_BYTES=33554432
++EXTRACT_SCRATCH_DIR=/scratch
++# Set when Docker Desktop hides the block device: hdd | ssd | nvme | auto
++DISK_SOURCE_MEDIA=auto
+ EXTRACT_TAR_BUFSIZE=2097152
+ EXTRACT_PROGRESS_FLUSH_SEC=10
+ EXTRACT_PROGRESS_LOG_SEC=20
+@@ -72,7 +84,7 @@
+ RAG_BATCH_SIZE=24
+ RAG_BATCH_SIZE_CAP=24
+ # Exclusive RAG after OCR unload ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â 12GB card can hold BGE at ~55% VRAM.
+-RAG_CUDA_MEMORY_FRACTION=0.40
++RAG_CUDA_MEMORY_FRACTION=0.35
+ RAG_CHUNK_SIZE=2200
+ RAG_CHUNK_OVERLAP=200
+ # Keep CUDA embeddings running after the ~500-chunk Q&A baseline.
+@@ -103,7 +115,8 @@
+ GPU_THERMAL_UNLOAD_OLLAMA_BEFORE_RAG=true
+ GPU_THERMAL_ABORT_C=94
+ # Two independent GPU slots so OCR and RAG can run at the same time.
+-GPU_HEAVY_MAX_CONCURRENT=2
++# V45: one heavy GPU resident at a time on a 12 GB RTX 3060 (OCR -> embeddings -> LLM)
++GPU_HEAVY_MAX_CONCURRENT=1
+ GPU_HEAVY_LOCK_WAIT_SEC=0
+ GPU_HEAVY_LOCK_TTL_SEC=600
+ CPU_THERMAL_THROTTLE_C=86
+@@ -120,7 +133,7 @@
+ LLM_FAST_MODEL=qwen3.5:9b
+ # App roles only: primary / review / fast-agent / gap / fallback / embed
+ OLLAMA_PULL_MODELS=qwen2.5:14b,qwen2.5:7b,deepseek-r1:14b,llama3.1:8b,gemma4:12b,qwen3.5:9b,nomic-embed-text
+-OLLAMA_KEEP_ALIVE=5m
++OLLAMA_KEEP_ALIVE=2m
+ OLLAMA_MAX_LOADED_MODELS=1
+ OLLAMA_NUM_PARALLEL=1
+ OCR_ENABLED=true
+@@ -129,14 +142,14 @@
+ OCR_DEVICE=cuda
+ OCR_GPU_ONLY=true
+ # OCR PDFs + Documents/Downloads/Desktop only. Camera rolls stay skipped.
+-OCR_BATCH_LIMIT=32
++OCR_BATCH_LIMIT=48
+ OCR_DRAIN_MAX_ROUNDS=60
+ OCR_DOCUMENTS_ONLY=true
+ OCR_MAX_PAGES=8
+ OCR_MAX_NEW_TOKENS=512
+-OCR_MAX_IMAGE_EDGE=1280
+-OCR_CPU_WORKERS=8
+-OCR_CUDA_MEMORY_FRACTION=0.62
++OCR_MAX_IMAGE_EDGE=1152
++OCR_CPU_WORKERS=6
++OCR_CUDA_MEMORY_FRACTION=0.80
+ # HuggingFace models used by GPU workers (huggingface_cache volume)
+ RAG_EMBEDDING_MODEL=BAAI/bge-m3
+ RAG_EMBEDDING_FALLBACK=nomic-embed-text
+@@ -257,8 +270,15 @@
+ REDIS_HOST_PORT=6380
+ 
+ RESOURCE_GOVERNOR_CPU_MAX_SLOTS=10
+-RESOURCE_GOVERNOR_GPU_MAX_SLOTS=4
++RESOURCE_GOVERNOR_GPU_MAX_SLOTS=1
+ 
+ # Movable folder for disk/mobile processing data (outside DockerDesktopWSL).
+ AETHERIS_BACKUP_DIR=F:/PolaronBackup
+ 
++
++# V45 worker DB pool (see docker-compose.yml x-worker-env)
++WORKER_DB_POOL_SIZE=4
++WORKER_DB_MAX_OVERFLOW=8
++DB_POOL_TIMEOUT=90
++# V45 scratch on fast storage (host path mounted at /scratch in worker-disk)
++EXTRACT_SCRATCH_HOST_DIR=F:/PolaronBackup/forensic-data/scratch

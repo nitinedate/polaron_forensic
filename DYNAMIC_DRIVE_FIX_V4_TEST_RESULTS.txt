@@ -1,0 +1,38 @@
+Aetheris Dynamic Drive Fix v4 - validation summary
+===================================================
+
+Project-side regression tests:
+  25 passed
+
+Covered behavior includes:
+  - no Compose include conflict for dynamic drive overrides
+  - A: through Z: discovery logic
+  - exact selected-path content probes (not root-directory existence only)
+  - WSL DrvFs fallback after Docker Desktop exposes an empty/stale removable drive
+  - read-only DrvFs attempts plus compatibility fallback when a WSL/filesystem
+    rejects read-only DrvFs mount options; Aetheris container mounts remain read-only
+  - Docker local-volume probe for Linux/WSL daemon paths
+  - pre-created external-volume strategy to avoid Windows Compose path rewriting
+  - exact path verification in api/worker-disk/worker-mobile/worker-report
+  - active Compose stack detection via Docker inspect JSON labels (no fragile dotted Go-template)
+  - required_path forwarding and HTTP 409 refresh joining
+  - React sequencing: exact mount verification precedes Receiving segments
+  - scheduled HostDrive Agent starts with -RefreshNow and is owned by Task Scheduler
+  - PowerShell 5.1 compatibility for all v4 drive scripts
+  - old generic "Check Docker Desktop file sharing..." runtime message is absent
+
+Additional validation:
+  - backend Python modules compile successfully
+  - docker-compose.yml YAML parses successfully (20 services)
+  - docker-compose.https.yml YAML parses successfully (22 services)
+  - docker-compose.drives.generated.yml YAML parses successfully (4 services)
+  - HostEvidencePanel.tsx TypeScript syntax transpilation passes
+  - hostDriveHelper.ts TypeScript syntax transpilation passes
+
+Environment limitation:
+  This validation environment is Linux and does not contain Windows, Docker
+  Desktop, WSL, or the physical G: evidence disk. Therefore the final physical
+  Windows/Docker/WSL test must run on the examiner workstation. The supplied
+  deploy-dynamic-drive-v4.ps1 and test-dynamic-drive-mounts.ps1 perform that
+  exact end-to-end validation and refuse success unless the selected path is
+  readable in api, worker-disk, worker-mobile, and worker-report.

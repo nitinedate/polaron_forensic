@@ -1,0 +1,292 @@
+RAG-ONLY IMAGE EVIDENCE PLATFORM
+High-Level Architecture & High-Level Design (HLD)
+Multi-folder image browsing, tree selection, preview, parallel multimodal indexing, hybrid retrieval and evidence-grounded AI
+Architecture overview: RAG-only image evidence platform
+Scope: React UI + Python/FastAPI + Celery/Redis + PostgreSQL/pgvector + OpenSearch + ClickHouse + MinIO + Neo4j + local embedding/reranking/LLM/VLM services
+1. Executive Summary
+This HLD defines the RAG-only architecture for ingesting and searching image evidence selected from one or more folders. The user can browse folders, see folder and file names in a hierarchical tree, preview images before processing, select entire folders or individual images, and then start a controlled RAG processing job containing only the selected items.
+The design keeps the previous high-performance principles: artifact-first intake, deterministic provenance and hashing, parallel CPU/GPU workers, idempotent/resumable processing, batch embeddings, pgvector HNSW, exact/full-text/vector hybrid retrieval, rank fusion, reranking, evidence-only generation, ClickHouse analytics, multi-node HA, and merge-safe database migrations.
+RAG scope only. Vulnerability/scanner architecture is explicitly excluded.
+Original image evidence is immutable; thumbnails, OCR, captions and embeddings are derived artifacts.
+Only items present in the committed selection manifest are eligible for RAG processing.
+Every retrieved image must remain traceable to case, evidence source, folder, relative file path, hash, processing version and source object URI.
+AI-derived descriptions are never treated as authoritative source facts.
+2. Goals and Scope
+3. User Experience Architecture
+3.1 Folder and Image Selection Workspace
+Figure 1. Multi-folder browsing, tree selection and preview flow
+Left pane: hierarchical folder/file tree with checkboxes and expand/collapse controls.
+Folder checkbox states: checked = all eligible descendants selected; unchecked = none; indeterminate = partial selection.
+Right pane: image preview, thumbnail, metadata and inclusion state for the currently focused image.
+Toolbar: Add Folder, Add Images, Select All Visible, Clear Selection, Remove Source, Search Tree, Filter by type/date/size, and Start Processing.
+Footer/status: discovered image count, selected count, selected bytes, duplicates detected, unsupported files, and upload/registration readiness.
+3.2 Browser File-System Access Modes
+A web browser cannot silently enumerate arbitrary client folders. The UI must obtain explicit user permission. The recommended implementation supports two intake modes:
+For browser-selected folders, the UI constructs a virtual tree from FileSystemHandle paths or webkitRelativePath. The original local absolute path is not assumed to be available to the browser. The committed selection manifest stores the root label and relative path, while server-side ingestion records the resulting immutable object URI and evidence IDs.
+3.3 Tree Data Contract
+4. RAG-Only High-Level Architecture
+Figure 2. Complete RAG-only HLD architecture
+5. End-to-End Processing Flow
+Figure 3. End-to-end sequence from selection to grounded answer
+User creates or opens a case/evidence context and clicks Add Folder or Add Images.
+React builds a virtual tree and lazily generates/preloads thumbnails for visible rows only.
+User checks folders and/or individual images. The UI continuously recomputes tri-state parent nodes and selected byte/file counts.
+On Start Processing, the client submits a versioned selection manifest. The server validates authorization, MIME/type policy and item limits.
+Selected local files are streamed/multipart-uploaded; repository items are registered by immutable object/source reference.
+Each image is hashed and deduplicated according to case policy. Originals are stored once; provenance remains per selection/evidence source.
+Celery fans out parallel stage jobs for metadata, thumbnail, OCR, image embedding, text embedding and indexing.
+Only after required stages succeed is an image marked indexed. Deterministic IDs and completion markers make retries safe.
+Investigator queries are authorized to the selected case/evidence scope. Hybrid retrieval collects structured, lexical and vector candidates.
+RRF/score fusion and reranking produce a small evidence set; the LLM/VLM answers from that evidence and returns image previews and citations.
+6. Parallel Ingestion and Performance Architecture
+Figure 4. Parallel and resumable ingestion architecture
+6.1 Queue Separation
+6.2 Performance Controls
+Batch embedding requests by model and input shape; use dynamic batch sizing based on GPU memory.
+Use bounded worker concurrency to avoid storage random-I/O collapse.
+Use multipart/streaming uploads; do not load entire large folders into browser memory.
+Generate thumbnails only for visible/selected UI rows; cache by content hash.
+Skip duplicate expensive stages when the same content hash and processing-version fingerprint already exist and policy allows reuse.
+Use HNSW indexes for vectors, materialized tsvector/GIN for PostgreSQL FTS, OpenSearch BM25 for large lexical corpora, and ClickHouse for analytical filtering.
+Persist stage checkpoints and completion markers. A job is not complete merely because embeddings were partially written.
+Use back-pressure when object-store, database or index write latency exceeds thresholds.
+7. Multimodal Evidence Normalization and Indexing
+Figure 5. Image evidence normalization and multimodal indexing
+7.1 Authoritative vs Derived Data
+7.2 Recommended Normalized Image Record
+8. Storage and Data Model
+Figure 6. Core RAG image evidence data model
+8.1 PostgreSQL / pgvector
+PostgreSQL is the authoritative metadata/system-of-record database.
+pgvector stores image and text embeddings; use separate vector columns or embedding rows keyed by image_id + modality + model_version.
+HNSW indexes should be dimension/model specific; model changes create a new embedding version rather than mutating old evidence rows.
+Selection manifests and processing checkpoints are persisted so UI state and job restarts remain deterministic.
+8.2 MinIO/Object Storage
+Original image objects stored under immutable case/evidence namespace; object versioning/retention enabled where required.
+Thumbnails and OCR/derived artifacts stored in separate derived prefixes; never replace originals.
+Presigned URLs should be short lived and authorized to case scope.
+8.3 OpenSearch and ClickHouse
+OpenSearch: OCR text, filenames, relative paths, EXIF fields, tags, exact and fuzzy lexical search.
+ClickHouse: ingestion metrics, processing events, large filtered image metadata/timeline views, query analytics and batch candidate prefiltering.
+Neither replaces PostgreSQL as the primary evidence metadata store.
+9. Detailed RAG Retrieval Architecture
+Figure 7. Hybrid multimodal RAG retrieval and answer flow
+9.1 Query Planning
+9.2 Retrieval Fusion and Reranking
+Apply authorization and case/evidence/folder/image filters before semantic retrieval wherever possible.
+Gather candidates from exact/structured, PostgreSQL FTS, OpenSearch BM25, text vectors, image vectors and analytical filters.
+Fuse ranks with Reciprocal Rank Fusion (RRF) or calibrated score fusion; retain per-arm score and rank for explainability.
+Rerank only the top candidate set to control GPU latency. The reranker may consume query text, OCR/metadata text and image thumbnails/originals depending model capability.
+Pass only top evidence records to the generation model, with citation IDs and source metadata.
+9.3 Generation Guardrails
+The LLM/VLM must not claim an image contains something unless the retrieved evidence or a clearly labelled visual interpretation supports it.
+Every material statement should reference one or more citation IDs that resolve to the original image, relative path, hash and metadata.
+Show image cards in the answer so the investigator can visually verify the supporting evidence.
+Store query, filters, retrieved IDs, model versions, prompt template version, answer and reviewer disposition in the audit trail.
+10. API HLD
+11. Security, Authentication and Evidence Isolation
+JWT/OIDC-compatible authentication with RBAC; all selection, preview, upload, search and citation requests are case scoped.
+Tenant/firm isolation is enforced in PostgreSQL queries, object-store namespaces, OpenSearch filters, ClickHouse query predicates and vector retrieval metadata filters.
+Do not accept arbitrary server filesystem paths from the browser. Server repository browsing operates only within pre-registered allowlisted evidence roots.
+Short-lived presigned object URLs; no public bucket access.
+File-type validation uses magic bytes/server decoding, not filename extension alone.
+Audit all selection changes, processing starts, searches, answer generation and evidence access.
+Original source images are never mutated by OCR, thumbnailing, model preprocessing or user annotations.
+12. Migration and Schema Evolution
+The RAG-only module must use the existing merge-safe migration behavior so new tables, columns and indexes are added without dropping existing evidence. Startup/deployment migration should be serialized by a PostgreSQL advisory lock in HA environments.
+CREATE TABLE IF NOT EXISTS for new RAG selection/image/processing tables.
+ALTER TABLE ... ADD COLUMN IF NOT EXISTS for additive schema changes.
+CREATE INDEX IF NOT EXISTS for FTS, JSONB, lookup and HNSW indexes.
+Version embedding schemas by model/version; never reinterpret an old vector as a new-model vector.
+Record migration checksum, status and application version in schema migration history.
+13. Large-Scale / Multi-Node HA
+Figure 8. RAG-only high-availability deployment topology
+14. Failure Handling and Resumability
+15. Observability and Performance KPIs
+16. Capacity and Sizing Guidelines
+Exact sizing depends on image resolution, OCR percentage, embedding dimensions, retention, concurrency and GPU model. Capacity tests should use representative case distributions rather than synthetic equal-sized JPEGs only.
+17. Frontend HLD Details
+17.1 Large Tree Performance
+Use virtualized rendering (for example react-window/react-virtuoso style architecture) so only visible rows are mounted.
+Do not decode full-resolution images for tree rows; use cached thumbnails.
+Debounce tree search/filter operations and precompute lowercase searchable names/paths.
+For server repository mode, page or lazy-load folder children rather than returning the entire filesystem tree in one response.
+Use Web Workers only for client-side hashing/metadata if required and supported; heavy forensic processing remains server-side.
+18. Processing Profiles
+The UI should show the selected processing profile before Start Processing so the investigator understands latency/cost implications. Profiles never change the preserved original evidence.
+19. Acceptance Criteria
+20. Recommended Implementation Order
+Build React selection workspace: Add Folder/Add Images, virtual tree, tri-state selection and preview pane.
+Add selection-session and manifest APIs plus PostgreSQL schema and merge-safe migration.
+Implement streaming/multipart upload and server repository browsing with strict path allowlisting.
+Implement image asset/provenance model and immutable MinIO storage.
+Implement parallel thumbnail, metadata and hashing queues; expose live job progress.
+Add OCR and text normalization; create PostgreSQL FTS/OpenSearch indexes.
+Add batched image/text embeddings and pgvector HNSW indexes with completion markers.
+Implement hybrid query planner, RRF fusion and multimodal/cross-encoder reranking.
+Add grounded LLM/VLM answer endpoint with image cards and citations.
+Add ClickHouse analytics, Neo4j correlations, HA deployment, observability and performance regression tests.
+Appendix A. RAG-Only Architecture Boundary
+Included: image selection/browsing, ingestion, provenance, image/OCR/metadata enrichment, embeddings, indexing, hybrid retrieval, reranking, LLM/VLM answers, search UI, citations, analytics, correlation, migration and HA required for this RAG module.
+Excluded: vulnerability scanning, OpenVAS/scanner-agent workflows, network vulnerability orchestration, vulnerability reports and related scanner-specific migrations/configuration.
+Appendix B. Design Baseline From Previous Forensic Architecture
+This design carries forward the earlier principles that raw evidence is processed deterministically before semantic retrieval, that hybrid retrieval is mandatory for exact forensic identifiers, that parallel workers and batching are used for performance, and that structured/full-text/vector stores serve different workloads. The image-specific design adds a user-controlled folder/file selection manifest and multimodal image retrieval while preserving those principles.
+---TABLE---
+Goal | Required behavior
+Multi-folder selection | Add one or more folders over multiple picker actions; recursively display discovered image files.
+Individual file selection | Users may select or deselect images at any tree level using tri-state folder checkboxes.
+Visual inspection before processing | Show thumbnail/preview, filename, folder, dimensions, MIME, size, dates and EXIF when available.
+Controlled processing | Create a selection manifest and process only selected image IDs/files.
+High throughput | Parallelize hashing, metadata extraction, thumbnails, OCR, embeddings and indexing; batch GPU inference.
+High recall RAG | Combine structured filters, exact search, FTS/BM25, text vectors and image vectors; rerank candidates.
+Forensic defensibility | Preserve hashes, paths, provenance, model/parser versions, query traces and citations.
+Scale/HA | Support multi-replica APIs, CPU/GPU worker pools, HA queues/storage/search/database services.
+---TABLE---
+Mode | Implementation | When to use
+Local browser selection | File System Access API (showDirectoryPicker) where supported; fallback to <input type="file" webkitdirectory multiple>. Multiple roots are accumulated by repeated “Add Folder” operations. | Images reside on the investigator workstation.
+Server/evidence repository selection | FastAPI lists only authorized registered evidence roots or previously uploaded objects. React requests directory nodes lazily and renders the same tree model. | Images already exist on the forensic server/NAS/object store.
+---TABLE---
+Field | Purpose
+node_id | Stable UI node identifier for a selection session.
+parent_node_id | Tree hierarchy.
+node_type | folder | image.
+root_label | User-visible selected root name.
+relative_path | Relative path under the selected root.
+name | Folder or filename.
+selected | Explicit selection state.
+selection_state | checked | unchecked | indeterminate.
+size_bytes | Image size when known.
+mime_type | Detected client/server MIME type.
+preview_status | not_requested | queued | ready | failed.
+ingest_status | pending | uploading | registered | processing | indexed | failed.
+---TABLE---
+Layer | Technology | Responsibility
+Presentation | React + TypeScript | Tree browsing, previews, selection manifest, processing progress, search/Q&A, result image cards.
+API | Python FastAPI | Auth/RBAC, case scope, selection sessions, uploads, job control, search/RAG endpoints, citations.
+Orchestration | Redis + Celery | Parallel stage queues, retries, checkpoints, idempotency and back-pressure.
+Evidence storage | MinIO/S3 | Immutable originals, thumbnails and controlled derived image objects.
+System of record | PostgreSQL | Cases, evidence metadata, selections, provenance, jobs, audit and RAG records.
+Vector retrieval | pgvector + HNSW | Image, OCR/text and optionally fused multimodal embeddings.
+Lexical retrieval | OpenSearch + PostgreSQL FTS | OCR, filenames, folder paths, EXIF, exact indicators and metadata search.
+Analytics | ClickHouse | High-volume ingestion/timeline/performance and large filtered candidate analysis.
+Correlation | Neo4j | Image/entity/hash/location/device relationships and cross-source correlation.
+AI | Embedding + reranker + local LLM/VLM | Semantic retrieval, candidate reranking and grounded response generation.
+---TABLE---
+Queue | Typical work | Compute
+rag-ingest | selection validation, upload registration, hashing coordination | CPU/I/O
+rag-preview | thumbnail generation and image decode validation | CPU
+rag-metadata | EXIF, dimensions, format, timestamps, deterministic image metadata | CPU
+rag-ocr | OCR and bounding-box extraction | CPU or GPU depending engine
+rag-embed-image | batched vision embeddings | GPU preferred
+rag-embed-text | batched OCR/metadata embeddings | GPU preferred
+rag-index | Postgres/OpenSearch/ClickHouse/pgvector writes and completion markers | CPU/I/O
+rag-rerank | query-time cross-encoder or multimodal reranking | GPU preferred
+rag-answer | LLM/VLM answer generation | GPU
+---TABLE---
+Class | Examples | Forensic treatment
+Authoritative source facts | Original image bytes, SHA-256, original relative path, deterministic dimensions/format, EXIF values extracted from file | Immutable/traceable; may be cited as source facts.
+Deterministic derived | Thumbnail, normalized timestamps, OCR text from a deterministic OCR engine | Store parser/engine version and confidence; retain link to original.
+AI-derived | VLM description, object/scene interpretation, semantic labels | Never overwrite source facts; clearly mark model/version and AI-derived status.
+Search representations | Text/image embeddings, FTS terms, BM25 index | Rebuildable indexes; record model/index versions.
+---TABLE---
+Field group | Representative fields
+Identity | case_id, evidence_id, selection_session_id, image_id, source_root_id
+Path | root_label, relative_path, folder_path, filename, extension
+Integrity | sha256, file_size, source_object_uri, ingest_timestamp
+Image metadata | mime_type, format, width, height, orientation, color profile
+Time/location | filesystem timestamps, EXIF DateTimeOriginal, GPS lat/lon, timezone context
+Derived evidence | thumbnail_uri, OCR text, OCR boxes/confidence, AI_description with model/version flag
+Retrieval | text_vector, image_vector, embedding_model/version, FTS document
+Processing | stage_status, retry_count, parser/model fingerprints, completion_marker
+Audit | created_by, query/retrieval references, citation IDs
+---TABLE---
+Query pattern | Primary retrieval arms
+“Show image IMG_0032.jpg” | Exact filename/path + metadata filter
+“Images from 14 Aug near Pune” | Date/location structured filters + ClickHouse/Postgres; optional semantic rerank
+“Screenshots mentioning invoice 3729” | OCR FTS/BM25 + exact token + text vector
+“Find images visually similar to this image” | Image embedding HNSW + metadata scope + multimodal reranker
+“Which images show a red car?” | Image/multimodal vector search + VLM/reranker validation
+“Summarize evidence about login failures shown in screenshots” | OCR BM25/FTS + text vector + image vector + reranker + grounded LLM/VLM
+---TABLE---
+Endpoint | Method | Purpose
+/api/rag/selection-sessions | POST | Create a new folder/image selection workspace within an authorized case.
+/api/rag/selection-sessions/{id}/manifest | PUT | Commit/update the selected folder/file manifest before processing.
+/api/rag/uploads/init | POST | Create multipart/stream upload session for selected local files.
+/api/rag/uploads/{id}/part | PUT | Upload file parts/chunks; server validates size/hash policy.
+/api/rag/uploads/{id}/complete | POST | Finalize upload and bind immutable object to image item.
+/api/rag/repository/tree | GET | Lazy list authorized server-side evidence folder nodes.
+/api/rag/images/{image_id}/preview | GET | Return authorized thumbnail/preview metadata.
+/api/rag/jobs | POST | Start processing committed selection manifest.
+/api/rag/jobs/{job_id} | GET | Progress, stages, counts, failures and retry state.
+/api/rag/search | POST | Hybrid image/text retrieval without generation.
+/api/rag/ask | POST | Hybrid retrieval + rerank + grounded LLM/VLM answer.
+/api/rag/citations/{citation_id} | GET | Resolve citation to image/path/hash/provenance and preview.
+---TABLE---
+Component | HA approach
+FastAPI | 3+ stateless replicas behind ingress/load balancer; rolling updates, readiness/liveness probes and PDB.
+Redis/Celery | Redis Sentinel or managed HA Redis; queues isolated by stage; retry/dead-letter policy.
+CPU workers | Horizontally scalable worker pools; autoscale by queue lag and CPU/I/O utilization.
+GPU workers | Separate node pool; autoscale by queue lag, GPU utilization and batch latency; model warmup/readiness.
+PostgreSQL/pgvector | HA primary/standby or managed service; WAL archiving/PITR; migration advisory lock.
+OpenSearch | 3+ data/master-capable topology as required; replicas and snapshots.
+ClickHouse | Replicated shards/cluster where scale requires; endpoint failover.
+MinIO/S3 | Distributed/erasure-coded MinIO or cloud object store; object versioning/retention.
+Neo4j | Clustered deployment when graph correlation is required at HA scale.
+---TABLE---
+Failure | Required behavior
+Browser closed before Start | No server processing unless a manifest/job was committed; local selection may be restored only from persisted session metadata where possible.
+Upload interrupted | Multipart upload resumes from acknowledged parts; incomplete objects are not indexed.
+Worker crash | Celery retry using deterministic stage ID; existing completed stage output reused if fingerprint matches.
+GPU unavailable | Queue remains pending or routes to another GPU node; CPU fallback only if explicitly configured.
+Index service unavailable | Persist durable “index pending” state; do not mark image complete.
+OCR/model failure | Record stage failure and model/parser error; allow retry or policy-based partial completion.
+Database migration race | Advisory lock ensures one migration executor at a time.
+Duplicate image | Record separate provenance/selection reference while optionally reusing derived artifacts keyed by hash + processing version.
+---TABLE---
+Metric | Why it matters
+time_to_first_preview | UI responsiveness while browsing large folders.
+tree_nodes_rendered / virtualization FPS | Tree scalability for tens/hundreds of thousands of files.
+upload MB/s and retry rate | Evidence ingest performance and network health.
+images hashed/sec | CPU/storage throughput.
+thumbnail images/sec | Preview pipeline throughput.
+OCR images/sec | OCR bottleneck visibility.
+embedding images/sec and GPU utilization | Primary semantic indexing performance.
+index write latency | Detect PostgreSQL/OpenSearch/ClickHouse bottlenecks.
+evidence-to-first-searchable time | Key investigator experience metric.
+retrieval p50/p95/p99 latency | Search responsiveness.
+reranker and LLM latency | GPU serving health.
+recall@K / citation precision | RAG quality.
+unsupported-claim rate | Grounding safety/forensic quality.
+---TABLE---
+Scale | Design guidance
+Up to ~100k images/case | Single Postgres/pgvector + OpenSearch + MinIO deployment can be sufficient; 1 GPU embedding worker with batching.
+100k-5M images | Separate DB/search/object storage; multiple CPU/GPU workers; strict batching, HNSW tuning, lazy tree/preview APIs, ClickHouse analytics.
+5M+ images / many concurrent cases | Kubernetes HA, distributed object/search/ClickHouse, partitioned metadata, multiple embedding/rerank nodes, capacity controls per tenant/case.
+---TABLE---
+Component | Behavior
+FolderTree | Virtualized recursive tree, async node loading for repository mode, tri-state selection, keyboard navigation.
+ImagePreview | Displays authorized thumbnail/original preview, zoom, metadata, selection status and processing status.
+SelectionSummary | Selected files/folders, bytes, duplicates, unsupported files and processing profile.
+ProcessingDrawer | Stage progress per case/job: upload, hash, metadata, OCR, embedding, indexing, ready.
+SearchWorkspace | Filters + query box + result grid/list; supports image similarity input.
+AnswerPanel | Grounded narrative plus citation/image cards; click citation focuses tree node and preview.
+---TABLE---
+Profile | Stages
+FAST | hash + deterministic metadata + thumbnail + image embedding + minimal lexical indexing
+STANDARD | FAST + OCR + text embedding + OpenSearch/FTS + correlation
+DEEP | STANDARD + high-quality OCR, optional VLM description, richer entity extraction and additional reranking
+VISUAL-SIMILARITY | hash + metadata + image embedding optimized for image-to-image retrieval
+---TABLE---
+Area | Acceptance criterion
+Selection | User can add multiple folder roots and/or individual images and see them in one tree workspace.
+Tree | Folder/file names are visible; folder checkboxes correctly propagate and show indeterminate state.
+Preview | Clicking an eligible image displays a thumbnail/preview before RAG processing starts.
+Processing scope | Server processes only committed selected items; unselected discovered images are not ingested/indexed.
+Integrity | Every processed image has source provenance and SHA-256.
+Parallelism | Independent image stages execute concurrently with configurable worker limits and GPU batching.
+Resumability | Interrupted jobs continue without duplicate completed chunks/embeddings.
+Search | Exact, FTS/BM25, text-vector and image-vector retrieval all honor case/evidence scope.
+Reranking | Candidate reranking occurs after fusion and before generation.
+Grounding | Every answer can resolve citations to source image, relative path and hash.
+HA | Loss of one API/worker node does not lose committed job state; queued work is recoverable.
+Migration | Missing supported RAG tables/columns/indexes are merged additively at deployment/startup.

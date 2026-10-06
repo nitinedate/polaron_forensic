@@ -1,0 +1,3341 @@
+{
+  "filename": "Mobile-Process-Flows.pdf",
+  "title": "Mobile Forensics\nProcess Flows",
+  "short": "Mobile Forensics",
+  "subtitle": "Android / iOS acquisition \u2192 decryption \u2192 evidence \u2192 reports",
+  "pages": [
+    {
+      "title": "Mobile / Acquisition-to-report overview",
+      "intro": "Android and iOS use Mobile service boundaries and their own stores/queues. The shared forensic stages begin after acquisition handoff.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "intake",
+            "text": "Case / device intake\nLive or imported source",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "acquire",
+            "text": "Authorized phone pull\nor existing dump import",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "manifest",
+            "text": "Finalize acquired bytes\nPaths / hashes / gaps",
+            "r": 2,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "parse",
+            "text": "Materialize + native parse\nSupported decryption",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "recover",
+            "text": "Retained recovery\nOCR + source media review",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "index",
+            "text": "Normalize + RAG\nEntities + evidence graph",
+            "r": 5,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "gate",
+            "text": "Required gates\ncompleted?",
+            "r": 6,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "wait",
+            "text": "Visible wait / limitation\nNo missing-data invention",
+            "r": 6,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "report",
+            "text": "Mobile artifacts\nShared report layout",
+            "r": 7,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "intake",
+            "b": "acquire"
+          },
+          {
+            "a": "acquire",
+            "b": "manifest"
+          },
+          {
+            "a": "manifest",
+            "b": "parse"
+          },
+          {
+            "a": "parse",
+            "b": "recover"
+          },
+          {
+            "a": "recover",
+            "b": "index"
+          },
+          {
+            "a": "index",
+            "b": "gate"
+          },
+          {
+            "a": "gate",
+            "b": "wait",
+            "label": "No"
+          },
+          {
+            "a": "gate",
+            "b": "report",
+            "label": "Yes"
+          }
+        ]
+      },
+      "height": 542,
+      "notes": [
+        [
+          "Priorities",
+          "WhatsApp chats/media, browsing, pictures/videos/audio, downloads/documents and relevant app records are prioritized, then the remaining accessible content is inventoried."
+        ],
+        [
+          "Coverage",
+          "A normal unprivileged Android logical pull does not guarantee private databases, encryption keys or deleted bytes. Record actual access and acquired-file counts per family."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_mobile.py; mobile_acquire/; mobile_adapters/"
+    },
+    {
+      "title": "The 13 controlled stages",
+      "intro": "The same serial controller governs Mobile evidence after acquisition handoff. One stage owns the job at a time; bounded workers may operate inside a stage.",
+      "notes": [
+        [
+          "State meanings",
+          "Ready means the configured gates completed. coverage_complete and exception counters still describe missing or inaccessible evidence. A completed acquisition does not prove that every possible artifact was captured."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_pipeline.py; forensic_serial_stages.py; forensic_serial_policy.py",
+      "headers": [
+        "Stage / key",
+        "Process agent",
+        "Required output"
+      ],
+      "rows": [
+        [
+          "01  intake",
+          "segments_agent",
+          "Source validation and an extraction plan"
+        ],
+        [
+          "02  source_prepare",
+          "virtual_disk_agent",
+          "Read-only source access / prepared mobile acquisition"
+        ],
+        [
+          "03  extraction",
+          "extraction_agent",
+          "Acquisition completion and a finalized manifest"
+        ],
+        [
+          "04  materialize",
+          "materialize_agent",
+          "Manifest files become durable artifact records"
+        ],
+        [
+          "05  parse",
+          "parse_agent",
+          "Structured records, text and decrypted WhatsApp databases"
+        ],
+        [
+          "06  recovery",
+          "recovery_agent",
+          "Retained deleted bytes and residual candidates"
+        ],
+        [
+          "07  ocr",
+          "ocr_agent",
+          "Text from acquired image/document pixels"
+        ],
+        [
+          "08  media_review",
+          "media_review_agent",
+          "Source images and sampled video frames with descriptions"
+        ],
+        [
+          "09  inventory",
+          "artifacts_agent",
+          "Normalize, classify and correlate evidence"
+        ],
+        [
+          "10  chunk",
+          "chunk_agent",
+          "Text-only RAG: 2500 characters; 800 overlap"
+        ],
+        [
+          "11  enrichment",
+          "entity_agent",
+          "Source-backed entities and enrichment"
+        ],
+        [
+          "12  graph",
+          "neo4j_agent",
+          "Idempotent evidence relationships"
+        ],
+        [
+          "13  validation",
+          "validation_agent",
+          "Stage gates, counts and explicit coverage gaps"
+        ]
+      ],
+      "widths": [
+        119,
+        124,
+        264
+      ]
+    },
+    {
+      "title": "01\u201302 / Intake and acquisition route",
+      "intro": "Select a route that can supply the required source bytes. A parser can analyze acquired data; it cannot replace absent acquisition access.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "case",
+            "text": "Saved case / device intake\nScope + platform",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "route",
+            "text": "Live device\nor imported dump?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "live",
+            "text": "Device connection / trust\nAuthorized acquisition",
+            "r": 2,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "import",
+            "text": "Folder, ZIP, UFED\nAndroid / iOS backup",
+            "r": 2,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "inspect",
+            "text": "Validate source / adapter\nEncryption + access state",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "usable",
+            "text": "Source readable?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "gap",
+            "text": "Source or password gap\nDiagnostic / reacquire route",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "plan",
+            "text": "Prepared acquisition plan\nPriority families + provenance",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "case",
+            "b": "route"
+          },
+          {
+            "a": "route",
+            "b": "live",
+            "label": "Live"
+          },
+          {
+            "a": "route",
+            "b": "import",
+            "label": "Import"
+          },
+          {
+            "a": "live",
+            "b": "inspect"
+          },
+          {
+            "a": "import",
+            "b": "inspect"
+          },
+          {
+            "a": "inspect",
+            "b": "usable"
+          },
+          {
+            "a": "usable",
+            "b": "gap",
+            "label": "No"
+          },
+          {
+            "a": "usable",
+            "b": "plan",
+            "label": "Yes"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Platform isolation",
+          "Android and iOS jobs stay inside Mobile services. A Mobile job must not be redirected through the Disk runtime merely to bypass an acquisition or parsing error."
+        ],
+        [
+          "Private-data requirement",
+          "For inaccessible private apps, use an authorized acquisition that actually contains those databases and matching keys. The application does not root, exploit or unlock a phone."
+        ]
+      ],
+      "source": "backend/app/services/mobile_adapters/registry.py; mobile_acquire/adapters/; forensic_serial_mobile.py"
+    },
+    {
+      "title": "03 / Live Android extraction",
+      "intro": "Read accessible WhatsApp keys before large media copies. Logical/Backup routes use a key-only step; File System routes prioritize keys before walking private app files.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "phone",
+            "text": "Authorized USB / ADB\nUnlocked Android device",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "adb",
+            "text": "Check device and\nactual command exit status",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "public",
+            "text": "Pull shared storage\nMedia / Downloads / Docs",
+            "r": 2,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "private",
+            "text": "Existing root / su /\nvalid run-as access?",
+            "r": 2,
+            "c": 2,
+            "kind": "decision"
+          },
+          {
+            "id": "priority",
+            "text": "Private priority: WhatsApp\nDB, WAL, journal, key",
+            "r": 3,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "miss",
+            "text": "No private access\nRecord family coverage gap",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "store",
+            "text": "Retain real acquired bytes\nPath + SHA-256 + counters",
+            "r": 4,
+            "c": 0,
+            "kind": "data"
+          },
+          {
+            "id": "final",
+            "text": "Broader accessible files\nFinalize acquisition manifest",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "phone",
+            "b": "adb"
+          },
+          {
+            "a": "adb",
+            "b": "public"
+          },
+          {
+            "a": "adb",
+            "b": "private"
+          },
+          {
+            "a": "private",
+            "b": "priority",
+            "label": "Yes"
+          },
+          {
+            "a": "private",
+            "b": "miss",
+            "label": "No",
+            "kind": "blocked"
+          },
+          {
+            "a": "public",
+            "b": "store"
+          },
+          {
+            "a": "priority",
+            "b": "store"
+          },
+          {
+            "a": "miss",
+            "b": "final"
+          },
+          {
+            "a": "store",
+            "b": "final"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Private priority",
+          "Check standard and multi-user com.whatsapp paths plus WhatsApp Business (com.whatsapp.w4b). Collect databases and companions together when available."
+        ],
+        [
+          "Invalid key files",
+          "Reject acquisition-error text such as \u201crun-as: package not debuggable\u201d using command status and binary validation. Saving that error as a key does not make decryption possible."
+        ]
+      ],
+      "source": "backend/app/services/mobile_acquire/adapters/android_adb.py; mobile_forensic/whatsapp_crypt.py"
+    },
+    {
+      "title": "03 / iOS, UFED and backup import",
+      "intro": "Imported packages are mapped into a source inventory before native parsing. Retain each package\u2019s original paths and metadata.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "source",
+            "text": "Trusted iOS backup\nor UFED / ZIP / folder",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "type",
+            "text": "Backup / dump\nformat identified",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "enc",
+            "text": "Source files\nencrypted?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "external",
+            "text": "Authorized supported\nexternal decryption",
+            "r": 2,
+            "c": 2,
+            "kind": "external"
+          },
+          {
+            "id": "verify",
+            "text": "Verify plaintext bytes\nKeep encrypted-source hash",
+            "r": 3,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "map",
+            "text": "Map backup file IDs\nDomains / paths / metadata",
+            "r": 3,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "inventory",
+            "text": "Store acquired files\nAttachments / documents",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "done",
+            "text": "Finalize source inventory\nMaterialization handoff",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "source",
+            "b": "type"
+          },
+          {
+            "a": "type",
+            "b": "enc"
+          },
+          {
+            "a": "enc",
+            "b": "external",
+            "label": "Yes",
+            "kind": "external"
+          },
+          {
+            "a": "external",
+            "b": "verify",
+            "kind": "external"
+          },
+          {
+            "a": "enc",
+            "b": "map",
+            "label": "No"
+          },
+          {
+            "a": "verify",
+            "b": "map",
+            "kind": "external"
+          },
+          {
+            "a": "map",
+            "b": "inventory"
+          },
+          {
+            "a": "inventory",
+            "b": "done"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Encrypted iOS import",
+          "The current importer does not implement complete encrypted-backup decryption merely because a password is supplied. Use supported external decryption, verify the result, then import plaintext."
+        ],
+        [
+          "Import precision",
+          "UFED logical/full-filesystem exports, Android backup and folder imports provide only their included files. A manifest entry with no acquired bytes stays a reference or a coverage gap."
+        ]
+      ],
+      "source": "backend/app/services/mobile_adapters/import_ios_backup.py; import_ufed.py; import_zip.py; import_android_backup.py"
+    },
+    {
+      "title": "04 / Files, DB companions and artifact identities",
+      "intro": "Materialization joins related SQLite source files into a working bundle while preserving originals.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "manifest",
+            "text": "Finalized mobile inventory\nReal source bytes + hashes",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "register",
+            "text": "Register artifact identities\nOriginal path / MIME / size",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "db",
+            "text": "SQLite family /\ncompanion files?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "file",
+            "text": "Independent source file\nParser / media dispatch",
+            "r": 2,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "bundle",
+            "text": "DB + WAL + SHM\nJournal working bundle",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "copy",
+            "text": "Copy to analysis workspace\nReplay only derived copy",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "check",
+            "text": "Integrity / source hashes\nDedup bundle signature",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "manifest",
+            "b": "register"
+          },
+          {
+            "a": "register",
+            "b": "db"
+          },
+          {
+            "a": "db",
+            "b": "file",
+            "label": "No"
+          },
+          {
+            "a": "db",
+            "b": "bundle",
+            "label": "Yes"
+          },
+          {
+            "a": "bundle",
+            "b": "copy"
+          },
+          {
+            "a": "copy",
+            "b": "check"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Companions matter",
+          "A DB-only pull can omit recent messages that remain in a WAL or journal. Acquire, associate and replay companions in a derived workspace rather than modifying source evidence."
+        ],
+        [
+          "Scale",
+          "Bounded DB bundles and batched persistence support full normalized inventories. Large row sets are streamed and UI-paged rather than truncated to one preview page."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_mobile.py; mobile_forensic/parsers/_sqlite_util.py; mobile_artifact_inventory.py"
+    },
+    {
+      "title": "05 / Encryption routing and capability gates",
+      "intro": "Identify the actual encrypted container. WhatsApp backup keys are not Android filesystem keys or universal app decryption keys.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "file",
+            "text": "Acquired file + hash\nEncryption format detection",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "plain",
+            "text": "Valid plaintext\nSQLite / document?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "parse",
+            "text": "Native plaintext parser\nIntegrity + record locators",
+            "r": 1,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "wa",
+            "text": "Supported CRYPT layout?\nOriginal / 5 / 7-12 / 14-15",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "other",
+            "text": "Other encrypted format\nInventory + diagnostics",
+            "r": 2,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "key",
+            "text": "Valid matching key\nactually available?",
+            "r": 3,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "missing",
+            "text": "Missing / invalid key\nEncrypted backup artifact",
+            "r": 3,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "decrypt",
+            "text": "Decrypt matching material\nValidate by format",
+            "r": 4,
+            "c": 1,
+            "kind": "key"
+          },
+          {
+            "id": "rows",
+            "text": "Derived DB / ZIP / file\nRegister before parsing",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "file",
+            "b": "plain"
+          },
+          {
+            "a": "plain",
+            "b": "parse",
+            "label": "Yes"
+          },
+          {
+            "a": "plain",
+            "b": "wa",
+            "label": "No"
+          },
+          {
+            "a": "wa",
+            "b": "other",
+            "label": "No"
+          },
+          {
+            "a": "wa",
+            "b": "key",
+            "label": "Yes"
+          },
+          {
+            "a": "key",
+            "b": "missing",
+            "label": "No"
+          },
+          {
+            "a": "key",
+            "b": "decrypt",
+            "label": "Yes"
+          },
+          {
+            "a": "decrypt",
+            "b": "rows"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Other formats",
+          "Signal SQLCipher, encrypted iOS backups, device FBE, password-protected documents/archives and encrypted mail require a supported authorized external route with the correct key or password in this package."
+        ],
+        [
+          "No bypass",
+          "If source bytes or matching secrets are absent, retain the encrypted artifact and a precise gap. An APK/DEX/ART cache is program code, not recovered chat content."
+        ]
+      ],
+      "source": "backend/app/services/mobile_forensic/whatsapp_crypt.py; mobile_forensic/parsers/messaging.py; mobile_adapters/import_ios_backup.py"
+    },
+    {
+      "title": "WhatsApp / Private key capture into Intake",
+      "intro": "Collect the key file into the case acquisition, or upload an already-acquired file in Intake. Keep the full file and record its provenance.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "live",
+            "text": "Live Android phone\nRead-only key step",
+            "r": 0,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "case",
+            "text": "Case evidence /\nIntake file upload",
+            "r": 0,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "access",
+            "text": "Existing root /\npermitted run-as?",
+            "r": 1,
+            "c": 0,
+            "kind": "decision"
+          },
+          {
+            "id": "read",
+            "text": "Read private files/key\nInclude Android profiles",
+            "r": 2,
+            "c": 0,
+            "kind": "key"
+          },
+          {
+            "id": "gap",
+            "text": "Access unavailable\nRecord acquisition gap",
+            "r": 1,
+            "c": 1,
+            "kind": "blocked"
+          },
+          {
+            "id": "check",
+            "text": "Binary format valid?\nReject ADB error output",
+            "r": 3,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "reject",
+            "text": "Invalid / oversized\nDo not save as a key",
+            "r": 3,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "derive",
+            "text": "Derive 64-character hex\n158-byte key: bytes 126\u2013157",
+            "r": 4,
+            "c": 1,
+            "kind": "key"
+          },
+          {
+            "id": "retain",
+            "text": "Retain full file + SHA-256\nLock and update Intake",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "parse",
+            "text": "All key candidates\nAuthenticated backup parse",
+            "r": 6,
+            "c": 1,
+            "kind": "process"
+          }
+        ],
+        "edges": [
+          {
+            "a": "live",
+            "b": "access"
+          },
+          {
+            "a": "access",
+            "b": "gap",
+            "label": "No"
+          },
+          {
+            "a": "access",
+            "b": "read",
+            "label": "Yes"
+          },
+          {
+            "a": "read",
+            "b": "check"
+          },
+          {
+            "a": "case",
+            "b": "check",
+            "side": "right"
+          },
+          {
+            "a": "check",
+            "b": "reject",
+            "label": "No"
+          },
+          {
+            "a": "check",
+            "b": "derive",
+            "label": "Yes"
+          },
+          {
+            "a": "derive",
+            "b": "retain"
+          },
+          {
+            "a": "retain",
+            "b": "parse"
+          }
+        ]
+      },
+      "height": 444,
+      "notes": [
+        [
+          "Intake behavior",
+          "Auto-capture follows materialization. Capture from case evidence and Upload acquired key file are available in Intake. Existing examiner keys are preserved; captured sources remain available as candidates."
+        ],
+        [
+          "Verification boundary",
+          "A 64-character hex value is saved; raw secrets stay out of API metadata, logs and reports. Format validation alone does not prove a matching backup. After extraction, new key files use an explicit Intake upload. crypt15 uses its separate backup-key derivation."
+        ]
+      ],
+      "source": "mobile_acquire/privileged_app_pull.py; mobile_forensic/key_intake.py; routers/report.py"
+    },
+    {
+      "title": "05 / WhatsApp authenticated backups",
+      "intro": "Modern backups authenticate before payload expansion. Payloads can contain SQLite databases, incremental ZIPs, settings, images or binary data.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "backup",
+            "text": "Encrypted backup retained\nOriginal path + SHA-256",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "keys",
+            "text": "Validate acquired / supplied\nkeys; reject error text",
+            "r": 1,
+            "c": 1,
+            "kind": "key"
+          },
+          {
+            "id": "format",
+            "text": "Parse header / IV / tag\nValidate container bounds",
+            "r": 2,
+            "c": 1,
+            "kind": "key"
+          },
+          {
+            "id": "aes",
+            "text": "crypt12/14: AES key\ncrypt15: HKDF-derived key",
+            "r": 3,
+            "c": 1,
+            "kind": "key"
+          },
+          {
+            "id": "auth",
+            "text": "AES-GCM tag\nauthenticates?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "next",
+            "text": "Next key /\nlayout exists?",
+            "r": 4,
+            "c": 2,
+            "kind": "decision"
+          },
+          {
+            "id": "nokey",
+            "text": "No matching key / layout\nKeep encrypted artifact",
+            "r": 5,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "verify",
+            "text": "Checksum + bounded inflate\nIdentify actual payload type",
+            "r": 5,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "integrity",
+            "text": "Payload expansion\nwithin supported limits?",
+            "r": 6,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "corrupt",
+            "text": "Corrupt / invalid plaintext\nKeep source + diagnostic",
+            "r": 6,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "derived",
+            "text": "Derived payload + hash\nRegister for native parsing",
+            "r": 7,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "backup",
+            "b": "keys"
+          },
+          {
+            "a": "keys",
+            "b": "format"
+          },
+          {
+            "a": "format",
+            "b": "aes"
+          },
+          {
+            "a": "aes",
+            "b": "auth"
+          },
+          {
+            "a": "auth",
+            "b": "next",
+            "label": "No"
+          },
+          {
+            "a": "next",
+            "b": "format",
+            "label": "Yes",
+            "side": "right"
+          },
+          {
+            "a": "next",
+            "b": "nokey",
+            "label": "No"
+          },
+          {
+            "a": "auth",
+            "b": "verify",
+            "label": "Yes"
+          },
+          {
+            "a": "verify",
+            "b": "integrity"
+          },
+          {
+            "a": "integrity",
+            "b": "corrupt",
+            "label": "No"
+          },
+          {
+            "a": "integrity",
+            "b": "derived",
+            "label": "Yes"
+          }
+        ]
+      },
+      "height": 542,
+      "notes": [
+        [
+          "Key formats",
+          "A 158-byte Android key file supplies its last 32 bytes (offset 126). Raw 32-byte / 64-hex keys and recognized Java byte-array envelopes are validated."
+        ],
+        [
+          "Crypto boundary",
+          "CRYPT15 uses HKDF-SHA256. Every key candidate is tried per source, including Business and Android profiles. Protobuf IVs avoid repeated historical guesses; source/key-set cache avoids repeat decryption."
+        ]
+      ],
+      "source": "backend/app/services/mobile_forensic/whatsapp_crypt.py; whatsapp_derivation.py"
+    },
+    {
+      "title": "05 / WhatsApp conversations and attachments",
+      "intro": "Plaintext or successfully decrypted chat databases enter the native conversation parser with companion-file context.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "db",
+            "text": "Verified msgstore /\nChatStorage database bundle",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "schema",
+            "text": "Detect schema / tables\nRead full paged records",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "rows",
+            "text": "Messages / participants\nGroups, timestamps, calls",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "media",
+            "text": "Attachment references\nPictures / video / audio",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "bytes",
+            "text": "Exact acquired\nattachment bytes?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "ref",
+            "text": "Reference-only / candidate\nMissing-byte coverage gap",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "link",
+            "text": "Link source media artifact\nHash / path / thumbnail state",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "store",
+            "text": "Normalized conversations\nURLs + evidence state",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "db",
+            "b": "schema"
+          },
+          {
+            "a": "schema",
+            "b": "rows"
+          },
+          {
+            "a": "rows",
+            "b": "media"
+          },
+          {
+            "a": "media",
+            "b": "bytes"
+          },
+          {
+            "a": "bytes",
+            "b": "ref",
+            "label": "No"
+          },
+          {
+            "a": "bytes",
+            "b": "link",
+            "label": "Yes"
+          },
+          {
+            "a": "link",
+            "b": "store"
+          },
+          {
+            "a": "ref",
+            "b": "store"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "States",
+          "Keep current database rows, backup-historical rows and explicit deleted markers distinct. An older backup message is not automatically a deleted message."
+        ],
+        [
+          "Completeness",
+          "Parse all available records rather than a UI preview count. Bundle hashing includes companions; retries must not hide new WAL content or duplicate unchanged snapshots."
+        ]
+      ],
+      "source": "backend/app/services/mobile_forensic/parsers/whatsapp_modern.py; whatsapp_export.py; whatsapp_evidence_browse.py"
+    },
+    {
+      "title": "05 / Messages, email, browsing and documents",
+      "intro": "The parser registry records multiple evidence families. Each family is limited to its actual acquired source and supported schema.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "files",
+            "text": "Acquired source inventory\nSignatures + native paths",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "dispatch",
+            "text": "Choose format / family\nNative parser registry",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "comm",
+            "text": "SMS, calls, email\nSupported app messages",
+            "r": 2,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "content",
+            "text": "Browser, apps, files\nPhotos / audio / docs",
+            "r": 2,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "verify",
+            "text": "Validate records\nRow locator + timestamps",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "state",
+            "text": "Verified native\nrecord?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "candidate",
+            "text": "Binary / unknown fragment\nLabel unverified candidate",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "store",
+            "text": "Normalized records\nText + attachment links",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "files",
+            "b": "dispatch"
+          },
+          {
+            "a": "dispatch",
+            "b": "comm"
+          },
+          {
+            "a": "dispatch",
+            "b": "content"
+          },
+          {
+            "a": "comm",
+            "b": "verify"
+          },
+          {
+            "a": "content",
+            "b": "verify"
+          },
+          {
+            "a": "verify",
+            "b": "state"
+          },
+          {
+            "a": "state",
+            "b": "candidate",
+            "label": "No"
+          },
+          {
+            "a": "state",
+            "b": "store",
+            "label": "Yes"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Format families",
+          "EML/EMLX/MSG/MBOX and attachments; office/PDF/text; CSV/TSV, JSON/JSONL/NDJSON, XML and plist/bplist; supported native SQLite and media metadata, including extensionless files."
+        ],
+        [
+          "Interpretation",
+          "Browsing visits, bookmarks, downloads and copied URLs retain distinct event kinds. App inventory identifies available packages/accounts; the presence of an app alone does not prove suspicious activity."
+        ]
+      ],
+      "source": "backend/app/services/mobile_forensic/parsers/; forensic_priority_evidence.py; mobile_forensic/package_inventory.py"
+    },
+    {
+      "title": "06 / Deleted chats, photos and retained recovery",
+      "intro": "Recovery distinguishes actual retained bytes, explicit deletion records and unverified residual candidates.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "source",
+            "text": "Acquired DB companions\nMedia files / MediaStore",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "scan",
+            "text": "Freelist / WAL / journal\nTrash / deletion metadata",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "bytes",
+            "text": "Actual retained\ncontent bytes?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "reference",
+            "text": "Metadata / thumbnail only\nNo original recovery claim",
+            "r": 2,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "validate",
+            "text": "Validate retained content\nHash + source offset / path",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "marker",
+            "text": "Explicit deletion\nmarker present?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "candidate",
+            "text": "Residual / historical\nCandidate evidence state",
+            "r": 4,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "deleted",
+            "text": "Recovered retained bytes\nDeleted marker + provenance",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "source",
+            "b": "scan"
+          },
+          {
+            "a": "scan",
+            "b": "bytes"
+          },
+          {
+            "a": "bytes",
+            "b": "reference",
+            "label": "No"
+          },
+          {
+            "a": "bytes",
+            "b": "validate",
+            "label": "Yes"
+          },
+          {
+            "a": "validate",
+            "b": "marker"
+          },
+          {
+            "a": "marker",
+            "b": "candidate",
+            "label": "No"
+          },
+          {
+            "a": "marker",
+            "b": "deleted",
+            "label": "Yes"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Deleted photos",
+          "A MediaStore trash row with no acquired image bytes is reference-only. A thumbnail is not the original photo. Retained trash files can be linked when their real bytes and hashes exist."
+        ],
+        [
+          "Deleted messages",
+          "Residual structures and backup history may yield evidence candidates; they do not guarantee every deleted chat can be recovered. Overwritten, absent or inaccessible encrypted data stays a gap."
+        ]
+      ],
+      "source": "backend/app/services/mobile_forensic/recovery/analyzers.py; mobile_forensic/parsers/media_store.py"
+    },
+    {
+      "title": "07 / OCR and searchable text",
+      "intro": "OCR processes acquired pixels and document pages. It records success, empty results and failures separately.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "i",
+            "text": "Image / document\nsource artifact",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "need",
+            "text": "OCR needed?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "skip",
+            "text": "Preserve native text\nRecord skip reason",
+            "r": 1,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "gpu",
+            "text": "Wait for shared\nGPU permit",
+            "r": 2,
+            "c": 1,
+            "kind": "key"
+          },
+          {
+            "id": "read",
+            "text": "Render page / orient\nimage; run OCR",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "save",
+            "text": "Text, page reference\nand source hash",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "done",
+            "text": "Release model + GPU\nRecord stage counters",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "i",
+            "b": "need"
+          },
+          {
+            "a": "need",
+            "b": "skip",
+            "label": "No"
+          },
+          {
+            "a": "need",
+            "b": "gpu",
+            "label": "Yes"
+          },
+          {
+            "a": "gpu",
+            "b": "read"
+          },
+          {
+            "a": "read",
+            "b": "save"
+          },
+          {
+            "a": "save",
+            "b": "done"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Scheduling",
+          "OCR and vision share one GPU permit. A legitimate permit or model wait is visible to progressAgent and is not classified as an invalid halt."
+        ],
+        [
+          "Evidence",
+          "OCR is derived text. Keep the original file, page/frame reference, source hash and OCR status; an OCR guess does not replace the original evidence."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_stages.py; ocr_gpu.py; forensic_media_review.py"
+    },
+    {
+      "title": "08 / Image and video evidence review",
+      "intro": "Suspicious Activity is created from observable source content and its provenance. Filenames alone do not establish suspicious conduct.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "source",
+            "text": "Acquired media\nPath + SHA-256",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "type",
+            "text": "Image or video?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "image",
+            "text": "Orient image\nDecode real pixels",
+            "r": 2,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "video",
+            "text": "Sample every 10 s\nplus final sample",
+            "r": 2,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "vision",
+            "text": "Vision model / OCR\nConcrete description",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "signal",
+            "text": "Evidence signal?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "regular",
+            "text": "Media artifact\nReview status",
+            "r": 4,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "susp",
+            "text": "Suspicious Activity\nSource-linked evidence",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "report",
+            "text": "Examiner review\nObservations + report",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "source",
+            "b": "type"
+          },
+          {
+            "a": "type",
+            "b": "image",
+            "label": "Image"
+          },
+          {
+            "a": "type",
+            "b": "video",
+            "label": "Video"
+          },
+          {
+            "a": "image",
+            "b": "vision"
+          },
+          {
+            "a": "video",
+            "b": "vision"
+          },
+          {
+            "a": "vision",
+            "b": "signal"
+          },
+          {
+            "a": "signal",
+            "b": "regular",
+            "label": "No"
+          },
+          {
+            "a": "signal",
+            "b": "susp",
+            "label": "Yes"
+          },
+          {
+            "a": "susp",
+            "b": "report"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Exact evidence",
+          "Retain artifact ID, original path/hash, model and description. Video evidence also retains decoded presentation time, derived frame PNG and frame hash."
+        ],
+        [
+          "Scope",
+          "Images are resized for review up to 1536 px; animated images use the first frame. Video sampling is not an examination of every frame. Missing models or decode failures produce a wait or recorded gap; model interpretation needs examiner review."
+        ]
+      ],
+      "source": "backend/app/services/forensic_media_review.py; suspicious_activity.py"
+    },
+    {
+      "title": "09 / Mobile inventory and Suspicious Activity",
+      "intro": "Normalization merges source-backed records into searchable Mobile artifacts and a separate Suspicious Activity category.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "input",
+            "text": "Native records + files\nOCR + media observations",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "normal",
+            "text": "Normalize categories\nAccounts / dates / paths",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "relate",
+            "text": "Link source artifacts\nChat \u2194 URL \u2194 attachment",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "signal",
+            "text": "Supported suspicious\ncontent / activity signal?",
+            "r": 3,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "regular",
+            "text": "Regular mobile artifacts\nEvidence states retained",
+            "r": 3,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "susp",
+            "text": "Suspicious Activity\nReason + source description",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "coverage",
+            "text": "Family coverage counts\nMissing / encrypted / failed",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "input",
+            "b": "normal"
+          },
+          {
+            "a": "normal",
+            "b": "relate"
+          },
+          {
+            "a": "relate",
+            "b": "signal"
+          },
+          {
+            "a": "signal",
+            "b": "regular",
+            "label": "No"
+          },
+          {
+            "a": "signal",
+            "b": "susp",
+            "label": "Yes"
+          },
+          {
+            "a": "susp",
+            "b": "coverage"
+          },
+          {
+            "a": "regular",
+            "b": "coverage"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Priority evidence",
+          "Chats, pictures/videos, downloads, documents, browsing and relevant app records use concrete text, visible media or native events. Source hashes and record locators support every explanation."
+        ],
+        [
+          "Data model",
+          "mobile_normalized_artifacts and mobile_inventory_items preserve record-level content and file-level state. Inventory coverage is surfaced instead of claiming success from an APK or encrypted backup alone."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_mobile.py; suspicious_activity.py; mobile_artifact_inventory.py"
+    },
+    {
+      "title": "10 / Text-only RAG chunking",
+      "intro": "The embedding stage and forensic vector search are removed. The RAG source is normalized text, parsed content, OCR and evidence descriptions.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "text",
+            "text": "Parsed / OCR / media\ntext + provenance",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "normalize",
+            "text": "Normalize text\nKeep evidence locator",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "policy",
+            "text": "Current chunk\npolicy already applied?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "resume",
+            "text": "Resume existing\ncheckpoint / no duplicates",
+            "r": 2,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "split",
+            "text": "2500-character chunks\n800-character overlap",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "replace",
+            "text": "Replace stale policy\nWrite chunk records",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "index",
+            "text": "Text retrieval index\nCounts + checkpoint",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "text",
+            "b": "normalize"
+          },
+          {
+            "a": "normalize",
+            "b": "policy"
+          },
+          {
+            "a": "policy",
+            "b": "resume",
+            "label": "Yes"
+          },
+          {
+            "a": "policy",
+            "b": "split",
+            "label": "No"
+          },
+          {
+            "a": "split",
+            "b": "replace"
+          },
+          {
+            "a": "replace",
+            "b": "index"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Window definition",
+          "The limit is characters, not tokens. Headers count inside the 2500-character window. Maximum nominal advance is 1700 characters; boundaries can adjust to the content."
+        ],
+        [
+          "Query / report",
+          "Retrieval uses text search and evidence references. No GPU embeddings or CLIP retrieval are required. Indexing source descriptions does not add facts beyond the cited source content."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_policy.py; forensic_serial_stages.py; rag_index.py"
+    },
+    {
+      "title": "11\u201312 / Entities and evidence graph",
+      "intro": "Enrichment runs after durable chunks. Graph writes preserve source relationships and use idempotent keys.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "chunks",
+            "text": "Indexed text\nNormalized records",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "entities",
+            "text": "Extract identities, URLs\nTimes and identifiers",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "validate",
+            "text": "Source locator\nexists?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "discard",
+            "text": "Reject unsupported\nentity / record issue",
+            "r": 2,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "relate",
+            "text": "Correlate entities\nwith source artifacts",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "neo",
+            "text": "Neo4j available?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "wait",
+            "text": "Stage waiting\nDependency visible",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "write",
+            "text": "Upsert graph nodes\nand relationships",
+            "r": 5,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "gate",
+            "text": "Graph checkpoint\nProceed to validation",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "chunks",
+            "b": "entities"
+          },
+          {
+            "a": "entities",
+            "b": "validate"
+          },
+          {
+            "a": "validate",
+            "b": "discard",
+            "label": "No"
+          },
+          {
+            "a": "validate",
+            "b": "relate",
+            "label": "Yes"
+          },
+          {
+            "a": "relate",
+            "b": "neo"
+          },
+          {
+            "a": "neo",
+            "b": "wait",
+            "label": "No"
+          },
+          {
+            "a": "neo",
+            "b": "write",
+            "label": "Yes"
+          },
+          {
+            "a": "write",
+            "b": "gate"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Identity",
+          "A chat account, sender, image path or URL links to the actual acquired record. Matching names or filenames remain weaker correlation signals."
+        ],
+        [
+          "Dependency gate",
+          "A graph dependency wait holds the serial gate. progressAgent checks the wait reason and retries within policy; it must not report the job ready while the required stage remains waiting."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_stages.py; forensic_serial_pipeline.py; forensic_priority_evidence.py"
+    },
+    {
+      "title": "13 / Mobile validation and coverage",
+      "intro": "Validation checks successful stages and actual family coverage, including decryption outcomes for the selected backups.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "counts",
+            "text": "Source inventory + stages\nNative rows / media / chunks",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "gates",
+            "text": "Required stage\ngates complete?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "wait",
+            "text": "Stage waiting / failed\nOwner-visible retry reason",
+            "r": 1,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "families",
+            "text": "Review WhatsApp, web\nFiles, media and app coverage",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "keys",
+            "text": "Selected backups decoded\nand format checks recorded?",
+            "r": 3,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "diag",
+            "text": "Retain missing-key / corrupt\nNo-chat source diagnostics",
+            "r": 3,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "state",
+            "text": "Save evidence states\ncoverage_complete + gaps",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "ready",
+            "text": "Ready acquired artifacts\nReport with actual scope",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "counts",
+            "b": "gates"
+          },
+          {
+            "a": "gates",
+            "b": "wait",
+            "label": "No"
+          },
+          {
+            "a": "gates",
+            "b": "families",
+            "label": "Yes"
+          },
+          {
+            "a": "families",
+            "b": "keys"
+          },
+          {
+            "a": "keys",
+            "b": "diag",
+            "label": "No"
+          },
+          {
+            "a": "keys",
+            "b": "state",
+            "label": "Yes"
+          },
+          {
+            "a": "diag",
+            "b": "state"
+          },
+          {
+            "a": "state",
+            "b": "ready"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Acceptance meaning",
+          "Pipeline readiness can coexist with source-access gaps. Modern backups require authenticated recovery. Unauthenticated historical results retain their integrity warning. Live acceptance also requires the intended phone bytes and recoverable records."
+        ],
+        [
+          "Historical imports",
+          "Reprocess derived stages when a better acquisition or parser becomes available, then generate a new report. Retain the original encrypted backups and historical report runs."
+        ]
+      ],
+      "source": "backend/app/services/forensic_serial_mobile.py; mobile_forensic/whatsapp_crypt.py; scripts/Test-Live-Phone-GPU.ps1"
+    },
+    {
+      "title": "The single progressAgent supervisor",
+      "intro": "progressAgent is the sole outside-process coordinator. Observe, Performance and Repair huddles are retired; queued legacy huddles perform no work.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "observe",
+            "text": "Read owner heartbeat\nCounters + checkpoint",
+            "r": 0,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "halt",
+            "text": "No useful progress\nfor 60 seconds?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "next",
+            "text": "Continue observation\nDefault check ~15 s",
+            "r": 1,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "valid",
+            "text": "Valid wait / pause?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "keep",
+            "text": "Keep owned process\nExpose reason / deadline",
+            "r": 2,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "inspect",
+            "text": "Inspect owned task\nLease and deadline",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "repair",
+            "text": "Cancel owned subprocess\nClean matched lease",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "retry",
+            "text": "Bounded redispatch\nMaximum three retries",
+            "r": 5,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "limit",
+            "text": "Retry budget left?",
+            "r": 6,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "fail",
+            "text": "Visible failed / blocked\nPreserve evidence",
+            "r": 6,
+            "c": 2,
+            "kind": "blocked"
+          }
+        ],
+        "edges": [
+          {
+            "a": "observe",
+            "b": "halt"
+          },
+          {
+            "a": "halt",
+            "b": "next",
+            "label": "No"
+          },
+          {
+            "a": "halt",
+            "b": "valid",
+            "label": "Yes"
+          },
+          {
+            "a": "valid",
+            "b": "keep",
+            "label": "Yes"
+          },
+          {
+            "a": "valid",
+            "b": "inspect",
+            "label": "No"
+          },
+          {
+            "a": "inspect",
+            "b": "repair"
+          },
+          {
+            "a": "repair",
+            "b": "retry"
+          },
+          {
+            "a": "retry",
+            "b": "limit"
+          },
+          {
+            "a": "limit",
+            "b": "observe",
+            "label": "Yes",
+            "side": "left"
+          },
+          {
+            "a": "limit",
+            "b": "fail",
+            "label": "No"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Valid waits",
+          "User pause, a shared GPU permit, a required model/dependency, or an operation inside its expected deadline may legitimately exceed one minute. A fresh heartbeat alone is not useful progress."
+        ],
+        [
+          "Ownership / cleanup",
+          "Recovery stops only the owned job process and matched leases. Routine legacy huddle lines are hidden from consoles; historical database rows and processing/evidence logs remain intact."
+        ]
+      ],
+      "source": "backend/app/services/progress_agent.py; forensic_serial_pipeline.py"
+    },
+    {
+      "title": "Report / Intake, scope and evidence selection",
+      "intro": "A report run starts from saved case intake and selected evidence. Mobile uses device and extraction details in the shared Disk page structure.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "intake",
+            "text": "Saved intake\nObjectives + case scope",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "select",
+            "text": "Choose evidence\nArtifact IDs / observations",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "ready",
+            "text": "Required stages\nand fields ready?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "block",
+            "text": "Missing stage / input\nExpose gap; do not draft",
+            "r": 2,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "run",
+            "text": "Create report run\nSingle run owner",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "refresh",
+            "text": "Clear stale caches\nRefresh acquired inventory",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "facts",
+            "text": "Build section facts\nCase profile + evidence",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "intake",
+            "b": "select"
+          },
+          {
+            "a": "select",
+            "b": "ready"
+          },
+          {
+            "a": "ready",
+            "b": "block",
+            "label": "No"
+          },
+          {
+            "a": "ready",
+            "b": "run",
+            "label": "Yes"
+          },
+          {
+            "a": "run",
+            "b": "refresh"
+          },
+          {
+            "a": "refresh",
+            "b": "facts"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Refresh scope",
+          "Refresh reads the existing acquisition. Report generation does not acquire a missing phone database or remount an unavailable original source to invent evidence."
+        ],
+        [
+          "Selection",
+          "Retain selected artifact counts, objectives, procedure and examiner observations. Saved historic reports keep their content; a new run is needed to include new derived evidence."
+        ]
+      ],
+      "source": "backend/app/routers/report.py; backend/app/services/report_generator.py"
+    },
+    {
+      "title": "Report / Grounded section generation",
+      "intro": "Sections share a deterministic order. Structured facts and saved observations are preferred where the report has direct evidence.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "section",
+            "text": "Next section\nRequired fields + facts",
+            "r": 0,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "direct",
+            "text": "Direct template or\ncomplete observations?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "fixed",
+            "text": "Render saved facts\nArtifact / profile references",
+            "r": 2,
+            "c": 0,
+            "kind": "process"
+          },
+          {
+            "id": "retrieve",
+            "text": "Text-only retrieval\nskip_vector=True; top 10",
+            "r": 2,
+            "c": 2,
+            "kind": "process"
+          },
+          {
+            "id": "draft",
+            "text": "Compose section\nCite evidence locators",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "grade",
+            "text": "Supported statements\nand citations?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "fallback",
+            "text": "Flag / correct section\nFactual fallback if needed",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "persist",
+            "text": "Save section + review\nCheckpoint / progress",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "more",
+            "text": "More sections?",
+            "r": 6,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "final",
+            "text": "Final report content\nReady for review / export",
+            "r": 6,
+            "c": 2,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "section",
+            "b": "direct"
+          },
+          {
+            "a": "direct",
+            "b": "fixed",
+            "label": "Yes"
+          },
+          {
+            "a": "direct",
+            "b": "retrieve",
+            "label": "No"
+          },
+          {
+            "a": "fixed",
+            "b": "draft"
+          },
+          {
+            "a": "retrieve",
+            "b": "draft"
+          },
+          {
+            "a": "draft",
+            "b": "grade"
+          },
+          {
+            "a": "grade",
+            "b": "fallback",
+            "label": "No"
+          },
+          {
+            "a": "grade",
+            "b": "persist",
+            "label": "Yes"
+          },
+          {
+            "a": "fallback",
+            "b": "persist"
+          },
+          {
+            "a": "persist",
+            "b": "more"
+          },
+          {
+            "a": "more",
+            "b": "section",
+            "label": "Yes",
+            "side": "left"
+          },
+          {
+            "a": "more",
+            "b": "final",
+            "label": "No"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Model boundary",
+          "The model can describe source facts. Unsupported claims, incomplete evidence and failed generation are reported explicitly; factual templates provide fallback content."
+        ],
+        [
+          "Resuming",
+          "Section checkpoints and a single report owner support pause/resume. progressAgent tracks actual work, section state and valid model/dependency waits."
+        ]
+      ],
+      "source": "backend/app/services/report_generator.py; report_generator_agent.py; report_renderer.py"
+    },
+    {
+      "title": "Report / Media evidence and observations",
+      "intro": "Mobile uses the shared Suspicious Activity section, including verified pictures and source-linked video frames.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "records",
+            "text": "Suspicious Activity\nChat / web / file / media",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "source",
+            "text": "Verified image or\nframe bytes available?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "reference",
+            "text": "Text evidence / limitation\nReference-only label",
+            "r": 1,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "panel",
+            "text": "Actual source picture\nor derived sampled frame",
+            "r": 2,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "caption",
+            "text": "Description + reason\nPath / hash / frame PTS",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "review",
+            "text": "Examiner observations\nDistinguish interpretation",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "section",
+            "text": "Shared evidence layout\nCitations / annexure links",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "records",
+            "b": "source"
+          },
+          {
+            "a": "source",
+            "b": "reference",
+            "label": "No"
+          },
+          {
+            "a": "source",
+            "b": "panel",
+            "label": "Yes"
+          },
+          {
+            "a": "panel",
+            "b": "caption"
+          },
+          {
+            "a": "caption",
+            "b": "review"
+          },
+          {
+            "a": "review",
+            "b": "section"
+          }
+        ]
+      },
+      "height": 415,
+      "notes": [
+        [
+          "Evidence quality",
+          "Show the actual retained image or derived frame. Identify thumbnails and recovered candidates. Do not substitute illustrative images for missing evidence."
+        ],
+        [
+          "Alignment",
+          "The section uses the same page width, header, watermark, caption and pagination rules as Disk. Device Information and Extraction Summary replace Disk-specific headings."
+        ]
+      ],
+      "source": "backend/app/services/report_renderer.py; forensic_priority_evidence.py; suspicious_activity.py"
+    },
+    {
+      "title": "Report / Common section and page structure",
+      "intro": "The shared renderer keeps the Disk and Mobile report sections aligned. Platform-specific source headings are substituted without changing the surrounding structure.",
+      "notes": [
+        [
+          "Shared formatting",
+          "A4 page width, section spacing, header, watermark, page numbers, evidence captions and annexure links use the same rendering path."
+        ],
+        [
+          "Content and pagination",
+          "Fourteen logical sections are saved in the report run. Evidence volume determines the page count; identical layout does not imply identical length."
+        ],
+        [
+          "Suspicious Activity",
+          "This is a dedicated report section and artifact category. It includes source-linked reasons, real retained media or sampled frames, and separate examiner observations."
+        ]
+      ],
+      "source": "backend/app/services/report_generator.py; report_renderer.py; report_pdf_export.py; report_docx_export.py",
+      "headers": [
+        "Report block",
+        "Shared content / platform substitution"
+      ],
+      "rows": [
+        [
+          "A / opening",
+          "Cover; contents; introduction; scope; tools"
+        ],
+        [
+          "A / source",
+          "Disk: Forensic Imaging; Mobile: Extraction Summary"
+        ],
+        [
+          "A / profile",
+          "Disk: OS Information; Mobile: Device Information; User Profile"
+        ],
+        [
+          "B",
+          "Artifact Summary"
+        ],
+        [
+          "C",
+          "Objectives, Procedure and Observation"
+        ],
+        [
+          "New evidence section",
+          "Suspicious Activity"
+        ],
+        [
+          "D",
+          "Annexure"
+        ],
+        [
+          "E",
+          "Final Analysis Summary"
+        ],
+        [
+          "F",
+          "Appendix"
+        ]
+      ],
+      "widths": [
+        137,
+        370
+      ]
+    },
+    {
+      "title": "Report / Shared layout, review and export",
+      "intro": "Mobile reports use the shared report renderer and section order. The number of pages changes with the evidence; page styling and alignment are shared.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "saved",
+            "text": "Saved section content\nReview grades + citations",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "review",
+            "text": "Examiner review\nCorrect observations",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "render",
+            "text": "Shared A4 page renderer\nHeaders + watermark",
+            "r": 2,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "pdf",
+            "text": "PDF / preview\nPaginated evidence",
+            "r": 3,
+            "c": 0,
+            "kind": "data"
+          },
+          {
+            "id": "docx",
+            "text": "DOCX export\nSame section content",
+            "r": 3,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "retain",
+            "text": "Save run + exports\nTrace to source artifacts",
+            "r": 4,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "saved",
+            "b": "review"
+          },
+          {
+            "a": "review",
+            "b": "render"
+          },
+          {
+            "a": "render",
+            "b": "pdf"
+          },
+          {
+            "a": "render",
+            "b": "docx"
+          },
+          {
+            "a": "pdf",
+            "b": "retain"
+          },
+          {
+            "a": "docx",
+            "b": "retain"
+          }
+        ]
+      },
+      "height": 340,
+      "notes": [
+        [
+          "Media alignment",
+          "Use verified source pictures and derived video frame images with captions, artifact IDs, paths/hashes and frame timestamps. Keep examiner observations distinct from model descriptions."
+        ],
+        [
+          "Limits",
+          "The shared layout does not force Disk and Mobile reports to have identical page counts. Missing source pixels or unverified deleted-data candidates must not be presented as exact recovered media."
+        ]
+      ],
+      "source": "backend/app/services/report_renderer.py; report_pdf_export.py; report_docx_export.py"
+    },
+    {
+      "title": "Other encrypted files / External decryption and import",
+      "intro": "The current package inventories these encrypted sources. A format-specific authorized external tool must produce verified plaintext before the native parser can analyze it.",
+      "height": 474,
+      "chart": {
+        "nodes": [
+          {
+            "id": "source",
+            "text": "Encrypted source retained\nPath + SHA-256 + format",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "tool",
+            "text": "Select supported external\nformat-specific workflow",
+            "r": 1,
+            "c": 1,
+            "kind": "external"
+          },
+          {
+            "id": "secret",
+            "text": "Required key /\npassword available?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "blocked",
+            "text": "Missing / inaccessible secret\nRecord encryption gap",
+            "r": 2,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "decrypt",
+            "text": "Authorized external tool\nDecrypt to working copy",
+            "r": 3,
+            "c": 1,
+            "kind": "external"
+          },
+          {
+            "id": "valid",
+            "text": "Plaintext integrity\nand type valid?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "failed",
+            "text": "Auth / output validation fail\nKeep precise diagnostic",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "provenance",
+            "text": "Tool/version + output hash\nLink encrypted-source hash",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "import",
+            "text": "Import verified plaintext\nMaterialize + native parser",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "source",
+            "b": "tool",
+            "kind": "external"
+          },
+          {
+            "a": "tool",
+            "b": "secret",
+            "kind": "external"
+          },
+          {
+            "a": "secret",
+            "b": "blocked",
+            "label": "No",
+            "kind": "blocked"
+          },
+          {
+            "a": "secret",
+            "b": "decrypt",
+            "label": "Yes",
+            "kind": "external"
+          },
+          {
+            "a": "decrypt",
+            "b": "valid",
+            "kind": "external"
+          },
+          {
+            "a": "valid",
+            "b": "failed",
+            "label": "No",
+            "kind": "blocked"
+          },
+          {
+            "a": "valid",
+            "b": "provenance",
+            "label": "Yes",
+            "kind": "external"
+          },
+          {
+            "a": "provenance",
+            "b": "import",
+            "kind": "external"
+          }
+        ]
+      },
+      "notes": [
+        [
+          "Applicable routes",
+          "Signal SQLCipher uses its database key and a compatible SQLCipher workflow; encrypted iOS backups use the correct backup/keybag route; archives, Office/PDF and encrypted mail require their specific supported key/password tools."
+        ],
+        [
+          "Device encryption",
+          "For Android FBE, acquire accessible plaintext through the authorized unlocked OS or a supported provider. A WhatsApp backup key does not unlock a raw phone filesystem. No acquisition or external decryption was performed for this diagram."
+        ]
+      ],
+      "source": "mobile_forensic/parsers/messaging.py; mobile_adapters/import_ios_backup.py; mobile_forensic/whatsapp_crypt.py (WhatsApp-only implemented path)"
+    },
+    {
+      "title": "Encryption support and acquisition matrix",
+      "intro": "These are current package capabilities, not a promise that every encrypted format can be decrypted.",
+      "notes": [
+        [
+          "Re-import boundary",
+          "Original .crypt uses its historical format key. CRYPT5 accepts an already-derived 24-byte key or its original account-email route; see the final format/test matrix. For external tools, document encrypted hashes, tool/version and verified output provenance before import."
+        ],
+        [
+          "Secrets",
+          "Do not put raw keys, passwords or chat content into acceptance logs or diagnostic bundles intended for sharing."
+        ]
+      ],
+      "source": "mobile_forensic/whatsapp_crypt.py; mobile_forensic/parsers/messaging.py; mobile_adapters/import_ios_backup.py",
+      "headers": [
+        "Source / container",
+        "Current path",
+        "Required condition / failure result"
+      ],
+      "rows": [
+        [
+          "Plaintext chat DB + companions",
+          "Native parser / derived replay",
+          "Valid SQLite bytes; preserve DB/WAL/journal hashes"
+        ],
+        [
+          "WhatsApp crypt7/8/9/10/11/12/14",
+          "CBC / authenticated or historical GCM",
+          "Matching files/key; legacy structural checks or modern authenticated payload"
+        ],
+        [
+          "WhatsApp crypt15",
+          "Implemented HKDF + AES-GCM",
+          "Matching backup base secret; supported layout and tag"
+        ],
+        [
+          "Missing / wrong WhatsApp key",
+          "Encrypted backup artifact",
+          "No plaintext chats; record key / auth diagnostic"
+        ],
+        [
+          "Signal SQLCipher",
+          "External authorized decryption",
+          "Matching SQLCipher key and supported tool; verified plaintext import"
+        ],
+        [
+          "Encrypted iOS backup",
+          "External supported decryption",
+          "Correct backup password / keybag route; importer itself is not full decryption"
+        ],
+        [
+          "Android filesystem encryption",
+          "Authorized unlocked OS acquisition",
+          "Accessible private source or decrypted full dump; WhatsApp key is insufficient"
+        ],
+        [
+          "Encrypted mail / documents / archives",
+          "External supported decryption",
+          "Correct format-specific key/password; retain encrypted-source provenance"
+        ],
+        [
+          "WhatsApp web / other encrypted apps",
+          "Inventory / supported external route",
+          "Actual database/session keys and verified plaintext; no E2EE bypass"
+        ]
+      ],
+      "widths": [
+        130,
+        151,
+        226
+      ]
+    },
+    {
+      "title": "Live phone / GPU acceptance and performance",
+      "intro": "Source and regression checks do not replace a real Android phone, matching encrypted backups or live GPU inference.",
+      "chart": {
+        "nodes": [
+          {
+            "id": "host",
+            "text": "Target phone + host\nADB authorization / GPU",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "pull",
+            "text": "Acquire real files\nPrivate DB / key where allowed",
+            "r": 1,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "bytes",
+            "text": "Required files /\nmatching secrets present?",
+            "r": 2,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "blocked",
+            "text": "Live check blocked\nExact access / key diagnostic",
+            "r": 2,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "test",
+            "text": "Authenticate each backup\nParse real message records",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "gpu",
+            "text": "CUDA operation + OCR\nVision marker / residency",
+            "r": 4,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "pass",
+            "text": "All required live\nchecks pass?",
+            "r": 5,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "fail",
+            "text": "Fail / pending with reason\nNo synthetic live pass",
+            "r": 5,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "save",
+            "text": "Redacted diagnostics\nRecorded live acceptance",
+            "r": 6,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "host",
+            "b": "pull"
+          },
+          {
+            "a": "pull",
+            "b": "bytes"
+          },
+          {
+            "a": "bytes",
+            "b": "blocked",
+            "label": "No"
+          },
+          {
+            "a": "bytes",
+            "b": "test",
+            "label": "Yes"
+          },
+          {
+            "a": "test",
+            "b": "gpu"
+          },
+          {
+            "a": "gpu",
+            "b": "pass"
+          },
+          {
+            "a": "pass",
+            "b": "fail",
+            "label": "No"
+          },
+          {
+            "a": "pass",
+            "b": "save",
+            "label": "Yes"
+          }
+        ]
+      },
+      "height": 474,
+      "notes": [
+        [
+          "Current status",
+          "No phone/GPU hardware session was available for this documentation and scanner review. Live acceptance remains pending; encrypted WhatsApp backups still need matching keys."
+        ],
+        [
+          "Performance in code",
+          "Priority key acquisition, documented protobuf IVs, source/key-set caching, shared-key handling, deduplicated derived databases, bounded ZIP expansion, batched records and 2500/800 text chunks bound resource use."
+        ]
+      ],
+      "source": "scripts/Test-Live-Phone-GPU.ps1; LIVE-PHONE-GPU-VERIFICATION.md; forensic_serial_mobile.py"
+    },
+    {
+      "title": "WhatsApp / Historical CRYPT formats",
+      "intro": "Historical ECB, CBC and tagless stream backups do not establish cryptographic authenticity. Recovery verifies SQLite structure and records the integrity limit on every parsed chat.",
+      "height": 410,
+      "chart": {
+        "nodes": [
+          {
+            "id": "source",
+            "text": "Retained legacy backup\nPath + source hash",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "version",
+            "text": "Historical\nformat?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "account",
+            "text": "CRYPT5: 24-byte secret\nor original Google account",
+            "r": 2,
+            "c": 0,
+            "kind": "key"
+          },
+          {
+            "id": "static",
+            "text": "Original .crypt\nPublic historical key",
+            "r": 2,
+            "c": 1,
+            "kind": "key"
+          },
+          {
+            "id": "key",
+            "text": "Matching device secret\nCRYPT7/8/9/10/11",
+            "r": 2,
+            "c": 2,
+            "kind": "key"
+          },
+          {
+            "id": "cbc",
+            "text": "ECB / CBC / GCM stream\nValidate exact payload",
+            "r": 3,
+            "c": 1,
+            "kind": "key"
+          },
+          {
+            "id": "check",
+            "text": "SQLite size +\nquick_check pass?",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "blocked",
+            "text": "Wrong input / corruption\nEncrypted evidence retained",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "copy",
+            "text": "Derived historical DB\nNo-MAC integrity label",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "source",
+            "b": "version"
+          },
+          {
+            "a": "version",
+            "b": "account",
+            "label": "5"
+          },
+          {
+            "a": "version",
+            "b": "static",
+            "label": ".crypt"
+          },
+          {
+            "a": "static",
+            "b": "cbc"
+          },
+          {
+            "a": "version",
+            "b": "key",
+            "label": "7-11"
+          },
+          {
+            "a": "account",
+            "b": "cbc"
+          },
+          {
+            "a": "key",
+            "b": "cbc"
+          },
+          {
+            "a": "cbc",
+            "b": "check"
+          },
+          {
+            "a": "check",
+            "b": "blocked",
+            "label": "No"
+          },
+          {
+            "a": "check",
+            "b": "copy",
+            "label": "Yes"
+          }
+        ]
+      },
+      "notes": [
+        [
+          "Meaning",
+          "Structural checks do not prove authenticity. Legacy chat records carry a medium confidence ceiling and the legacy_no_authentication_tag validation note."
+        ],
+        [
+          "Account",
+          "CRYPT5 account derivation is specific to this old format. It does not extract a CRYPT14 key from ciphertext."
+        ]
+      ],
+      "source": "mobile_forensic/whatsapp_crypt.py; integrity.py; parsers/messaging.py; frontend JobIntakePage.tsx"
+    },
+    {
+      "title": "WhatsApp / Derived payloads before artifact parsing",
+      "intro": "The materialize stage decrypts registered case bytes before native parsing, OCR, media review and text-only RAG. Original encrypted files remain in the case.",
+      "height": 405,
+      "chart": {
+        "nodes": [
+          {
+            "id": "plain",
+            "text": "Verified decrypted payload\nOriginal + plaintext hashes",
+            "r": 0,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "kind",
+            "text": "Database, archive\nor other file?",
+            "r": 1,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "db",
+            "text": "SQLite working copy\nReuse identical snapshots",
+            "r": 2,
+            "c": 0,
+            "kind": "data"
+          },
+          {
+            "id": "zip",
+            "text": "ZIP + safe members\nCRC and expansion limits",
+            "r": 2,
+            "c": 1,
+            "kind": "data"
+          },
+          {
+            "id": "other",
+            "text": "JSON / images / binary\nTyped derived file",
+            "r": 2,
+            "c": 2,
+            "kind": "data"
+          },
+          {
+            "id": "register",
+            "text": "Register case-owned objects\nEncrypted-source proof",
+            "r": 3,
+            "c": 1,
+            "kind": "process"
+          },
+          {
+            "id": "read",
+            "text": "Verify size / hash /\ncase namespace on reads",
+            "r": 4,
+            "c": 1,
+            "kind": "decision"
+          },
+          {
+            "id": "reject",
+            "text": "Missing proof / tampering\nExplicit artifact error",
+            "r": 4,
+            "c": 2,
+            "kind": "blocked"
+          },
+          {
+            "id": "parse",
+            "text": "Native artifact parsers\nRAG / review / report inputs",
+            "r": 5,
+            "c": 1,
+            "kind": "data"
+          }
+        ],
+        "edges": [
+          {
+            "a": "plain",
+            "b": "kind"
+          },
+          {
+            "a": "kind",
+            "b": "db",
+            "label": "DB"
+          },
+          {
+            "a": "kind",
+            "b": "zip",
+            "label": "ZIP"
+          },
+          {
+            "a": "kind",
+            "b": "other",
+            "label": "File"
+          },
+          {
+            "a": "db",
+            "b": "register"
+          },
+          {
+            "a": "zip",
+            "b": "register"
+          },
+          {
+            "a": "other",
+            "b": "register"
+          },
+          {
+            "a": "register",
+            "b": "read"
+          },
+          {
+            "a": "read",
+            "b": "reject",
+            "label": "Fail"
+          },
+          {
+            "a": "read",
+            "b": "parse",
+            "label": "Pass"
+          }
+        ]
+      },
+      "notes": [
+        [
+          "ZIPs",
+          "Retain the authenticated archive even if a member cannot be expanded. Reject traversal, Windows device names, symlinks, duplicate names and separately encrypted members. Report limits explicitly."
+        ],
+        [
+          "Source boundary",
+          "After extraction finalization, the server reads sealed sources or verified registered derivations. It never reopens the original phone/dump folder for a newly created working copy."
+        ]
+      ],
+      "source": "whatsapp_derivation.py; forensic_serial_stages.py; sqlite_counts.py; artifact_parse.py; artifact_preview.py"
+    },
+    {
+      "title": "WhatsApp / Supported formats and executable test case",
+      "intro": "The public QA files are synthetic. The CRYPT14 case includes its matching 158-byte key file; the keyless case must remain blocked.",
+      "headers": [
+        "Format",
+        "Required material",
+        "Validation / result"
+      ],
+      "rows": [
+        [
+          "Original .crypt",
+          "Historical public AES format key",
+          "AES-192-ECB; complete SQLite structural checks; authenticity unverified"
+        ],
+        [
+          "CRYPT5",
+          "Already-derived 24-byte / 48-hex key, or exact original Google account",
+          "AES-192-CBC; complete SQLite + quick_check; no authentication tag"
+        ],
+        [
+          "CRYPT7 / CRYPT8",
+          "Matching files/key or 32-byte AES secret",
+          "AES-256-CBC; CRYPT8 gzip; complete SQLite checks; authenticity unverified"
+        ],
+        [
+          "CRYPT9 / 10 / 11",
+          "Matching files/key or raw 32-byte AES secret",
+          "GCM tag when present; exact-EOF historical tagless streams remain unverified; failed tags never discarded"
+        ],
+        [
+          "CRYPT12 / CRYPT14",
+          "Matching files/key; raw / hexadecimal secret accepted",
+          "AES-GCM tag and any MD5 footer required; bounded expansion"
+        ],
+        [
+          "CRYPT15",
+          "Matching encrypted_backup.key or 64-character root secret",
+          "HKDF-SHA256 then AES-GCM authentication and footer validation"
+        ],
+        [
+          "Other CRYPT extensions",
+          "No validated decoder in this release",
+          "Retain encrypted bytes; unsupported_crypt_version; never assume another format"
+        ]
+      ],
+      "widths": [
+        90,
+        165,
+        252
+      ],
+      "notes": [
+        [
+          "Run",
+          "From the updated project: python scripts/test-whatsapp-decryption.py --out C:/Aetheris-QA/whatsapp-case (choose an empty output folder)."
+        ],
+        [
+          "Checks",
+          "The script checks ten formats, typed payloads, key capture offset, keyless blocking, chats, a surviving deleted row, attachment reference, RAG-ready text and unchanged input hashes."
+        ],
+        [
+          "Live status",
+          "Synthetic and PostgreSQL-compatible checks passed. No connected Android phone, native Windows device acquisition or GPU session was available for live acceptance."
+        ]
+      ],
+      "source": "scripts/whatsapp_qa_fixtures.py; scripts/test-whatsapp-decryption.py; backend/tests/test_whatsapp_payloads.py"
+    }
+  ],
+  "accent": "#A895DD",
+  "cover_notes": [
+    "Complete acquisition, artifact, recovery and report diagrams, including encrypted chats and files.",
+    "Includes original .crypt and CRYPT5/7/8/9/10/11/12/14/15, private key intake, derived file registration and executable synthetic test cases.",
+    "Matching keys and real acquired bytes are required. Live phone/GPU acceptance remains pending."
+  ],
+  "build_tag": "MOBILE FORENSICS / PROJECT RELEASE 9"
+}

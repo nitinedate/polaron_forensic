@@ -1,0 +1,128 @@
+# Shared infrastructure for every Aetheris product.
+# One Postgres database (`forensic` on host port 5434), one Redis, MinIO,
+# pgAdmin, and MailHog. Products keep separate Redis logical DBs and MinIO buckets.
+#
+#   docker compose -f services/common/docker-compose.yml --project-directory . up -d
+name: aetheris-common
+
+networks:
+  default:
+    name: aetheris-common
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: forensic
+      POSTGRES_PASSWORD: forensic
+      POSTGRES_DB: forensic
+    ports:
+      - "127.0.0.1:5434:5432"
+    shm_size: 1g
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - max_connections=200
+      - -c
+      - work_mem=8MB
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init/01_extensions.sql:/docker-entrypoint-initdb.d/01_extensions.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forensic -d forensic && psql -U forensic -d forensic -c 'SELECT 1' >/dev/null"]
+      interval: 5s
+      timeout: 8s
+      retries: 20
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+
+  postgres-ensure:
+    image: pgvector/pgvector:pg16
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: forensic
+    volumes:
+      - ./docker/postgres/init/02_common_databases.sql:/sql/02_common_databases.sql:ro
+    entrypoint: ["psql", "-h", "postgres", "-U", "forensic", "-d", "forensic", "-v", "ON_ERROR_STOP=1", "-f", "/sql/02_common_databases.sql"]
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    restart: on-failure
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@forensic.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "127.0.0.1:${PGADMIN_PORT:-5052}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./docker/pgadmin/pgpass:/pgpass:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6380}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    restart: unless-stopped
+    user: "0:0"
+    command: server /data --console-address ":9005"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "127.0.0.1:9004:9000"
+      - "127.0.0.1:9005:9005"
+    volumes:
+      # Object storage grows with every disk/mobile job. Keep it on a normal
+      # host folder (AETHERIS_BACKUP_DIR) so DockerDesktopWSL does not absorb it.
+      - type: bind
+        source: ${AETHERIS_BACKUP_DIR:-./backup}/minio
+        target: /data
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  pgdata:
+    external: true
+    name: aetheris-forensic_pgdata
+  pgadmin_data:
+    external: true
+    name: aetheris-forensic_pgadmin_data
+  redis_data:

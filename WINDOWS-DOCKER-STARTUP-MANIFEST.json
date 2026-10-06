@@ -1,0 +1,109 @@
+{
+  "version": 11,
+  "date": "2026-10-06",
+  "release": "Windows optional-volume probes and staged backup migration",
+  "based_on_project_release": 10,
+  "source_archive_sha256": "4291137e7e228bc5b5545fb26267bcb16a9333749ab480faa2198484353d6f23",
+  "source_library_version": 12,
+  "prior_manifest": "docs/process-flows/audit/WINDOWS-DOCKER-STARTUP-MANIFEST-v10.json",
+  "profile_policy": {
+    "local": "localhost HTTP; no ACME",
+    "nitin": "configured domain and public IP HTTPS",
+    "prod": "public IP HTTPS; no domain"
+  },
+  "configuration_policy": {
+    "root_env_created_if_missing": true,
+    "host_settings_created_if_missing": true,
+    "existing_configuration_preserved": true,
+    "signing_secrets_generated_on_host": true,
+    "active_env_distributed": false,
+    "static_missing_files_fail_by_name": true,
+    "runtime_bind_directories_created": true,
+    "prepare_only_without_docker": true,
+    "validate_only_without_build_or_up": true
+  },
+  "build_policy": {
+    "ordinary_launch": "new application build ID; retain dependency cache",
+    "shared_backend_compile_count": 1,
+    "python_compile_images": 2,
+    "react_application_builds": 3,
+    "vendor_images": "pull missing",
+    "dependency_refresh": "explicit RefreshDependencies only"
+  },
+  "https_policy": {
+    "local": "HTTP loopback",
+    "nitin": "IP and DNS certificates",
+    "prod": "IP only; no domain",
+    "public_ports": [
+      80,
+      443
+    ],
+    "certbot_image": "certbot/certbot:v5.8.0",
+    "ip_profile": "shortlived",
+    "renewal_check_interval_seconds": 21600,
+    "nginx_reload": "successful Certbot deploy hook in gateway PID namespace",
+    "docker_socket_mounted": false,
+    "self_signed_fallback": false,
+    "windows_host_routing": "Docker Desktop native host.docker.internal DNS",
+    "trust_probe": "Linux TLS roots and public identity over host connection"
+  },
+  "verification": {
+    "simulated_windows_powershell_volume_checks_passed": 20,
+    "offline_native_migration_scenarios_passed": 8,
+    "first_launch_file_checks_passed": 32,
+    "existing_startup_checks_passed": 31,
+    "powershell_parser_checks_passed": 4,
+    "python_compile_and_311_grammar": "pass",
+    "powershell_runtime": "7.4.13 on Linux",
+    "native_windows_powershell_5_1_docker_desktop": "pending on target host",
+    "live_phone_gpu": "pending on target host"
+  },
+  "changed_since_release9_sha256": {
+    "DISK-MOBILE-SERIAL-RELEASE.md": "f487b6f5b1d45b57de49dbd5f38d391a79df49b4b864f4f15beb4bedece3cf8a",
+    "script_docker/README.md": "5cdb3509ad33da4006d2205baab09b1d3f6315f64883034da0f13f940b55e499",
+    "script_docker/start_docker.lib.ps1": "728994803a03594ea5503d34c8a041b95386fade0db739022f8e63f4e6965cc1",
+    "script_docker/start_docker.ps1": "070c4e03e517792b7a95444ef5b60118a018d2b1261825897f162ad9bae25d5a",
+    "script_docker/start_docker_local.cmd": "20ea2dd965c2b3d4ad3c501b35a53e08082436e844cb4ea4a1bd0595f381ba37",
+    "script_docker/start_docker_nitin.cmd": "53f3cc9cb129eb77a9f7ae2f36add52754eca19979cb64cd592d989ecac3d039",
+    "script_docker/start_docker_prod.cmd": "0140a730f7c56f24fbd5a7c8d98bff7cb7433863d4001acc663cd60df75b8e20"
+  },
+  "new_since_release9_sha256": {
+    "DOCKER-STARTUP-FILES-FIX.md": "a16e80e10cb7101b7775d5ec2461a51251620be0a9e95235b776e6a96f0d20c2",
+    "script_docker/start_docker.required-files.json": "1a502902b5e9e608570205e928e58a92c05f68c59d003eaffca5a67e3dcb659e",
+    "tools/host-python-requirements.txt": "db524720551538cc85114b43c8b8f342e9f7a172014fd66cfdb58ba9192f2ef6",
+    "tests/windows_docker_file_checks.ps1": "9e7c9d28a9dc28f74da38639cf87fa5e1eaecc97eb1c0dc47c1a4a52ca179477",
+    "docs/process-flows/audit/DISK-MOBILE-SERIAL-MANIFEST-v9.json": "1319e278cfe393c17cc831b3a751b713979edd4cca7533ad6cf7a7b3cfae7881",
+    "docs/process-flows/audit/WINDOWS-DOCKER-STARTUP-MANIFEST-v8.json": "dd3bb5a15f1a8fe55861e03d00e4d40a1fc84284f216835b2ba6f3a0b2b0e689",
+    "docs/process-flows/audit/DOCKER-STARTUP-FILES-VERIFICATION.json": "d53da1a9d3e596852e7cf1db2fe862d79337416c61dd0d85721991c3f27ed4f3"
+  },
+  "historical_release10_verification": {
+    "first_launch_file_checks_passed": 32,
+    "existing_startup_behavior_checks_passed": 31,
+    "full_launch_scenarios_with_mocked_docker_passed": 6,
+    "clean_profile_prepare_validate_checks_passed": 3,
+    "official_compose_2_39_4_configuration_checks_passed": 18,
+    "tls_certificate_tests_passed": 21,
+    "changed_powershell_parser_checks_passed": 3,
+    "powershell_runtime": "7.4.13 on Linux",
+    "native_windows_docker_desktop_build_up": "pending on target host",
+    "public_certificate_issuance": "not performed",
+    "live_phone_gpu": "pending on target host",
+    "backend_frontend_scanner_application_code": "byte-identical to supplied release9",
+    "dependency_cache_behavior": "cached by default; explicit RefreshDependencies only"
+  },
+  "changed_since_release10_sha256": {
+    "DISK-MOBILE-SERIAL-RELEASE.md": "5de04856aabfd5ffdeff135772c7efca0b9f9202c6948d8c80e721bef0532ed4",
+    "script_docker/README.md": "673cc96fe21e45336ff6e69e698726d7b9c99fc397484b8b740791d61c657877",
+    "scripts/docker-engine-recovery.ps1": "f7c148c6b59246620b5e721aa1e50c19a588779533bf16bb481cd29fd46d28d9",
+    "scripts/move-processing-data-to-backup.ps1": "96f05df69d10108b0abe3e7548883a285185137c8b3a78df0ad70bcee00ef4fc",
+    "scripts/start-stack.ps1": "9f2846b6fcbfd22b9de0a259fec47e777f7e8d04fb0bf127ad4ed949372a6aa4"
+  },
+  "new_since_release10_sha256": {
+    "tests/windows_docker_volume_checks.ps1": "5d9877a8ff68ad02b8d683fbf8cf35094e34eacd7ce3cd8be224922000e22c7f",
+    "tests/test_windows_backup_migration.py": "390a3ad9642bbe0bd4597cbaa68ceaddd14f97e7816253e8e09e06e1960f66f3",
+    "DOCKER-VOLUME-PROBE-FIX.md": "0e2d1adc98697e7c9ca3ff65865ded678ffc27da8e1da9fd050d54f14bbe90fa",
+    "docs/process-flows/audit/DOCKER-VOLUME-PROBE-VERIFICATION.json": "7b0ba0717b95c820dba928665cfd3b189c9cea9f4147e4feeae8d5326de8e0d3",
+    "docs/process-flows/audit/DISK-MOBILE-SERIAL-MANIFEST-v10.json": "32b53c08cb219a1ff6ec1fac4194d883f0ae0f9f7dee9ca39e56e433c49347dc",
+    "docs/process-flows/audit/WINDOWS-DOCKER-STARTUP-MANIFEST-v10.json": "ca6831fc2342553f255a9f4bd8a94f24c1c0ed527b83fbc28e32e999e18cb275"
+  }
+}
