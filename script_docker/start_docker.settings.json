@@ -1,17 +1,17 @@
 {
-  "local": {
-    "publicIp": "",
-    "domain": "",
-    "acmeEmail": ""
-  },
-  "nitin": {
-    "publicIp": "122.179.140.167",
-    "domain": "future-softtech.co.in",
-    "acmeEmail": ""
-  },
-  "prod": {
-    "publicIp": "122.179.141.248",
-    "domain": "",
-    "acmeEmail": ""
-  }
+    "local":  {
+                  "publicIp":  "",
+                  "domain":  "",
+                  "acmeEmail":  ""
+              },
+    "nitin":  {
+                  "publicIp":  "122.179.140.167",
+                  "domain":  "future-softtech.co.in",
+                  "acmeEmail":  ""
+              },
+    "prod":  {
+                 "publicIp":  "122.179.141.248",
+                 "domain":  "",
+                 "acmeEmail":  "ndate1976@gmail.com"
+             }
 }
