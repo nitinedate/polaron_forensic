@@ -34,7 +34,7 @@ from app.services.invite_service import (
     get_invite_status,
     reset_password_with_token,
 )
-from app.services.email_service import EmailService
+from app.services.email_service import EmailService, MailDeliveryError
 from app.services.client_access_token import mint_client_access_token, parse_and_verify, token_request_allowed
 from app.services.security import validate_password, verify_password, hash_password
 
@@ -98,8 +98,17 @@ def request_access_token(body: RequestAccessTokenIn, db: Session = Depends(get_d
         if user and token_request_allowed(tenant_slug, email):
             token = mint_client_access_token(tenant_slug, email)
             email_service.send_access_token(email, token, tenant_slug)
+    except MailDeliveryError as exc:
+        import logging
+
+        logging.getLogger(__name__).error("Access-token delivery failed: %s", exc)
+        db.rollback()
+        raise HTTPException(status_code=503, detail={"error": {
+            "code": "mail_delivery_failed",
+            "message": "Access-token email could not be sent. Contact your administrator to check SMTP settings, then retry."
+        }}) from exc
     except HTTPException:
-        pass
+        db.rollback()
     except Exception:
         import logging
 
@@ -109,6 +118,10 @@ def request_access_token(body: RequestAccessTokenIn, db: Session = Depends(get_d
             email,
         )
         db.rollback()
+        raise HTTPException(status_code=503, detail={"error": {
+            "code": "token_request_unavailable",
+            "message": "Access-token service is temporarily unavailable. Please retry later."
+        }})
     return {"ok": True}
 
 

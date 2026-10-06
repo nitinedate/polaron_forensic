@@ -408,7 +408,7 @@ export function ExtractionLogConsole({
 
               className={clsx(
 
-                "mb-1 flex gap-2",
+                "mb-3 min-w-0",
 
                 isArtifactCapture && "rounded bg-sky-950/40 px-1 py-0.5",
                 isArtifactInventory && "rounded bg-fuchsia-950/30 px-1 py-0.5",
@@ -419,7 +419,8 @@ export function ExtractionLogConsole({
 
             >
 
-              <span className="shrink-0 text-ink-600">
+              <div className="mb-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-ink-500">
 
                 {formatLogLineTimestamp(log.timestamp)}
 
@@ -455,9 +456,10 @@ export function ExtractionLogConsole({
 
               </span>
 
+              </div>
               <span
                 className={clsx(
-                  "text-ink-200",
+                  "block min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-ink-200",
                   isArtifactCapture && "text-sky-100",
                   isArtifactInventory && "text-fuchsia-100"
                 )}

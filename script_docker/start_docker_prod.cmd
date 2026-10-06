@@ -4,6 +4,8 @@ title Aetheris - start_docker_prod
 cd /d "%~dp0.."
 echo.
 echo  Trusted HTTPS for the configured static public IP on ports 80/443. No domain required.
+echo  HTTPS gateway starts after certificate validation, before product stacks.
+echo  Public TCP 80 and 443 must be forwarded to this Windows host.
 echo  Application compiles every launch. Dependencies use Docker cache.
 echo  First launch creates missing .env and host settings automatically.
 echo  Host settings: script_docker\start_docker.settings.json

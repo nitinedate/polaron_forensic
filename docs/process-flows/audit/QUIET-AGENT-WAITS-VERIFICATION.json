@@ -1,0 +1,9 @@
+{
+  "runtime": "Python 3.12 on Linux",
+  "targeted_wait_and_retired_huddle_tests_passed": 37,
+  "existing_serial_stage_order_dispatch_checks_passed": 4,
+  "unrelated_serial_tests_deselected": 37,
+  "python_311_grammar": "passed",
+  "live_windows_celery_postgresql_ui": "pending",
+  "scope": "Waiting/logging behavior and four serial regression checks only; previous SMTP/kit/scanner/phone/GPU tests are historical."
+}

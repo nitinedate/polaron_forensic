@@ -1,0 +1,8 @@
+{
+  "powershell_runtime": "7.4.13 on Linux",
+  "examiner_kit_checks_passed": 13,
+  "powerShell_parse": "installer and tests passed",
+  "checks": "cache-denied simulation executes production pip commands; native Python stderr and exit status checks",
+  "native_windows_powershell5_1_and_mobile_dependency_install": "pending on target host",
+  "scope": "Script-only change. Previous SMTP/startup/app/phone/GPU results remain historical."
+}

@@ -20,6 +20,7 @@ $bootstrapStarted = $false
 $renewerStopped = $false
 $challengeToken = ""
 $gatewayArgs = $null
+$publicGatewayStarted = $false
 Push-Location $root
 try {
     if ($NoCache -or $Mode -in @("nocache", "no-cache", "refresh-dependencies")) { $RefreshDependencies = $true }
@@ -104,10 +105,7 @@ try {
         if (-not $targetImage) { throw "Each API must have an explicit image name." }
         if ($targetImage -ne $coreImage) { Invoke-Docker -Title "Reuse backend for $targetImage" -DockerArgs @("tag", $coreImage, $targetImage) }
     }
-    Write-Step "Compile scanner worker and all three React applications"
-    Invoke-Docker -Title "Scanner worker" -DockerArgs ($vulnArgs + $buildArgs + @("worker-nessus"))
-    Invoke-Docker -Title "Android frontend" -DockerArgs ($androidArgs + $buildArgs + @("frontend"))
-    Invoke-Docker -Title "iOS frontend" -DockerArgs ($iosArgs + $buildArgs + @("frontend"))
+    Write-Step "Compile the gateway React application"
     Invoke-Docker -Title "Unified gateway frontend" -DockerArgs ($gatewayArgs + $buildArgs + @("gateway"))
     if ($isPublic) {
         Write-Step "Trusted IP/domain HTTPS certificates"
@@ -168,7 +166,16 @@ try {
             "-v", "aetheris-gateway_certbot_etc:/etc/letsencrypt:ro", "aetheris-gateway", "nginx", "-t")
         [System.IO.File]::WriteAllText($configPath, $text, [System.Text.UTF8Encoding]::new($false))
         Remove-Item -LiteralPath $candidatePath
+        # Publish the trusted edge before backend/scanner startup can block it.
+        Start-PublicHttpsGateway -ComposeArgs $gatewayArgs -PublicIP $settings.PublicIP -Domain $settings.Domain
+        $bootstrapStarted = $false
+        $renewerStopped = $false
+        $publicGatewayStarted = $true
     }
+    Write-Step "Compile remaining product applications"
+    Invoke-Docker -Title "Scanner worker" -DockerArgs ($vulnArgs + $buildArgs + @("worker-nessus"))
+    Invoke-Docker -Title "Android frontend" -DockerArgs ($androidArgs + $buildArgs + @("frontend"))
+    Invoke-Docker -Title "iOS frontend" -DockerArgs ($iosArgs + $buildArgs + @("frontend"))
     Write-Step "Start all product stacks with freshly compiled images"
     $stackArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $root "scripts\start-stack.ps1"),
         "-Service", "all", "-NoBuild", "-SkipGateway")
@@ -176,15 +183,10 @@ try {
     if ($AutoRecoverEngine) { $stackArgs += "-AutoRecoverEngine" }
     & powershell.exe @stackArgs
     if ($LASTEXITCODE -ne 0) { throw "Product-stack startup failed (exit $LASTEXITCODE)." }
-    if ($bootstrapStarted) {
-        Invoke-Docker -Title "Release HTTP bootstrap port" -DockerArgs ($gatewayArgs + @("--profile", "acme-bootstrap", "rm", "-sf", "acme-bootstrap"))
-        $bootstrapStarted = $false
+    if (-not $isPublic) {
+        Invoke-Docker -Title "Start local gateway" -DockerArgs ($gatewayArgs + @("up", "-d", "--no-build", "--pull", "missing",
+            "--force-recreate", "--wait", "--wait-timeout", "180", "gateway"))
     }
-    $gatewayServices = @("gateway")
-    if ($isPublic) { $gatewayServices += "certbot-renewer" }
-    Invoke-Docker -Title "Start gateway" -DockerArgs ($gatewayArgs + @("up", "-d", "--no-build", "--pull", "missing",
-        "--force-recreate", "--wait", "--wait-timeout", "180") + $gatewayServices)
-    $renewerStopped = $false
     Write-Step "Check container health and HTTPS trust"
     $report = Get-StackContainerReport
     if ($report.Failed.Count -or $report.Missing.Count -or $report.Pending) {
@@ -192,6 +194,7 @@ try {
         throw "Container check: $($report.Failed.Count) failed, $($report.Pending) starting; missing: $($report.Missing -join ', ')."
     }
     if ($isPublic) {
+        Assert-PublicGatewayBindings -ComposeArgs $gatewayArgs
         Invoke-Docker -Title "Running nginx configuration" -DockerArgs ($gatewayArgs + @("exec", "-T", "gateway", "nginx", "-t"))
         Invoke-CertificateTool -ComposeArgs $gatewayArgs -ToolArgs @("probe", "--identity", $settings.PublicIP) | Out-Null
         Invoke-CertificateTool -ComposeArgs $gatewayArgs -ToolArgs @("probe", "--identity", $settings.PublicIP, "--path", "/health") | Out-Null
@@ -208,6 +211,9 @@ try {
     Write-Host "$($report.Running) containers are running. Dependencies were reused unless explicitly refreshed."
 } catch {
     Write-Host "START FAILED: $($_.Exception.Message)" -ForegroundColor Red
+    if ($publicGatewayStarted) {
+        Write-Host "HTTPS gateway and certificate renewal remain running. A product service failed readiness; its API may be unavailable. Fix the reported product error and rerun this launcher." -ForegroundColor Yellow
+    }
     if ($Profile -ne "local" -and -not $PrepareOnly -and -not $ValidateOnly) {
         Write-Host "For a certificate validation failure, check public TCP 80/443 forwarding and DNS (nitin)."
     }

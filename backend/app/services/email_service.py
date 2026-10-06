@@ -1,37 +1,82 @@
+import logging
 import smtplib
+import ssl
 from email.message import EmailMessage
 
 from app.config import Settings, get_settings
+
+
+logger = logging.getLogger(__name__)
+
+
+class MailDeliveryError(RuntimeError):
+    """Safe delivery failure; never contains passwords, message bodies or tokens."""
 
 
 class EmailService:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or get_settings()
 
-    def send(self, to: str, subject: str, body: str) -> None:
-        if not self.settings.mail_send_enabled:
-            import logging
-
-            logging.getLogger(__name__).warning(
-                "Mail send skipped (MAIL_SEND_ENABLED=false): to=%s subject=%s",
-                to,
-                subject,
-            )
-            return
+    def send(self, to: str, subject: str, body: str) -> bool:
+        cfg = self.settings
+        if not cfg.mail_send_enabled:
+            logger.warning("Mail send skipped (MAIL_SEND_ENABLED=false)")
+            return False
+        implicit_tls = cfg.mail_smtp_ssl if cfg.mail_smtp_ssl is not None else cfg.mail_port == 465
+        # Authenticated submission on 587 requires TLS before credentials.
+        starttls = not implicit_tls and (cfg.mail_smtp_starttls or (cfg.mail_port == 587 and cfg.mail_smtp_auth))
+        if cfg.mail_smtp_auth and (not cfg.mail_username or not cfg.mail_password):
+            raise MailDeliveryError("SMTP authentication requires a username and password.")
+        if cfg.mail_port == 465 and not implicit_tls:
+            raise MailDeliveryError("SMTP port 465 requires MAIL_SMTP_SSL=true.")
         msg = EmailMessage()
-        msg["From"] = self.settings.mail_from
+        msg["From"] = cfg.mail_from
         msg["To"] = to
         msg["Subject"] = subject
         msg.set_content(body)
-
-        with smtplib.SMTP(self.settings.mail_host, self.settings.mail_port, timeout=30) as smtp:
-            if self.settings.mail_smtp_starttls:
+        context = ssl.create_default_context()
+        # Retry only disconnects before DATA. Never replay an ambiguous submission.
+        for attempt in range(2):
+            smtp = None
+            submitting = False
+            stage = "connection"
+            try:
+                if implicit_tls:
+                    smtp = smtplib.SMTP_SSL(cfg.mail_host, cfg.mail_port, timeout=30, context=context)
+                else:
+                    smtp = smtplib.SMTP(cfg.mail_host, cfg.mail_port, timeout=30)
                 smtp.ehlo()
-                smtp.starttls()
-                smtp.ehlo()
-            if self.settings.mail_smtp_auth and self.settings.mail_username:
-                smtp.login(self.settings.mail_username, self.settings.mail_password)
-            smtp.send_message(msg)
+                if starttls:
+                    stage = "STARTTLS"
+                    smtp.starttls(context=context)
+                    smtp.ehlo()
+                if cfg.mail_smtp_auth:
+                    stage = "authentication"
+                    # Challenge/response works with servers rejecting inline AUTH responses.
+                    smtp.login(cfg.mail_username, cfg.mail_password, initial_response_ok=False)
+                stage = "submission"
+                submitting = True
+                refused = smtp.send_message(msg)
+                if refused:
+                    raise MailDeliveryError("SMTP rejected the recipient.")
+                return True
+            except smtplib.SMTPServerDisconnected as exc:
+                if not submitting and attempt == 0:
+                    logger.warning("SMTP disconnected during %s; retrying once before submission", stage)
+                    continue
+                raise MailDeliveryError(f"SMTP disconnected during {stage}; check server settings and policy.") from exc
+            except smtplib.SMTPAuthenticationError as exc:
+                raise MailDeliveryError("SMTP authentication rejected; check credentials or provider app password.") from exc
+            except (smtplib.SMTPException, OSError) as exc:
+                raise MailDeliveryError(f"SMTP failed during {stage}; check mail configuration and connectivity.") from exc
+            finally:
+                if smtp is not None:
+                    # QUIT failure must not turn an accepted email into a retry/error.
+                    try:
+                        smtp.quit()
+                    except (smtplib.SMTPException, OSError):
+                        smtp.close()
+        raise MailDeliveryError("SMTP delivery failed.")
 
     def _activate_link(self, tenant_slug: str, token: str) -> str:
         return f"{self.settings.app_base_url}/activate?tenant={tenant_slug}&token={token}"
@@ -104,4 +149,6 @@ class EmailService:
             f"Paste this token on the login page, or when Start-Laptop asks for it.\n"
             f"If you did not request this, ignore this email."
         )
+        if not self.settings.mail_send_enabled:
+            raise MailDeliveryError("Access-token email is disabled on this service.")
         self.send(to, "Your Aetheris access token", body)

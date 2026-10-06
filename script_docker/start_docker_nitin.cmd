@@ -4,6 +4,8 @@ title Aetheris - start_docker_nitin
 cd /d "%~dp0.."
 echo.
 echo  Trusted HTTPS for the configured public IP and domain on ports 80/443.
+echo  HTTPS gateway starts after certificate validation, before product stacks.
+echo  Public TCP 80 and 443 must be forwarded to this Windows host.
 echo  Application compiles every launch. Dependencies use Docker cache.
 echo  First launch creates missing .env and host settings automatically.
 echo  Host settings: script_docker\start_docker.settings.json

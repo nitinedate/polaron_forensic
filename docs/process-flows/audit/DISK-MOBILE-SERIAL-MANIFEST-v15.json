@@ -1,11 +1,11 @@
 {
-  "version": 16,
+  "version": 15,
   "date": "2026-10-06",
-  "release": "Validated public HTTPS edge handoff before product startup",
+  "release": "Stacked job stages and full-width logs",
   "source_archive": {
     "name": "polaron-docker-startup-fixed.zip",
-    "library_version": 17,
-    "sha256": "1e5a875cf4d5df9ba9d7e0579233b0fee0cd8c4b48719d5e6aaf18d36ae1d623"
+    "library_version": 16,
+    "sha256": "6d1aadfa8a7d8901991fe95c57ab4ebf3ec1401756f1239ed40683264c79214f"
   },
   "standalone_laptop_scanner_input": {
     "name": "laptop-scanner(6).zip",
@@ -204,7 +204,7 @@
       "sha256": "530752e97f7c655f7287ac2873171995a7c0b84f4d0e2589d019b5bf67250fd2"
     }
   },
-  "prior_manifest": "docs/process-flows/audit/DISK-MOBILE-SERIAL-MANIFEST-v15.json",
+  "prior_manifest": "docs/process-flows/audit/DISK-MOBILE-SERIAL-MANIFEST-v14.json",
   "prior_manifest_scope": "Historical v5; its scanner-preservation assertions are superseded by the authorized scanner changes in v6.",
   "changed_since_release6_sha256": {
     "DISK-MOBILE-SERIAL-RELEASE.md": "a4d3a1aa2146797418879b9adcbbea6d3a85817f8c15c7d3fe2f342a28ba2aa6",
@@ -245,14 +245,12 @@
     "backend/app/services/mobile_forensic/key_intake.py": "d0a2b68b44fb06fbb6af9bb89f7f93dfce61da2e4344392a3cd115a887bb1310"
   },
   "current_verification": {
-    "powershell_runtime": "7.4.13 on Linux",
-    "https_handoff_binding_checks": 28,
-    "existing_startup_checks": 31,
-    "first_launch_file_checks": 32,
-    "certificate_tls_tests": 21,
-    "powershell_parser_and_windows_encoding": "passed",
-    "live_windows_docker_acme_internet_access": "pending",
-    "scope": "Offline Docker/TLS mocks plus localhost TLS tests. No production certificate was issued and external port forwarding was not tested."
+    "unified_frontend_typescript_vite_build": "passed",
+    "reference_screenshot": "inspected supplied screenshot",
+    "responsive_columns": "lg:3, sm:2, base:1; acquisition and serial stage cards",
+    "browser_visual_verification": "not completed; browser download archive invalid",
+    "live_windows_ui": "pending",
+    "scope": "Frontend layout only. No backend/scanner changes or rerun of historical extraction/SMTP/startup tests."
   },
   "updated_documents": {
     "Disk-Process-Flows.pdf": {
@@ -293,7 +291,7 @@
     "console_chatter": "excluded",
     "historical_audit_rows": "retained"
   },
-  "verification_scope": "Offline Docker/TLS mocks plus localhost TLS tests. No production certificate was issued and external port forwarding was not tested.",
+  "verification_scope": "Frontend layout only. No backend/scanner changes or rerun of historical extraction/SMTP/startup tests.",
   "historical_release6_verification": {
     "standalone_agent_tests": 102,
     "embedded_agent_tests": 107,
@@ -613,28 +611,5 @@
     "JOB-LOG-LAYOUT.md": "44eec5a73f7d950cb961b44bea2ffda51e5a94a77832fffd7b145b0fba9bf998",
     "docs/process-flows/audit/JOB-LOG-LAYOUT-VERIFICATION.json": "ca9bb29535468883d0180c0da555f69ce785d7572c11b504cdf46c43cef0f3a3",
     "docs/process-flows/audit/DISK-MOBILE-SERIAL-MANIFEST-v14.json": "a26da88d4fc6ce7f5b8bee1748b2934eec908a930b0b5e749059ebb89c196adf"
-  },
-  "historical_release15_verification": {
-    "unified_frontend_typescript_vite_build": "passed",
-    "reference_screenshot": "inspected supplied screenshot",
-    "responsive_columns": "lg:3, sm:2, base:1; acquisition and serial stage cards",
-    "browser_visual_verification": "not completed; browser download archive invalid",
-    "live_windows_ui": "pending",
-    "scope": "Frontend layout only. No backend/scanner changes or rerun of historical extraction/SMTP/startup tests."
-  },
-  "changed_since_release15_sha256": {
-    "script_docker/start_docker_prod.cmd": "e3082ce2fe4b81e4534015d70e79d3c58ead888fa55ebfffb698b8beb7624019",
-    "script_docker/start_docker_nitin.cmd": "a8747f0b1d09dbce09b8184f3f909d5f81aafd59ecb36ab825446b0b7cfbb15c",
-    "script_docker/start_docker.ps1": "51a06eb301cf6c5a62e7d0af653e970c5c473d5befa83d26906680ad8bd185dd",
-    "script_docker/start_docker.lib.ps1": "2ef9ced5bfff8089f29fcf301b4329ca54b57a6287b77f77d922e80543c4ab21",
-    "DISK-MOBILE-SERIAL-RELEASE.md": "321ad52b4d62c6b4ef7cc43727580d730792193537985de365f6b22fc8fa08b0",
-    "WINDOWS-DOCKER-STARTUP-MANIFEST.json": "6323532f764502d7b998a936e532c649ac652594e207c355bc7cc8312ee74ba3"
-  },
-  "new_since_release15_sha256": {
-    "tests/windows_public_https_handoff_checks.ps1": "7963bd1d6c797722d99624130cd21af1378adc24aa004f72593aedea03a0fec5",
-    "PUBLIC-HTTPS-443-FIX.md": "b6fd6d0545e3281b933b9ba6bb31c6de58b5a830b6d6205a0762d2cb91b36f0a",
-    "docs/process-flows/audit/PUBLIC-HTTPS-443-VERIFICATION.json": "f13859e3aa2aaac1e195f3d6bddb810e8ab328a387bbaa0a5dc800865eea13a0",
-    "docs/process-flows/audit/DISK-MOBILE-SERIAL-MANIFEST-v15.json": "b48731b40e2cd80771155629815f8bbac74ed97d9602ffa8196cafdc9d241b1b",
-    "docs/process-flows/audit/WINDOWS-DOCKER-STARTUP-MANIFEST-v11.json": "f7059f394352b73fc268f58b54be5d669c64315d5097a6ef286387a8b49dd4f6"
   }
 }
