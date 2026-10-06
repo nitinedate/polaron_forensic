@@ -168,7 +168,6 @@ export function JobDetailPage() {
 
   const lastLogTsRef = useRef<string | undefined>();
   const uploadPanelRef = useRef<HTMLDivElement>(null);
-  const pipelinePanelRef = useRef<HTMLDivElement>(null);
   const evidencePanelRef = useRef<HostEvidencePanelHandle>(null);
   const autoResumeAttempted = useRef<string | null>(null);
   const autoProcessRegisteredAttempted = useRef(false);
@@ -183,7 +182,6 @@ export function JobDetailPage() {
   const [pipelineErrorStep, setPipelineErrorStep] = useState<number | undefined>(undefined);
   const [refreshingArtifacts, setRefreshingArtifacts] = useState(false);
   const [receivingSegmentsStarted, setReceivingSegmentsStarted] = useState(false);
-  const [logPanelHeight, setLogPanelHeight] = useState<number | undefined>();
   const [evidenceTransferMode, setEvidenceTransferMode] = useState<"none" | "server" | "client">("none");
   const [selectedTransportMode, setSelectedTransportMode] = useState<EvidenceTransportMode>("unknown");
 
@@ -623,19 +621,6 @@ export function JobDetailPage() {
       }
     })();
   }, [jobId, job, canRun, processing, load]);
-
-  useEffect(() => {
-    const el = pipelinePanelRef.current;
-    if (!el) {
-      setLogPanelHeight(undefined);
-      return;
-    }
-    const syncHeight = () => setLogPanelHeight(Math.max(el.offsetHeight, 320));
-    syncHeight();
-    const ro = new ResizeObserver(syncHeight);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [job?.id, job?.status, job?.pipeline_progress]);
 
   // Auto-resume stalled GPU RAG when embedding was interrupted.
   // Never thrash OCR: after baseline, finish OCR before background corpus RAG.
@@ -1315,8 +1300,8 @@ export function JobDetailPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-        <div ref={pipelinePanelRef} className="min-h-0">
+      <div className="flex min-w-0 flex-col gap-6">
+        <div className="min-w-0">
           <AgentPipelineBanner
             job={pipelineDisplayJob ?? job}
             processRequested={processRequested}
@@ -1332,7 +1317,7 @@ export function JobDetailPage() {
           />
         </div>
 
-        <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
+        <div className="flex min-w-0 flex-col gap-4">
           {jobId ? (
             <JobActivityPanel
               jobId={jobId}
@@ -1346,7 +1331,7 @@ export function JobDetailPage() {
               extractionLogsLoading={logsLoading || registerProgress.active}
               registering={registerProgress.active}
               onRefreshLogs={() => load({ silent: true })}
-              panelHeight={logPanelHeight}
+              panelHeight={520}
             />
           ) : null}
           {jobId ? <ProgressAgentPanel jobId={jobId} active={!pollStopped} /> : null}

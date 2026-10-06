@@ -1,11 +1,11 @@
 {
-  "version": 16,
+  "version": 11,
   "date": "2026-10-06",
-  "release": "Validated public HTTPS edge handoff before product startup",
-  "based_on_project_release": 15,
-  "source_archive_sha256": "1e5a875cf4d5df9ba9d7e0579233b0fee0cd8c4b48719d5e6aaf18d36ae1d623",
-  "source_library_version": 17,
-  "prior_manifest": "docs/process-flows/audit/WINDOWS-DOCKER-STARTUP-MANIFEST-v11.json",
+  "release": "Windows optional-volume probes and staged backup migration",
+  "based_on_project_release": 10,
+  "source_archive_sha256": "4291137e7e228bc5b5545fb26267bcb16a9333749ab480faa2198484353d6f23",
+  "source_library_version": 12,
+  "prior_manifest": "docs/process-flows/audit/WINDOWS-DOCKER-STARTUP-MANIFEST-v10.json",
   "profile_policy": {
     "local": "localhost HTTP; no ACME",
     "nitin": "configured domain and public IP HTTPS",
@@ -48,14 +48,15 @@
     "trust_probe": "Linux TLS roots and public identity over host connection"
   },
   "verification": {
+    "simulated_windows_powershell_volume_checks_passed": 20,
+    "offline_native_migration_scenarios_passed": 8,
+    "first_launch_file_checks_passed": 32,
+    "existing_startup_checks_passed": 31,
+    "powershell_parser_checks_passed": 4,
+    "python_compile_and_311_grammar": "pass",
     "powershell_runtime": "7.4.13 on Linux",
-    "https_handoff_binding_checks": 28,
-    "existing_startup_checks": 31,
-    "first_launch_file_checks": 32,
-    "certificate_tls_tests": 21,
-    "powershell_parser_and_windows_encoding": "passed",
-    "live_windows_docker_acme_internet_access": "pending",
-    "scope": "Offline Docker/TLS mocks plus localhost TLS tests. No production certificate was issued and external port forwarding was not tested."
+    "native_windows_powershell_5_1_docker_desktop": "pending on target host",
+    "live_phone_gpu": "pending on target host"
   },
   "changed_since_release9_sha256": {
     "DISK-MOBILE-SERIAL-RELEASE.md": "f487b6f5b1d45b57de49dbd5f38d391a79df49b4b864f4f15beb4bedece3cf8a",
@@ -104,30 +105,5 @@
     "docs/process-flows/audit/DOCKER-VOLUME-PROBE-VERIFICATION.json": "7b0ba0717b95c820dba928665cfd3b189c9cea9f4147e4feeae8d5326de8e0d3",
     "docs/process-flows/audit/DISK-MOBILE-SERIAL-MANIFEST-v10.json": "32b53c08cb219a1ff6ec1fac4194d883f0ae0f9f7dee9ca39e56e433c49347dc",
     "docs/process-flows/audit/WINDOWS-DOCKER-STARTUP-MANIFEST-v10.json": "ca6831fc2342553f255a9f4bd8a94f24c1c0ed527b83fbc28e32e999e18cb275"
-  },
-  "historical_release11_verification": {
-    "simulated_windows_powershell_volume_checks_passed": 20,
-    "offline_native_migration_scenarios_passed": 8,
-    "first_launch_file_checks_passed": 32,
-    "existing_startup_checks_passed": 31,
-    "powershell_parser_checks_passed": 4,
-    "python_compile_and_311_grammar": "pass",
-    "powershell_runtime": "7.4.13 on Linux",
-    "native_windows_powershell_5_1_docker_desktop": "pending on target host",
-    "live_phone_gpu": "pending on target host"
-  },
-  "changed_since_release15_sha256": {
-    "script_docker/start_docker_prod.cmd": "e3082ce2fe4b81e4534015d70e79d3c58ead888fa55ebfffb698b8beb7624019",
-    "script_docker/start_docker_nitin.cmd": "a8747f0b1d09dbce09b8184f3f909d5f81aafd59ecb36ab825446b0b7cfbb15c",
-    "script_docker/start_docker.ps1": "51a06eb301cf6c5a62e7d0af653e970c5c473d5befa83d26906680ad8bd185dd",
-    "script_docker/start_docker.lib.ps1": "2ef9ced5bfff8089f29fcf301b4329ca54b57a6287b77f77d922e80543c4ab21",
-    "DISK-MOBILE-SERIAL-RELEASE.md": "321ad52b4d62c6b4ef7cc43727580d730792193537985de365f6b22fc8fa08b0"
-  },
-  "new_since_release15_sha256": {
-    "tests/windows_public_https_handoff_checks.ps1": "7963bd1d6c797722d99624130cd21af1378adc24aa004f72593aedea03a0fec5",
-    "PUBLIC-HTTPS-443-FIX.md": "b6fd6d0545e3281b933b9ba6bb31c6de58b5a830b6d6205a0762d2cb91b36f0a",
-    "docs/process-flows/audit/PUBLIC-HTTPS-443-VERIFICATION.json": "f13859e3aa2aaac1e195f3d6bddb810e8ab328a387bbaa0a5dc800865eea13a0",
-    "docs/process-flows/audit/DISK-MOBILE-SERIAL-MANIFEST-v15.json": "b48731b40e2cd80771155629815f8bbac74ed97d9602ffa8196cafdc9d241b1b",
-    "docs/process-flows/audit/WINDOWS-DOCKER-STARTUP-MANIFEST-v11.json": "f7059f394352b73fc268f58b54be5d669c64315d5097a6ef286387a8b49dd4f6"
   }
 }

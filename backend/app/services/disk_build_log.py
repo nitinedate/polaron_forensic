@@ -12,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.sql_helpers import execute
-from app.services.retired_agents import is_retired_huddle_message
+from app.services.retired_agents import is_silent_pipeline_message
 
 
 def write_disk_log(
@@ -24,7 +24,7 @@ def write_disk_log(
     level: str = "info",
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    if is_retired_huddle_message(message):
+    if is_silent_pipeline_message(message, level):
         return
     execute(
         db,
@@ -61,7 +61,7 @@ def write_disk_logs_batch(
             "metadata": json.dumps(row["metadata"]) if row.get("metadata") else None,
         }
         for row in rows
-        if str(row.get("message") or "").strip() and not is_retired_huddle_message(str(row.get("message") or ""))
+        if str(row.get("message") or "").strip() and not is_silent_pipeline_message(str(row.get("message") or ""), str(row.get("level") or "info"))
     ]
     if not payload:
         return

@@ -1,0 +1,11 @@
+{
+  "runtime": "Python 3.12 on Linux",
+  "targeted_smtp_tests_passed": 21,
+  "full_test_result": "26 passed, 2 warnings in 1.15s",
+  "existing_client_token_tests_passed": 5,
+  "frontend_unified_production_build": "passed TypeScript and Vite",
+  "localhost_native_smtp": "first AUTH disconnect, retry with challenge response, exactly one synthetic accepted message",
+  "external_smtp_authentication_and_delivery": "pending on target host",
+  "windows_docker": "pending on target host",
+  "no_external_email_sent": true
+}

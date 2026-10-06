@@ -1,0 +1,8 @@
+{
+  "unified_frontend_typescript_vite_build": "passed",
+  "reference_screenshot": "inspected supplied screenshot",
+  "responsive_columns": "lg:3, sm:2, base:1; acquisition and serial stage cards",
+  "browser_visual_verification": "not completed; browser download archive invalid",
+  "live_windows_ui": "pending",
+  "scope": "Frontend layout only. No backend/scanner changes or rerun of historical extraction/SMTP/startup tests."
+}

@@ -1,0 +1,10 @@
+{
+  "powershell_runtime": "7.4.13 on Linux",
+  "https_handoff_binding_checks": 28,
+  "existing_startup_checks": 31,
+  "first_launch_file_checks": 32,
+  "certificate_tls_tests": 21,
+  "powershell_parser_and_windows_encoding": "passed",
+  "live_windows_docker_acme_internet_access": "pending",
+  "scope": "Offline Docker/TLS mocks plus localhost TLS tests. No production certificate was issued and external port forwarding was not tested."
+}

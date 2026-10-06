@@ -1,11 +1,11 @@
 {
-  "version": 16,
+  "version": 12,
   "date": "2026-10-06",
-  "release": "Validated public HTTPS edge handoff before product startup",
+  "release": "SMTP access-token delivery compatibility and visible errors",
   "source_archive": {
     "name": "polaron-docker-startup-fixed.zip",
-    "library_version": 17,
-    "sha256": "1e5a875cf4d5df9ba9d7e0579233b0fee0cd8c4b48719d5e6aaf18d36ae1d623"
+    "library_version": 13,
+    "sha256": "2124a122b2f6bb26120426c57df5cc25ada85540f21ac5f966eb682841aacb3a"
   },
   "standalone_laptop_scanner_input": {
     "name": "laptop-scanner(6).zip",
@@ -204,7 +204,7 @@
       "sha256": "530752e97f7c655f7287ac2873171995a7c0b84f4d0e2589d019b5bf67250fd2"
     }
   },
-  "prior_manifest": "docs/process-flows/audit/DISK-MOBILE-SERIAL-MANIFEST-v15.json",
+  "prior_manifest": "docs/process-flows/audit/DISK-MOBILE-SERIAL-MANIFEST-v11.json",
   "prior_manifest_scope": "Historical v5; its scanner-preservation assertions are superseded by the authorized scanner changes in v6.",
   "changed_since_release6_sha256": {
     "DISK-MOBILE-SERIAL-RELEASE.md": "a4d3a1aa2146797418879b9adcbbea6d3a85817f8c15c7d3fe2f342a28ba2aa6",
@@ -245,14 +245,15 @@
     "backend/app/services/mobile_forensic/key_intake.py": "d0a2b68b44fb06fbb6af9bb89f7f93dfce61da2e4344392a3cd115a887bb1310"
   },
   "current_verification": {
-    "powershell_runtime": "7.4.13 on Linux",
-    "https_handoff_binding_checks": 28,
-    "existing_startup_checks": 31,
-    "first_launch_file_checks": 32,
-    "certificate_tls_tests": 21,
-    "powershell_parser_and_windows_encoding": "passed",
-    "live_windows_docker_acme_internet_access": "pending",
-    "scope": "Offline Docker/TLS mocks plus localhost TLS tests. No production certificate was issued and external port forwarding was not tested."
+    "runtime": "Python 3.12 on Linux",
+    "targeted_smtp_tests_passed": 21,
+    "full_test_result": "26 passed, 2 warnings in 1.15s",
+    "existing_client_token_tests_passed": 5,
+    "frontend_unified_production_build": "passed TypeScript and Vite",
+    "localhost_native_smtp": "first AUTH disconnect, retry with challenge response, exactly one synthetic accepted message",
+    "external_smtp_authentication_and_delivery": "pending on target host",
+    "windows_docker": "pending on target host",
+    "no_external_email_sent": true
   },
   "updated_documents": {
     "Disk-Process-Flows.pdf": {
@@ -293,7 +294,7 @@
     "console_chatter": "excluded",
     "historical_audit_rows": "retained"
   },
-  "verification_scope": "Offline Docker/TLS mocks plus localhost TLS tests. No production certificate was issued and external port forwarding was not tested.",
+  "verification_scope": "SMTP/auth endpoint tests and production frontend build are current. Startup migration checks remain historical release11 snapshots. Live SMTP, Windows Docker, phone and GPU remain pending.",
   "historical_release6_verification": {
     "standalone_agent_tests": 102,
     "embedded_agent_tests": 107,
@@ -551,90 +552,5 @@
     "SMTP-DELIVERY-FIX.md": "ff0f59d4e2c38124a0003c9ec712777e3c8c3c4bc21e1212fa1dbf4ad7994cfa",
     "docs/process-flows/audit/SMTP-DELIVERY-VERIFICATION.json": "8bc483edbfd895f86efe7b9cd5c1af8a585b31245a8ac36ccd1cec34b0fa7ffb",
     "docs/process-flows/audit/DISK-MOBILE-SERIAL-MANIFEST-v11.json": "2004bdf55866940c8c41c61d83bc36340863459aa8c4b9717192781a1d85953e"
-  },
-  "historical_release12_verification": {
-    "runtime": "Python 3.12 on Linux",
-    "targeted_smtp_tests_passed": 21,
-    "full_test_result": "26 passed, 2 warnings in 1.15s",
-    "existing_client_token_tests_passed": 5,
-    "frontend_unified_production_build": "passed TypeScript and Vite",
-    "localhost_native_smtp": "first AUTH disconnect, retry with challenge response, exactly one synthetic accepted message",
-    "external_smtp_authentication_and_delivery": "pending on target host",
-    "windows_docker": "pending on target host",
-    "no_external_email_sent": true
-  },
-  "changed_since_release12_sha256": {
-    "scripts/ensure-examiner-kit.ps1": "9050ad4762d3743d7ad186693f26a2ea6638a72eb48cd6cd886cc868e3e38d93",
-    "DISK-MOBILE-SERIAL-RELEASE.md": "a53a6643bd09985c0b03aea75d2ec60440784343fbf975a22975ccf69c50fee2"
-  },
-  "new_since_release12_sha256": {
-    "tests/windows_examiner_kit_checks.ps1": "6bcd5aba201c0482bbcdc3dc3a25092457862cab01daf62ef02219a5cc068ea5",
-    "EXAMINER-KIT-CACHE-FIX.md": "65416b0624f4ba2381802a03dd3351541c6a861e06db73fbfbb169586ff57074",
-    "docs/process-flows/audit/EXAMINER-KIT-VERIFICATION.json": "1c19614bb21d9eb2dc7932c9e041753e376064c408d47651c396bbeb3557ffb3",
-    "docs/process-flows/audit/DISK-MOBILE-SERIAL-MANIFEST-v12.json": "d51349b495913216fbf2fa4dbd4ce041f17181aacd1c667b18b99b030df826f2"
-  },
-  "historical_release13_verification": {
-    "powershell_runtime": "7.4.13 on Linux",
-    "examiner_kit_checks_passed": 13,
-    "powerShell_parse": "installer and tests passed",
-    "checks": "cache-denied simulation executes production pip commands; native Python stderr and exit status checks",
-    "native_windows_powershell5_1_and_mobile_dependency_install": "pending on target host",
-    "scope": "Script-only change. Previous SMTP/startup/app/phone/GPU results remain historical."
-  },
-  "changed_since_release13_sha256": {
-    "backend/app/services/retired_agents.py": "85050550bfc7fd1c1bb55667072ec581d78a4c07645ab604d9a8e8594cab4be4",
-    "backend/app/services/disk_build_log.py": "5d7949b2146e126f8369d760f11252e1a2922c032170fdcd15452cc42182b2ce",
-    "backend/app/services/pipeline_supervisor.py": "2e24569cdda4692c4e578dc4e6cc3acea6fadbea11e1123fafbfcc8833836044",
-    "DISK-MOBILE-SERIAL-RELEASE.md": "5b4226c13536122f1c32c2be764b1d5e59a03d131e6ea2668da1cf3b13a9e6f0"
-  },
-  "new_since_release13_sha256": {
-    "backend/tests/test_idle_agent_wait_logs.py": "b140217612164c460730084e828af99f0b44d54ec89938651468b01b44085f83",
-    "QUIET-AGENT-WAITS.md": "4bde6a8f18a883ecf679bf95964a3a95ce9316b1f391fe9b0b49ba6469ad0aef",
-    "docs/process-flows/audit/QUIET-AGENT-WAITS-VERIFICATION.json": "1009921056b341e4d93000b791463dc3fac5b186c9bf70cb11c339a560011e7e",
-    "docs/process-flows/audit/DISK-MOBILE-SERIAL-MANIFEST-v13.json": "c5877cf775a02d1b8e07de6444cff2e1dcf0324d00fe25dbcb76eeb2af79cf28"
-  },
-  "historical_release14_verification": {
-    "runtime": "Python 3.12 on Linux",
-    "targeted_wait_and_retired_huddle_tests_passed": 37,
-    "existing_serial_stage_order_dispatch_checks_passed": 4,
-    "unrelated_serial_tests_deselected": 37,
-    "python_311_grammar": "passed",
-    "live_windows_celery_postgresql_ui": "pending",
-    "scope": "Waiting/logging behavior and four serial regression checks only; previous SMTP/kit/scanner/phone/GPU tests are historical."
-  },
-  "changed_since_release14_sha256": {
-    "frontend/src/pages/forensic/JobDetailPage.tsx": "88687c8348a6630ca441fd7adf1a96e092a7ccdf236228fc63b2831acf6e9a10",
-    "frontend/src/components/forensic/AgentPipelineBanner.tsx": "e42003a419bb87fc70a5ec68d557319b616cfe0af200bdc8cb53e3266cca18a2",
-    "frontend/src/components/forensic/SerialPipelineBanner.tsx": "af99479523f2ae7e647e70de23674b29f5d4c419c0d382afe7917109770c8a14",
-    "frontend/src/components/forensic/ExtractionLogConsole.tsx": "35c407de874156d394327f1a91488e71cbc0bb11789d0097eca27a945f133f69",
-    "DISK-MOBILE-SERIAL-RELEASE.md": "561d68d1e8e2e37b32ab25241477ebee09c9f20d936169fc66916b5aaf744f38"
-  },
-  "new_since_release14_sha256": {
-    "JOB-LOG-LAYOUT.md": "44eec5a73f7d950cb961b44bea2ffda51e5a94a77832fffd7b145b0fba9bf998",
-    "docs/process-flows/audit/JOB-LOG-LAYOUT-VERIFICATION.json": "ca9bb29535468883d0180c0da555f69ce785d7572c11b504cdf46c43cef0f3a3",
-    "docs/process-flows/audit/DISK-MOBILE-SERIAL-MANIFEST-v14.json": "a26da88d4fc6ce7f5b8bee1748b2934eec908a930b0b5e749059ebb89c196adf"
-  },
-  "historical_release15_verification": {
-    "unified_frontend_typescript_vite_build": "passed",
-    "reference_screenshot": "inspected supplied screenshot",
-    "responsive_columns": "lg:3, sm:2, base:1; acquisition and serial stage cards",
-    "browser_visual_verification": "not completed; browser download archive invalid",
-    "live_windows_ui": "pending",
-    "scope": "Frontend layout only. No backend/scanner changes or rerun of historical extraction/SMTP/startup tests."
-  },
-  "changed_since_release15_sha256": {
-    "script_docker/start_docker_prod.cmd": "e3082ce2fe4b81e4534015d70e79d3c58ead888fa55ebfffb698b8beb7624019",
-    "script_docker/start_docker_nitin.cmd": "a8747f0b1d09dbce09b8184f3f909d5f81aafd59ecb36ab825446b0b7cfbb15c",
-    "script_docker/start_docker.ps1": "51a06eb301cf6c5a62e7d0af653e970c5c473d5befa83d26906680ad8bd185dd",
-    "script_docker/start_docker.lib.ps1": "2ef9ced5bfff8089f29fcf301b4329ca54b57a6287b77f77d922e80543c4ab21",
-    "DISK-MOBILE-SERIAL-RELEASE.md": "321ad52b4d62c6b4ef7cc43727580d730792193537985de365f6b22fc8fa08b0",
-    "WINDOWS-DOCKER-STARTUP-MANIFEST.json": "6323532f764502d7b998a936e532c649ac652594e207c355bc7cc8312ee74ba3"
-  },
-  "new_since_release15_sha256": {
-    "tests/windows_public_https_handoff_checks.ps1": "7963bd1d6c797722d99624130cd21af1378adc24aa004f72593aedea03a0fec5",
-    "PUBLIC-HTTPS-443-FIX.md": "b6fd6d0545e3281b933b9ba6bb31c6de58b5a830b6d6205a0762d2cb91b36f0a",
-    "docs/process-flows/audit/PUBLIC-HTTPS-443-VERIFICATION.json": "f13859e3aa2aaac1e195f3d6bddb810e8ab328a387bbaa0a5dc800865eea13a0",
-    "docs/process-flows/audit/DISK-MOBILE-SERIAL-MANIFEST-v15.json": "b48731b40e2cd80771155629815f8bbac74ed97d9602ffa8196cafdc9d241b1b",
-    "docs/process-flows/audit/WINDOWS-DOCKER-STARTUP-MANIFEST-v11.json": "f7059f394352b73fc268f58b54be5d669c64315d5097a6ef286387a8b49dd4f6"
   }
 }

@@ -132,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const requestAccessToken = useCallback(async (email: string, tenant: string) => {
     tokenStore.setTenant(tenant.trim().toLowerCase());
-    await api.post("/api/auth/request-access-token", { email }, { auth: false });
+    await api.post("/api/auth/request-access-token", { email }, { auth: false, timeoutMs: 70000 });
   }, []);
 
   const loginWithToken = useCallback(

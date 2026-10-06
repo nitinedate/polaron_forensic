@@ -1,4 +1,4 @@
-# Bootstrap examiner-laptop USB / mobile tools into this repo (idempotent).
+﻿# Bootstrap examiner-laptop USB / mobile tools into this repo (idempotent).
 # Works on any Windows PC: no assumption of E:, a user site-packages, or iTunes PATH.
 #
 # Creates:
@@ -26,6 +26,35 @@ function Write-Kit {
     Write-Host "[examiner-kit] $Message" -ForegroundColor $Color
 }
 
+function Invoke-KitNative {
+    param(
+        [Parameter(Mandatory = $true)][string]$Exe,
+        [string[]]$Arguments = @(),
+        [Parameter(Mandatory = $true)][string]$Step
+    )
+    Get-Command -Name $Exe -ErrorAction Stop | Out-Null
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $code = -1
+    try {
+        # Windows PowerShell 5.1 treats redirected native stderr as ErrorRecords.
+        # pip warnings/progress are not failures; use the actual exit status.
+        & $Exe @Arguments 2>&1 | ForEach-Object {
+            if ($_ -is [System.Management.Automation.ErrorRecord]) {
+                Write-Host $_.Exception.Message
+            } else {
+                Write-Host ([string]$_)
+            }
+        }
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+    if ($null -eq $code -or $code -ne 0) {
+        throw "$Step failed (exit $code). Review the installer output above."
+    }
+}
+
 function Test-AppleMds {
     foreach ($p in @(
         "C:\Program Files\Common Files\Apple\Mobile Device Support",
@@ -49,7 +78,7 @@ function Test-PythonRuns {
         $null = & $Exe -c "print(1)" 2>$null
         $ErrorActionPreference = $prev
         return ($LASTEXITCODE -eq 0)
-    } catch { return $false }
+    } catch { return $false } finally { $ErrorActionPreference = $prev }
 }
 
 function Find-SystemPython {
@@ -112,7 +141,7 @@ function Test-HostPythonReady {
         $null = & $venvPy -c "import pymobiledevice3, win32security" 2>$null
         $ErrorActionPreference = $prev
         return ($LASTEXITCODE -eq 0)
-    } catch { return $false }
+    } catch { return $false } finally { $ErrorActionPreference = $prev }
 }
 
 # --- Isolated Python for iOS usbmux (does not use a random user site-packages) ---
@@ -149,19 +178,23 @@ if ($needVenv) {
         Write-Kit "Removing broken or stale tools\host-python"
         Remove-Item -LiteralPath $venv -Recurse -Force -ErrorAction SilentlyContinue
     }
-    & $sysPy -m venv $venv
+    Invoke-KitNative -Exe $sysPy -Arguments @("-m", "venv", $venv) -Step "Creating host-python"
     if (-not (Test-Path -LiteralPath $venvPy)) {
         throw "Failed to create $venvPy"
     }
     Write-Kit "Installing pymobiledevice3 + pywin32 into tools\host-python"
-    & $venvPy -m pip install --upgrade pip --disable-pip-version-check
-    & $venvPy -m pip install --disable-pip-version-check -r $reqFile
-    if ($LASTEXITCODE -ne 0) {
-        throw "pip install of host-python requirements failed"
-    }
+    # Bypass the user-wide wheel cache: existing ACLs/locked cached wheels can
+    # break installation even though this repo's isolated venv is writable.
+    # This affects only the host USB kit; Docker dependency caching is unchanged.
+    Invoke-KitNative -Exe $venvPy -Arguments @("-m", "pip", "install", "--upgrade", "pip", "--disable-pip-version-check", "--no-cache-dir") -Step "Upgrading host-python pip"
+    Invoke-KitNative -Exe $venvPy -Arguments @("-m", "pip", "install", "--disable-pip-version-check", "--no-cache-dir", "-r", $reqFile) -Step "Installing host-python requirements"
     $post = Join-Path $venv "Scripts\pywin32_postinstall.py"
     if (Test-Path -LiteralPath $post) {
-        & $venvPy $post -install 2>$null
+        try {
+            Invoke-KitNative -Exe $venvPy -Arguments @($post, "-install") -Step "pywin32 postinstall"
+        } catch {
+            Write-Kit "Optional pywin32 postinstall did not finish; checking module imports next." "Yellow"
+        }
     }
     if (-not (Test-HostPythonReady)) {
         throw "host-python is missing pymobiledevice3 or pywin32 (win32security). Re-run with -Force."

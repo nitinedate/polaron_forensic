@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     mail_smtp_starttls: bool = Field(
         default=False, validation_alias=AliasChoices("MAIL_SMTP_STARTTLS", "SMTP_STARTTLS")
     )
+    # None selects implicit TLS automatically on port 465.
+    mail_smtp_ssl: bool | None = Field(
+        default=None, validation_alias=AliasChoices("MAIL_SMTP_SSL", "SMTP_SSL")
+    )
     # Only the identity API (Forensic / gateway login) should email users.
     mail_send_enabled: bool = Field(default=True, validation_alias="MAIL_SEND_ENABLED")
 

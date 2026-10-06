@@ -62,7 +62,7 @@ interface AgentPipelineBannerProps {
   stepDurations?: Record<string, { ms: number; label: string; running?: boolean }>;
   onRefreshArtifacts?: () => void;
   refreshingArtifacts?: boolean;
-  /** When true, omit outer margin (embedded in a split layout). */
+  /** When true, omit outer margin (embedded in the job layout). */
   compact?: boolean;
 }
 
@@ -263,7 +263,7 @@ export function AgentPipelineBanner({
         </div>
       ) : null}
 
-      <ul className="max-h-[min(520px,60vh)] space-y-0.5 overflow-y-auto pr-1">
+      <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {stages.map((stage) => {
           const done = stage.state === "done";
           const running = stage.state === "running" && !done;
@@ -274,7 +274,7 @@ export function AgentPipelineBanner({
             <li
               key={stage.id}
               className={clsx(
-                "flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm",
+                "flex min-w-0 items-start justify-between gap-3 rounded-lg border border-slate-100 px-3 py-3 text-sm",
                 done && "bg-emerald-50/70",
                 running && "bg-amber-50/80",
                 failed && "bg-red-50/80"
@@ -297,7 +297,7 @@ export function AgentPipelineBanner({
                 <div className="min-w-0">
                   <div
                     className={clsx(
-                      "truncate font-medium",
+                      "break-words font-medium",
                       done ? "text-emerald-900" : failed ? "text-red-800" : "text-ink-800"
                     )}
                   >

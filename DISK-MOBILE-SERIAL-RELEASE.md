@@ -1,4 +1,14 @@
-# Disk / Mobile priority evidence and scanner integration — release 11
+# Disk / Mobile priority evidence and scanner integration — release 16
+
+Release 16 starts the validated public HTTPS gateway on 443 before optional product builds/startup, releases owned stale certificate bootstrap containers and verifies public bindings. Read **PUBLIC-HTTPS-443-FIX.md**.
+
+Release 15 stacks running stages above a full-width job log, with three stage cards per desktop row and readable wrapped log messages. Read **JOB-LOG-LAYOUT.md**.
+
+Release 14 keeps pending stage agents silent: waiting recommendations cannot dispatch tasks or recovery issues, and informational dependency-wait chatter is excluded from new and existing pipeline logs. Warning/error/progress evidence remains visible. Read **QUIET-AGENT-WAITS.md**.
+
+Release 13 bypasses the Windows user pip wheel cache during examiner-kit installation and checks each native installer exit code. Read **EXAMINER-KIT-CACHE-FIX.md**. Docker dependency caching is unchanged.
+
+Release 12 adds SMTP TLS/authentication compatibility, a single retry before submission, visible access-token delivery errors and a safe SMTP diagnostic command. Read **SMTP-DELIVERY-FIX.md**. External provider authentication/inbox delivery needs target-host validation.
 
 Release 11 fixes Windows PowerShell stderr handling for optional legacy-volume migration and first-use persistent-volume creation. Missing legacy MinIO/model caches are skipped; real daemon/permission errors fail. Volume copies are staged and failed copies remain unready and retryable. Read **DOCKER-VOLUME-PROBE-FIX.md**.
 

@@ -258,7 +258,7 @@ $($blocks -join "`n")
 function Assert-PublicPortOwners {
     param([int[]]$Ports = @(80, 443))
     # Never stop IIS/Caddy/another Compose project to take its ports.
-    $ids = @(& docker ps -aq)
+    $ids = @(& docker ps -q)
     if ($LASTEXITCODE -ne 0) { throw "Could not inspect Docker port owners." }
     if ($ids.Count -gt 0) {
         foreach ($id in $ids) {
@@ -367,4 +367,37 @@ function Get-StackContainerReport {
         }
     }
     return [pscustomobject]@{ Running = $running; Pending = $pending; Failed = @($failed); Missing = @($missing) }
+}
+
+
+function Assert-PublicGatewayBindings {
+    param([string[]]$ComposeArgs)
+    $gateway = Get-DockerJson -DockerArgs ($ComposeArgs + @("ps", "--format", "json", "gateway"))
+    $id = [string]$gateway.ID
+    if (-not $id) { throw "HTTPS gateway is not running; TCP 443 is not ready." }
+    $items = @(Get-DockerJson -DockerArgs @("inspect", $id))
+    $container = $items[0]
+    if (-not $container.State.Running) { throw "HTTPS gateway container is stopped." }
+    foreach ($port in @(80, 443)) {
+        $bindings = @($container.NetworkSettings.Ports."$port/tcp")
+        $public = @($bindings | Where-Object {
+            [string]$_.HostPort -eq [string]$port -and [string]$_.HostIp -in @("0.0.0.0", "::")
+        })
+        if (-not $public.Count) { throw "Gateway TCP $port is not published on a public host interface. Check the public HTTPS Compose override." }
+    }
+}
+
+function Start-PublicHttpsGateway {
+    param([string[]]$ComposeArgs, [string]$PublicIP, [string]$Domain)
+    # This also removes an owned bootstrap left by an earlier interrupted launch.
+    # Compose scopes the removal to aetheris-gateway; other projects are untouched.
+    Invoke-Docker -Title "Release owned HTTP certificate bootstrap" -DockerArgs (
+        $ComposeArgs + @("--profile", "acme-bootstrap", "rm", "-sf", "acme-bootstrap"))
+    Invoke-Docker -Title "Start HTTPS gateway on TCP 80/443 and automatic renewal" -DockerArgs (
+        $ComposeArgs + @("up", "-d", "--no-build", "--pull", "missing", "--force-recreate", "--wait", "--wait-timeout", "180", "gateway", "certbot-renewer"))
+    Assert-PublicGatewayBindings -ComposeArgs $ComposeArgs
+    Invoke-Docker -Title "Verify running HTTPS nginx" -DockerArgs ($ComposeArgs + @("exec", "-T", "gateway", "nginx", "-t"))
+    Invoke-CertificateTool -ComposeArgs $ComposeArgs -ToolArgs @("probe", "--identity", $PublicIP) | Out-Null
+    if ($Domain) { Invoke-CertificateTool -ComposeArgs $ComposeArgs -ToolArgs @("probe", "--identity", $Domain) | Out-Null }
+    Write-Host "HTTPS edge is listening with verified certificates on TCP 443. Product API readiness is checked next." -ForegroundColor Green
 }

@@ -777,6 +777,11 @@ def _issue_code_for_action(action: str, agent_id: str) -> str:
 
 
 def dispatch_stage_agent(db, job_id: str, *, schema_name: str, recommendation: dict, coordinator=None) -> dict:
+    # A dependency wait is not work or recovery: do not publish a task, write a
+    # supervisor log, or create a repair issue. The coordinator revisits readiness.
+    if str(recommendation.get("action") or "").strip().lower() in {"wait", "waiting", "pending", "blocked"}:
+        return {"status": "waiting", "agent_id": recommendation.get("agent_id"),
+                "reason": recommendation.get("reason") or "prerequisites_pending", "job_id": job_id}
     if coordinator != 'progressAgent':
         from app.services.progress_agent import monitor_job,ensure_progress_schema
         ensure_progress_schema(db)
