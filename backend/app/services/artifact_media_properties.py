@@ -50,12 +50,14 @@ def _metadata_value(meta: dict[str, Any], *keys: str) -> Any:
     return None
 
 
-def _stream_to_temp(db: Session, job_id: str, row: dict[str, Any], suffix: str) -> str:
+def _stream_to_temp(db: Session, job_id: str, row: dict[str, Any], suffix: str, *, directory: str | None = None) -> str:
     max_bytes = int(os.environ.get("ARTIFACT_MEDIA_PROBE_MAX_BYTES", str(20 * 1024**3)))
     size = _int(row.get("size_bytes"))
     if size is not None and size > max_bytes:
         raise ValueError(f"media object is {size} bytes; probe ceiling is {max_bytes} bytes")
-    tmp = tempfile.NamedTemporaryFile(prefix="aetheris-media-", suffix=suffix[:16], delete=False)
+    tmp = tempfile.NamedTemporaryFile(
+        prefix="aetheris-media-", suffix=suffix[:16], dir=directory or "/tmp", delete=False
+    )
     written = 0
     try:
         for chunk in iter_artifact_content(db, job_id, row, max_bytes=max_bytes):

@@ -1266,6 +1266,37 @@ def _ocr_engine_available() -> bool:
     return model is not None and processor is not None
 
 
+def park_pictures_for_evidence(db, job_id: str) -> int:
+    """Leave camera and chat images for image/video evidence, not GLM.
+
+    OCR is for documents that are not already clear text. Pictures and videos
+    are examined by the media-evidence stage, which reads visible text and
+    describes what is in the frame.
+    """
+    result = execute(
+        db,
+        f"""UPDATE job_artifacts SET ocr_status='skipped', updated_at=NOW()
+            WHERE job_id=:jid AND ocr_status='pending'
+              AND lower(coalesce(extension, '')) <> '.pdf'
+              AND NOT ({OCR_DOC_FOLDER_SQL})""",
+        {"jid": job_id},
+    )
+    parked = int(getattr(result, "rowcount", 0) or 0)
+    if parked:
+        from app.services.disk_build_log import write_disk_log
+
+        write_disk_log(
+            db,
+            job_id,
+            (
+                f"Image/video evidence kept {parked:,} picture(s) out of OCR. "
+                "GPU OCR continues on documents that are not already clear text."
+            ),
+            stage="ocr",
+        )
+    return parked
+
+
 def skip_ocr_noise_pending(db, job_id: str) -> int:
     """Skip cache/thumbs/OS vendor trees. Documents-only also drops camera rolls.
 
@@ -1589,6 +1620,58 @@ def dispatch_ocr_agent(schema_name: str, job_id: str) -> int:
     return 1
 
 
+def _serial_ocr_tick(db, job_id: str, *, advanced: bool) -> None:
+    """Keep a CUDA OCR stage alive while a document is read or recognized.
+
+    The stage deadline is five minutes. Preparing a batch on CPU workers never
+    moved that clock, so the supervisor stopped OCR before GLM ran and the card
+    returned to 0.
+    """
+    try:
+        from app.services.progress_agent import note_operation
+
+        note_operation(
+            db,
+            job_id,
+            "ocr",
+            "GLM-OCR on CUDA",
+            timeout_seconds=900,
+            advanced=advanced,
+        )
+    except Exception:
+        return
+    if not advanced:
+        return
+    try:
+        pending = count_pending_ocr(db, job_id)
+        done = int(
+            (
+                fetchone(
+                    db,
+                    "SELECT count(*)::int AS c FROM job_artifacts WHERE job_id=:jid AND ocr_status='done'",
+                    {"jid": job_id},
+                )
+                or {}
+            ).get("c")
+            or 0
+        )
+        total = done + pending
+        if total <= 0:
+            return
+        from app.services.forensic_serial_stages import report_progress
+
+        report_progress(
+            db,
+            job_id,
+            "ocr",
+            total=total,
+            completed=done,
+            label="OCR on CUDA",
+        )
+    except Exception:
+        log.debug("Serial OCR progress update skipped", exc_info=True)
+
+
 def run_ocr_for_job(
     db,
     job_id: str,
@@ -1609,6 +1692,7 @@ def run_ocr_for_job(
 
     queued = enqueue_eligible_ocr(db, job_id)
     skipped_noise = skip_ocr_noise_pending(db, job_id)
+    skipped_noise += park_pictures_for_evidence(db, job_id)
     # The UPDATE inside skip_ocr_noise_pending starts a transaction even when it
     # changes zero rows.  Always commit before waiting for GPU/model/file I/O so
     # PostgreSQL does not retain RowExclusiveLock for hours.
@@ -1675,32 +1759,34 @@ def run_ocr_for_job(
     if not rows:
         return {"status": "ok", "ocr_count": 0, "skipped_noise": skipped_noise}
 
-    # OCR: CPU process pool extracts native PDF text. Scans/images go to GLM on CUDA
-    # when the card is free. Never skip required OCR just because OCR_DEVICE was cpu.
+    # Scans and images are recognized by GLM on CUDA. A CPU worker pool is used
+    # only when this deployment is explicitly not GPU-only and this process has
+    # no CUDA device.
     device_label, gpu = _resolve_ocr_device()
     if ocr_bucket is not None:
         # Path-hash buckets are CPU-only. GLM stays on the unsharded GPU drain.
         device_label, gpu = "cpu", False
-    cpu_n = _ocr_cpu_worker_count(
+    gpu_only = bool(gpu) or (ocr_bucket is None and ocr_is_gpu_only())
+    cpu_n = 0 if gpu_only else _ocr_cpu_worker_count(
         gpu=False, n_items=len(rows), num_buckets=int(ocr_buckets or 1)
     )
     write_disk_log(
         db,
         job_id,
         (
-            f"GPU OCR — {len(rows)} document(s); CPU prep {cpu_n} worker(s), GLM on CUDA"
-            if gpu
+            f"GPU OCR — {len(rows)} document(s) on CUDA"
+            if gpu or gpu_only
             else f"CPU OCR — {len(rows)} text-layer document(s) with {cpu_n} CPU worker(s)"
         ),
         stage="ocr",
-        metadata={"gpu": gpu, "device": device_label, "ocr_cpu_workers": cpu_n},
+        metadata={"gpu": bool(gpu or gpu_only), "device": "cuda:0" if gpu else device_label, "ocr_cpu_workers": cpu_n},
     )
     write_ocr_live_progress(
         db,
         job_id,
         label=(
-            f"GPU OCR loading — {len(rows)} document(s)"
-            if gpu
+            f"GPU OCR — {len(rows)} document(s) on CUDA"
+            if gpu or gpu_only
             else f"CPU OCR — {len(rows)} document(s)"
         ),
     )
@@ -1829,17 +1915,19 @@ def run_ocr_for_job(
 
     payloads: list[dict] = []
     preload = getattr(read_file_fn, "preload", None)
-    if callable(preload) and work_rows:
+    if callable(preload) and work_rows and not gpu_only:
         try:
             preload([str(r.get("file_path") or "") for r in work_rows])
         except Exception as exc:
             log.warning("OCR batch file read failed: %s", exc)
     for r in work_rows:
         path = str(r.get("file_path") or "")
-        try:
-            data = read_file_fn(r["file_path"])
-        except Exception:
-            data = None
+        data = None
+        if not gpu_only:
+            try:
+                data = read_file_fn(r["file_path"])
+            except Exception:
+                data = None
         payloads.append(
             {
                 "row": {"id": r["id"], "file_path": path},
@@ -1862,36 +1950,39 @@ def run_ocr_for_job(
                 return
             inflight[pool.submit(_ocr_cpu_process_one, nxt)] = nxt
 
-    with open_ocr_cpu_pool(cpu_n) as pool:
+    if gpu_only:
+        needs_gpu_rows = payloads
+    else:
+        with open_ocr_cpu_pool(cpu_n) as pool:
 
-        _fill(pool)
-        while inflight:
-            finished, _ = wait(inflight, return_when=FIRST_COMPLETED)
-            for fut in finished:
-                payload = inflight.pop(fut, None)
-                try:
-                    result = fut.result()
-                except Exception as exc:
-                    log.warning("CPU OCR worker failed: %s", exc)
-                    continue
-                row = result.get("row") or {}
-                if result.get("status") == "ok" and result.get("text"):
-                    log.info("OCR text-layer %s", row.get("file_path") or row.get("id"))
-                    _persist_ocr_ok(
-                        row,
-                        str(result.get("text") or ""),
-                        float(result.get("conf") or 0.0),
-                        str(result.get("engine") or "pypdf"),
-                    )
-                    db.commit()
-                    done += 1
-                    continue
-                if result.get("status") == "needs_gpu":
-                    needs_gpu_rows.append(dict(payload or {}) if payload else {"row": row})
-                    continue
-                _mark_ocr_skip(row, engine=str(result.get("engine") or "na"))
-                db.commit()
             _fill(pool)
+            while inflight:
+                finished, _ = wait(inflight, return_when=FIRST_COMPLETED)
+                for fut in finished:
+                    payload = inflight.pop(fut, None)
+                    try:
+                        result = fut.result()
+                    except Exception as exc:
+                        log.warning("CPU OCR worker failed: %s", exc)
+                        continue
+                    row = result.get("row") or {}
+                    if result.get("status") == "ok" and result.get("text"):
+                        log.info("OCR text-layer %s", row.get("file_path") or row.get("id"))
+                        _persist_ocr_ok(
+                            row,
+                            str(result.get("text") or ""),
+                            float(result.get("conf") or 0.0),
+                            str(result.get("engine") or "pypdf"),
+                        )
+                        db.commit()
+                        done += 1
+                        continue
+                    if result.get("status") == "needs_gpu":
+                        needs_gpu_rows.append(dict(payload or {}) if payload else {"row": row})
+                        continue
+                    _mark_ocr_skip(row, engine=str(result.get("engine") or "na"))
+                    db.commit()
+                _fill(pool)
 
     if needs_gpu_rows and gpu:
         from app.services.job_locks import gpu_heavy_slot
@@ -1940,10 +2031,37 @@ def run_ocr_for_job(
                 stage="ocr",
             )
             db.commit()
+            glm_load_logged = False
+
+            def _save_ocr_doc(payload: dict, prep: dict, pieces: list[str], confs: list[float]) -> None:
+                nonlocal done
+                row = (payload.get("row") or {}) if isinstance(payload, dict) else {}
+                if pieces:
+                    text = "\n\n".join(pieces)
+                    conf = sum(confs) / len(confs) if confs else 0.0
+                    engine = (
+                        "glm-ocr"
+                        if prep.get("status") != "cpu_done"
+                        else str(prep.get("engine") or "pypdf")
+                    )
+                    _persist_ocr_ok(row, text, conf, engine)
+                    db.commit()
+                    done += 1
+                elif prep.get("status") == "skip":
+                    _mark_ocr_skip(row, engine=str(prep.get("engine") or "na"))
+                    db.commit()
+                else:
+                    _mark_ocr_skip(row, engine="glm_empty")
+                    db.commit()
+                write_ocr_live_progress(db, job_id, label="OCR on CUDA")
+                db.commit()
+                _serial_ocr_tick(db, job_id, advanced=True)
+
             for start in range(0, len(needs_gpu_rows), micro):
                 chunk = needs_gpu_rows[start : start + micro]
                 prepared: list[tuple[dict, dict]] = []
                 for payload in chunk:
+                    _serial_ocr_tick(db, job_id, advanced=False)
                     row = (payload.get("row") or {}) if isinstance(payload, dict) else {}
                     path = str(payload.get("path") or row.get("file_path") or "")
                     data = payload.get("data")
@@ -1959,53 +2077,57 @@ def run_ocr_for_job(
                         allow_photos=forensic_photos_allowed(),
                     )
                     prepared.append((payload, prep))
-                image_jobs: list[tuple[int, object, str]] = []
-                piece_lists: list[list[str]] = [[] for _ in prepared]
-                conf_lists: list[list[float]] = [[] for _ in prepared]
-                for prep_i, (_payload, prep) in enumerate(prepared):
+                pending_gpu: list[tuple[dict, dict, list[str], list[float], list[tuple[object, str]]]] = []
+                for payload, prep in prepared:
+                    pieces: list[str] = []
+                    confs: list[float] = []
+                    images: list[tuple[object, str]] = []
                     if prep.get("status") == "cpu_done" and prep.get("text"):
-                        piece_lists[prep_i].append(str(prep.get("text") or ""))
-                        conf_lists[prep_i].append(float(prep.get("conf") or 0.9))
-                        continue
-                    for seg in prep.get("segments") or []:
-                        if seg.get("type") == "text" and seg.get("text"):
-                            piece_lists[prep_i].append(str(seg["text"]))
-                            conf_lists[prep_i].append(0.90)
-                            continue
-                        img = seg.get("image")
-                        if img is None:
-                            continue
-                        image_jobs.append((prep_i, img, str(seg.get("prompt") or "Text Recognition:")))
+                        pieces.append(str(prep.get("text") or ""))
+                        confs.append(float(prep.get("conf") or 0.9))
+                    else:
+                        for seg in prep.get("segments") or []:
+                            if seg.get("type") == "text" and seg.get("text"):
+                                pieces.append(str(seg["text"]))
+                                confs.append(0.90)
+                                continue
+                            img = seg.get("image")
+                            if img is None:
+                                continue
+                            images.append((img, str(seg.get("prompt") or "Text Recognition:")))
+                    if images:
+                        pending_gpu.append((payload, prep, pieces, confs, images))
+                    else:
+                        # Clear text is evidence already. Do not wait for the
+                        # model download before the card can leave zero.
+                        _save_ocr_doc(payload, prep, pieces, confs)
+                if not pending_gpu:
+                    continue
+                if not glm_load_logged:
+                    write_disk_log(
+                        db,
+                        job_id,
+                        "Loading GLM-OCR weights onto CUDA",
+                        stage="ocr",
+                    )
+                    db.commit()
+                    glm_load_logged = True
                 grouped: dict[str, list[tuple[int, object]]] = {}
-                for prep_i, img, prompt in image_jobs:
-                    grouped.setdefault(prompt, []).append((prep_i, img))
+                for doc_i, (_payload, _prep, _pieces, _confs, images) in enumerate(pending_gpu):
+                    for img, prompt in images:
+                        grouped.setdefault(prompt, []).append((doc_i, img))
                 for prompt, jobs in grouped.items():
                     try:
                         decoded = _glm_ocr_images([img for _i, img in jobs], prompt=prompt)
                     except Exception as exc:
                         log.warning("GLM micro-batch failed: %s", exc)
                         decoded = [("", 0.0) for _ in jobs]
-                    for (prep_i, _img), (text, conf) in zip(jobs, decoded):
+                    for (doc_i, _img), (text, conf) in zip(jobs, decoded):
                         if text:
-                            piece_lists[prep_i].append(text)
-                            conf_lists[prep_i].append(conf)
-                for (payload, prep), pieces, confs in zip(prepared, piece_lists, conf_lists):
-                    row = (payload.get("row") or {}) if isinstance(payload, dict) else {}
-                    path = str(payload.get("path") or row.get("file_path") or "")
-                    if pieces:
-                        text = "\n\n".join(pieces)
-                        conf = sum(confs) / len(confs) if confs else 0.0
-                        _persist_ocr_ok(row, text, conf, "glm-ocr" if prep.get("status") != "cpu_done" else str(prep.get("engine") or "pypdf"))
-                        db.commit()
-                        done += 1
-                    elif prep.get("status") == "skip":
-                        _mark_ocr_skip(row, engine=str(prep.get("engine") or "na"))
-                        db.commit()
-                    else:
-                        _mark_ocr_skip(row, engine="glm_empty")
-                        db.commit()
-                    write_ocr_live_progress(db, job_id)
-                    db.commit()
+                            pending_gpu[doc_i][2].append(text)
+                            pending_gpu[doc_i][3].append(conf)
+                for payload, prep, pieces, confs, _images in pending_gpu:
+                    _save_ocr_doc(payload, prep, pieces, confs)
         gpu_deferred = bool(needs_gpu_rows) and not glm_ran
     elif needs_gpu_rows and not gpu:
         defer_msg, handed_off = handoff_glm_scans_to_cuda_worker(

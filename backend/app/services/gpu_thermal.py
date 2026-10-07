@@ -631,6 +631,34 @@ def wait_for_gpu_cooldown(*, reason: str = "gpu_work", max_wait_sec: float | Non
     return waited
 
 
+def prevent_thermal_shutdown(*, reason: str = "gpu_work") -> None:
+    """Give the GPU a short breath only when it is close to shutting the machine down.
+
+    Cool and warm work is not delayed. Clear images never call this.
+    """
+    stats = get_gpu_stats()
+    settings = _load_settings(gpu_name=stats.name)
+    if not settings.enabled or not stats.available or stats.temperature_c is None:
+        return
+    # Eight degrees under the abort line. Below that, OCR keeps full speed.
+    hot = settings.abort_c - 8
+    if stats.temperature_c < hot:
+        return
+    target = max(hot - 3, settings.resume_c)
+    deadline = time.time() + 20
+    log.info(
+        "GPU %s°C is near shutdown during %s — brief cool down toward %s°C",
+        stats.temperature_c,
+        reason,
+        target,
+    )
+    while time.time() < deadline:
+        time.sleep(2)
+        stats = get_gpu_stats()
+        if not stats.available or stats.temperature_c is None or stats.temperature_c <= target:
+            return
+
+
 def wait_for_gpu_start_window(*, reason: str = "gpu_work", max_wait_sec: float = 90.0) -> float:
     """Wait only when already at/above pause. Do not require start_max_c (often unreachable)."""
     settings = _load_settings()

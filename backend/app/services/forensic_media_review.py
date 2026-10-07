@@ -11,6 +11,7 @@ import base64
 import hashlib
 import io
 import json
+import logging
 import math
 import os
 import re
@@ -21,7 +22,9 @@ from pathlib import Path
 
 from app.db.sql_helpers import execute, fetchall, fetchone
 from app.services.forensic_serial_pipeline import StageWaiting
-from app.services.mobile_forensic.parsers.files_media import _IMAGE, _VIDEO
+from app.services.mobile_forensic.parsers.files_media import _AUDIO, _IMAGE, _VIDEO
+
+log = logging.getLogger("forensic.media_review")
 
 RULES = {
     "weapon_or_violence": re.compile(r"\b(firearm|weapon|gun|blood|violence)\b", re.I),
@@ -106,9 +109,10 @@ def describe_frame(image_bytes):
         {
             "model": visual_model(),
             "stream": False,
+            "think": False,
             "format": MODEL_SCHEMA,
-            "keep_alive": "5m",
-            "options": {"temperature": 0, "num_predict": 1000, "num_ctx": 4096},
+            "keep_alive": "30m",
+            "options": {"temperature": 0, "num_predict": 220, "num_ctx": 2048},
             "messages": [
                 {
                     "role": "user",
@@ -121,8 +125,17 @@ def describe_frame(image_bytes):
     )
     if result.get("error"):
         raise StageWaiting("Vision service error: " + str(result["error"]))
-    content = (result.get("message") or {}).get("content") or ""
-    payload = json.loads(content)
+    message = result.get("message") or {}
+    content = str(message.get("content") or "").strip()
+    if content.startswith("```"):
+        content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.I).strip()
+    if not content:
+        # A thinking model can spend the whole reply before the JSON object.
+        content = str(message.get("thinking") or "")
+    match = re.search(r"\{.*\}", content, flags=re.S)
+    if not match:
+        raise ValueError("Vision response contained no description")
+    payload = json.loads(match.group(0))
     if (
         not isinstance(payload, dict)
         or not str(payload.get("description") or "").strip()
@@ -174,6 +187,32 @@ def ocr_signals(text):
     return output
 
 
+def media_needs_ocr(source) -> tuple[bool, float]:
+    """True when an image or video frame is not clear and should be sent to OCR.
+
+    Sharp, readable pictures are left out so OCR is only the poor-quality set.
+    """
+    from PIL import Image, ImageFilter, ImageOps, ImageStat
+
+    if isinstance(source, (bytes, bytearray)):
+        handle = Image.open(io.BytesIO(source))
+    else:
+        handle = Image.open(source)
+    with handle:
+        image = ImageOps.exif_transpose(handle).convert("L")
+        width, height = image.size
+        image.thumbnail((256, 256))
+        # Variance of the Laplacian. Sharp photos score in the hundreds or
+        # thousands; a blurred or washed-out frame falls near zero.
+        laplacian = ImageFilter.Kernel(
+            (3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1, offset=128
+        )
+        score = float(ImageStat.Stat(image.filter(laplacian)).var[0])
+    minimum = float(os.environ.get("FORENSIC_MEDIA_CLARITY_MIN", "120"))
+    poor = min(width, height) < 240 or score < minimum
+    return poor, score
+
+
 def _image_derivative(path):
     from PIL import Image, ImageOps
 
@@ -184,9 +223,9 @@ def _image_derivative(path):
         source_frames = int(getattr(image, "n_frames", 1))
         image = ImageOps.exif_transpose(image).convert("RGB")
         original_size = image.size
-        image.thumbnail((1536, 1536))
+        image.thumbnail((768, 768))
         output = io.BytesIO()
-        image.save(output, format="PNG")
+        image.save(output, format="JPEG", quality=85, optimize=True)
         return output.getvalue(), {
             "original_dimensions": original_size,
             "source_frame_count": source_frames,
@@ -250,7 +289,7 @@ def video_frames(path):
     except (ValueError, ZeroDivisionError):
         fps = 0
     interval = max(1.0, float(os.environ.get("FORENSIC_VIDEO_SAMPLE_SECONDS", "10")))
-    budget = max(0, int(os.environ.get("FORENSIC_VIDEO_MAX_FRAMES", "0")))
+    budget = max(0, int(os.environ.get("FORENSIC_VIDEO_MAX_FRAMES", "4")))
     times, limited = video_sample_times(
         duration, interval, budget, 1 / fps if fps > 0 else 0.1
     )
@@ -262,6 +301,7 @@ def video_frames(path):
         "budget_limited": limited,
         "all_frames_reviewed": False,
     }
+    yielded = False
     for requested in times:
         # copyts retains the original media timeline; showinfo supplies decoded PTS.
         frame = subprocess.run(
@@ -279,7 +319,7 @@ def video_frames(path):
                 "-map",
                 "0:v:0",
                 "-vf",
-                "scale=1536:1536:force_original_aspect_ratio=decrease,showinfo",
+                "scale=1024:1024:force_original_aspect_ratio=decrease,showinfo",
                 "-frames:v",
                 "1",
                 "-f",
@@ -292,12 +332,14 @@ def video_frames(path):
             timeout=120,
         )
         if frame.returncode or not frame.stdout:
-            raise ValueError(f"Video sample at {requested:g}s could not be decoded")
+            coverage.setdefault("skipped_samples", []).append(requested)
+            continue
         timestamps = re.findall(
             r"\bpts_time:([\d.eE+-]+)", frame.stderr.decode("utf-8", "replace")
         )
         if not timestamps:
             raise ValueError("Decoded video frame has no source timestamp")
+        yielded = True
         yield (
             frame.stdout,
             {
@@ -306,6 +348,8 @@ def video_frames(path):
             },
             coverage,
         )
+    if not yielded:
+        raise ValueError("Video samples could not be decoded")
 
 
 def _store(db, job_id, row, kind, status, description, details, *, error=None):
@@ -313,6 +357,9 @@ def _store(db, job_id, row, kind, status, description, details, *, error=None):
         details.get("ocr_signals")
     )
     sha = details.get("source_sha256") or row.get("sha256")
+    from app.db.sql_helpers import rollback_aborted_transaction
+
+    rollback_aborted_transaction(db)
     execute(
         db,
         """INSERT INTO forensic_media_observations
@@ -329,10 +376,14 @@ def _store(db, job_id, row, kind, status, description, details, *, error=None):
             "status": status,
             "description": description,
             "flagged": flagged,
-            "details": json.dumps(details),
+            "details": json.dumps(details, default=str),
             "error": error,
         },
     )
+    db.commit()
+    if status == "skipped":
+        # Clear media is omitted. Do not attach an evidence observation to the artifact.
+        return
     meta = {
         "status": status,
         "description": description,
@@ -340,13 +391,21 @@ def _store(db, job_id, row, kind, status, description, details, *, error=None):
         "details": details,
         "error": error,
     }
-    execute(
-        db,
-        """UPDATE job_artifacts SET metadata=COALESCE(metadata,'{}'::jsonb)
-        || jsonb_build_object('media_review',CAST(:meta AS jsonb),'suspicious_activity',CAST(:flagged AS boolean)) WHERE id=:aid""",
-        {"aid": row["id"], "meta": json.dumps(meta), "flagged": flagged},
-    )
-    db.commit()
+    try:
+        execute(
+            db,
+            """UPDATE job_artifacts SET metadata=COALESCE(metadata,'{}'::jsonb)
+            || jsonb_build_object('media_review',CAST(:meta AS jsonb),'suspicious_activity',CAST(:flagged AS boolean)) WHERE id=:aid""",
+            {"aid": row["id"], "meta": json.dumps(meta, default=str), "flagged": flagged},
+        )
+        db.commit()
+    except Exception:
+        rollback_aborted_transaction(db)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        log.warning("Media review saved the observation but not the artifact mirror for %s", row.get("file_path"), exc_info=True)
 
 
 def run_media_review(db, job_id, *, schema_name):
@@ -365,11 +424,14 @@ def run_media_review(db, job_id, *, schema_name):
         "yes",
     }:
         return {"status": "skipped", "reason": "Media observations explicitly disabled"}
-    extensions = sorted(_IMAGE | _VIDEO)
+    extensions = sorted((_IMAGE | _VIDEO) - _AUDIO)
     predicate = """(lower(CASE WHEN left(extension,1)='.' THEN extension ELSE '.'||extension END)=ANY(:extensions)
         OR COALESCE(metadata->>'mime','') LIKE 'image/%' OR COALESCE(metadata->>'mime','') LIKE 'video/%'
-        OR COALESCE(metadata->>'detected_mime','') LIKE 'image/%' OR COALESCE(metadata->>'detected_mime','') LIKE 'video/%')"""
-    params = {"jid": job_id, "extensions": extensions}
+        OR COALESCE(metadata->>'detected_mime','') LIKE 'image/%' OR COALESCE(metadata->>'detected_mime','') LIKE 'video/%')
+        AND lower(CASE WHEN left(extension,1)='.' THEN extension ELSE '.'||extension END) <> ALL(:audio)
+        AND COALESCE(metadata->>'mime','') NOT LIKE 'audio/%'
+        AND COALESCE(metadata->>'detected_mime','') NOT LIKE 'audio/%'"""
+    params = {"jid": job_id, "extensions": extensions, "audio": sorted(_AUDIO)}
     total = int(
         fetchone(
             db,
@@ -382,11 +444,20 @@ def run_media_review(db, job_id, *, schema_name):
     pending = fetchone(
         db,
         f"""SELECT count(*) AS c FROM job_artifacts ja WHERE ja.job_id=:jid AND {predicate}
-        AND NOT EXISTS(SELECT 1 FROM forensic_media_observations o WHERE o.job_artifact_id=ja.id AND o.status IN ('done','failed'))""",
+        AND NOT EXISTS(SELECT 1 FROM forensic_media_observations o WHERE o.job_artifact_id=ja.id AND o.status IN ('done','failed','skipped'))""",
         params,
     )["c"]
     if pending:
         check_model()
+        from app.services.disk_build_log import write_disk_log
+
+        write_disk_log(
+            db,
+            job_id,
+            "Evidence observations are only for images and videos that are not clear. Clear pictures, audio, and video are skipped and not added.",
+            stage="media_review",
+        )
+        db.commit()
     last = "00000000-0000-0000-0000-000000000000"
     with ExitStack() as stack:
         if pending:
@@ -402,130 +473,206 @@ def run_media_review(db, job_id, *, schema_name):
                     timeout=30,
                 )
             )
+        from app.services.artifact_live_counts import _job_index_map
+        from app.services.progress_agent import note_operation as _note_shard
+        from app.services.tar_cache import iter_spilled_files_from_part
+
+        index_map = _job_index_map(db, job_id) if pending else {}
+        db.commit()
+        pending_rows = []
         while True:
             rows = fetchall(
                 db,
                 f"""SELECT ja.* FROM job_artifacts ja WHERE ja.job_id=:jid AND ja.id>:last AND {predicate}
-                AND NOT EXISTS(SELECT 1 FROM forensic_media_observations o WHERE o.job_artifact_id=ja.id AND o.status IN ('done','failed'))
-                ORDER BY ja.id LIMIT 32""",
+                AND NOT EXISTS(SELECT 1 FROM forensic_media_observations o WHERE o.job_artifact_id=ja.id AND o.status IN ('done','failed','skipped'))
+                ORDER BY ja.id LIMIT 1000""",
                 {**params, "last": last},
             )
             if not rows:
                 break
-            for row in rows:
-                if pipeline_should_stop(db, job_id):
-                    raise StageWaiting("Media observations paused by user")
-                ext = Path(row["file_path"]).suffix.lower()
-                mime = str(
-                    (row.get("metadata") or {}).get("mime")
-                    or (row.get("metadata") or {}).get("detected_mime")
-                    or ""
+            pending_rows.extend(rows)
+            last = str(rows[-1]["id"])
+        by_part: dict[str, dict] = {}
+        loose = []
+        for row in pending_rows:
+            path = str(row.get("file_path") or "").replace("\\", "/")
+            part = None if row.get("minio_uri") else index_map.get(path)
+            if part:
+                by_part.setdefault(part, {})[path] = row
+            else:
+                loose.append(row)
+
+        def review_one(row, prepared_path=None):
+            if pipeline_should_stop(db, job_id):
+                if prepared_path:
+                    Path(prepared_path).unlink(missing_ok=True)
+                raise StageWaiting("Media observations paused by user")
+            ext = Path(row["file_path"]).suffix.lower()
+            mime = str(
+                (row.get("metadata") or {}).get("mime")
+                or (row.get("metadata") or {}).get("detected_mime")
+                or ""
+            )
+            kind = (
+                "video" if ext in _VIDEO or mime.startswith("video/") else "image"
+            )
+            previous = fetchone(
+                db,
+                "SELECT details FROM forensic_media_observations WHERE job_artifact_id=:aid",
+                {"aid": row["id"]},
+            )
+            details = (
+                dict(previous["details"])
+                if previous
+                else {
+                    "frames": [],
+                    "model": visual_model(),
+                    "model_derived": True,
+                    "examiner_status": "pending_review",
+                }
+            )
+            temp = prepared_path
+            try:
+                db.commit()
+                if not temp:
+                    temp = _stream_to_temp(db, job_id, row, ext, directory="/tmp")
+                digest = hashlib.sha256()
+                with open(temp, "rb") as source:
+                    for block in iter(lambda: source.read(1024 * 1024), b""):
+                        digest.update(block)
+                sha = digest.hexdigest()
+                expected = row.get("sha256") or (row.get("metadata") or {}).get(
+                    "source_sha256"
                 )
-                kind = (
-                    "video" if ext in _VIDEO or mime.startswith("video/") else "image"
-                )
-                previous = fetchone(
-                    db,
-                    "SELECT details FROM forensic_media_observations WHERE job_artifact_id=:aid",
-                    {"aid": row["id"]},
-                )
-                details = (
-                    dict(previous["details"])
-                    if previous
-                    else {
-                        "frames": [],
-                        "model": visual_model(),
-                        "model_derived": True,
-                        "examiner_status": "pending_review",
-                    }
-                )
-                temp = None
-                try:
-                    temp = _stream_to_temp(db, job_id, row, ext)
-                    digest = hashlib.sha256()
-                    with open(temp, "rb") as source:
-                        for block in iter(lambda: source.read(1024 * 1024), b""):
-                            digest.update(block)
-                    sha = digest.hexdigest()
-                    expected = row.get("sha256") or (row.get("metadata") or {}).get(
-                        "source_sha256"
+                if expected and sha.lower() != str(expected).lower():
+                    raise ValueError(
+                        "Evidence content SHA256 differs from the acquired source hash"
                     )
-                    if expected and sha.lower() != str(expected).lower():
-                        raise ValueError(
-                            "Evidence content SHA256 differs from the acquired source hash"
-                        )
-                    if row.get("size_bytes") is not None and Path(
-                        temp
-                    ).stat().st_size != int(row["size_bytes"]):
-                        raise ValueError(
-                            "Evidence stream length differs from the acquired source size"
-                        )
-                    details["source_sha256"] = sha
-                    if kind == "image":
-                        blob, properties = _image_derivative(temp)
-                        frames = iter(
-                            [
-                                (
-                                    blob,
-                                    {"timestamp_seconds": None, **properties},
-                                    {
-                                        "mode": "image",
-                                        "source_frame_count": properties[
-                                            "source_frame_count"
-                                        ],
-                                        "all_frames_reviewed": properties[
-                                            "source_frame_count"
-                                        ]
-                                        == 1,
-                                        "max_derivative_dimension": 1536,
-                                    },
+                if row.get("size_bytes") is not None and Path(
+                    temp
+                ).stat().st_size != int(row["size_bytes"]):
+                    raise ValueError(
+                        "Evidence stream length differs from the acquired source size"
+                    )
+                details["source_sha256"] = sha
+                clear_enough = False
+                if kind == "image":
+                    needs_ocr, score = media_needs_ocr(temp)
+                    details["clarity_score"] = round(score, 1)
+                    details["clarity"] = "poor" if needs_ocr else "clear"
+                    details["ocr_applied"] = bool(needs_ocr)
+                    clear_enough = not needs_ocr
+                if clear_enough:
+                    frames = iter([])
+                elif kind == "image":
+                    blob, properties = _image_derivative(temp)
+                    frames = iter(
+                        [
+                            (
+                                blob,
+                                {"timestamp_seconds": None, **properties},
+                                {
+                                    "mode": "image",
+                                    "source_frame_count": properties[
+                                        "source_frame_count"
+                                    ],
+                                    "all_frames_reviewed": properties[
+                                        "source_frame_count"
+                                    ]
+                                    == 1,
+                                    "max_derivative_dimension": 768,
+                                },
+                            )
+                        ]
+                    )
+                else:
+                    frames = video_frames(temp)
+                completed_times = {
+                    frame.get("requested_sample_seconds")
+                    for frame in details["frames"]
+                }
+                for blob, time, coverage in frames:
+                    from app.services.progress_agent import note_operation
+                    note_operation(
+                        db,
+                        job_id,
+                        "media_review",
+                        f"Next image/video: {Path(row['file_path']).name}",
+                        timeout_seconds=max(
+                            60,
+                            float(
+                                os.environ.get(
+                                    "FORENSIC_MEDIA_VISION_TIMEOUT_SECONDS", "300"
                                 )
-                            ]
-                        )
-                    else:
-                        frames = video_frames(temp)
-                    completed_times = {
-                        frame.get("requested_sample_seconds")
-                        for frame in details["frames"]
-                    }
-                    for blob, time, coverage in frames:
-                        from app.services.progress_agent import note_operation
-                        note_operation(db,job_id,'media_review','Describe the next acquired image/video frame',
-                            timeout_seconds=max(60,float(os.environ.get('FORENSIC_MEDIA_VISION_TIMEOUT_SECONDS','300'))+30))
-                        if pipeline_should_stop(db, job_id):
-                            raise StageWaiting("Media observations paused by user")
-                        if time.get("requested_sample_seconds") in completed_times:
-                            continue
-                        db.commit()
-                        try:
-                            observation = describe_frame(blob)
-                        except (OSError, TimeoutError) as exc:
-                            raise StageWaiting(
-                                f"Vision service unavailable: {exc}"
-                            ) from exc
-                        frame_sha = hashlib.sha256(blob).hexdigest()
-                        uri = put_bytes(
-                            f"forensic-observations/{job_id}/{sha}/{frame_sha}.png",
-                            blob,
-                            "image/png",
-                        )
-                        details["frames"].append(
-                            {
-                                **time,
-                                **observation,
-                                "frame_sha256": frame_sha,
-                                "derived_frame_uri": uri,
-                            }
-                        )
-                        details["coverage"] = coverage
-                        description = "\n".join(
-                            f"{f['timestamp_seconds']:g}s: {f['description']}"
-                            if f.get("timestamp_seconds") is not None
-                            else f["description"]
-                            for f in details["frames"]
-                        )
-                        _store(db, job_id, row, kind, "running", description, details)
-                        note_operation(db,job_id,'media_review','Frame evidence persisted',advanced=True,timeout_seconds=330)
+                            )
+                            + 30,
+                        ),
+                        advanced=True,
+                    )
+                    if pipeline_should_stop(db, job_id):
+                        raise StageWaiting("Media observations paused by user")
+                    if time.get("requested_sample_seconds") in completed_times:
+                        continue
+                    if kind == "video" and "clarity" not in details:
+                        needs_ocr, score = media_needs_ocr(blob)
+                        details["clarity_score"] = round(score, 1)
+                        details["clarity"] = "poor" if needs_ocr else "clear"
+                        details["ocr_applied"] = bool(needs_ocr)
+                        if not needs_ocr:
+                            clear_enough = True
+                            break
+                    db.commit()
+                    try:
+                        from app.services.gpu_thermal import prevent_thermal_shutdown
+
+                        prevent_thermal_shutdown(reason="serial_media_review")
+                        observation = describe_frame(blob)
+                    except (OSError, TimeoutError) as exc:
+                        raise StageWaiting(
+                            f"Vision service unavailable: {exc}"
+                        ) from exc
+                    frame_sha = hashlib.sha256(blob).hexdigest()
+                    frame_ext = "png" if blob.startswith(b"\x89PNG") else "jpg"
+                    uri = put_bytes(
+                        f"forensic-observations/{job_id}/{sha}/{frame_sha}.{frame_ext}",
+                        blob,
+                        "image/png" if frame_ext == "png" else "image/jpeg",
+                    )
+                    details["frames"].append(
+                        {
+                            **time,
+                            **observation,
+                            "frame_sha256": frame_sha,
+                            "derived_frame_uri": uri,
+                        }
+                    )
+                    details["coverage"] = coverage
+                    description = "\n".join(
+                        f"{f['timestamp_seconds']:g}s: {f['description']}"
+                        if f.get("timestamp_seconds") is not None
+                        else f["description"]
+                        for f in details["frames"]
+                    )
+                    _store(db, job_id, row, kind, "running", description, details)
+                    note_operation(db,job_id,'media_review','Frame evidence persisted',advanced=True,timeout_seconds=330)
+                if clear_enough:
+                    from app.services.progress_agent import note_operation
+
+                    note_operation(
+                        db,
+                        job_id,
+                        "media_review",
+                        f"Clear {kind}, OCR skipped: {Path(row['file_path']).name}",
+                        timeout_seconds=120,
+                        advanced=True,
+                    )
+                    description = (
+                        "Clear image skipped. Not added to evidence observations."
+                        if kind == "image"
+                        else "Clear video skipped. Not added to evidence observations."
+                    )
+                    details["ocr_applied"] = False
+                else:
                     ocr = fetchall(
                         db,
                         "SELECT ocr_text FROM ocr_results WHERE job_artifact_id=:aid ORDER BY page_index",
@@ -540,10 +687,41 @@ def run_media_review(db, job_id, *, schema_name):
                         else f["description"]
                         for f in details["frames"]
                     )
-                    _store(db, job_id, row, kind, "done", description, details)
-                except StageWaiting:
-                    raise
-                except Exception as exc:
+                _store(
+                    db,
+                    job_id,
+                    row,
+                    kind,
+                    "skipped" if clear_enough else "done",
+                    description,
+                    details,
+                )
+            except StageWaiting:
+                from app.db.sql_helpers import rollback_aborted_transaction
+
+                rollback_aborted_transaction(db)
+                raise
+            except Exception as exc:
+                from app.db.sql_helpers import rollback_aborted_transaction
+
+                # A failed statement leaves the session unusable. The next
+                # write then becomes "invalid transaction is rolled back"
+                # and the whole stage stops before any picture is saved.
+                rollback_aborted_transaction(db)
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                log.exception(
+                    "Media review failed for %s", row.get("file_path")
+                )
+                from app.services.db_resilience import is_transient_db_error
+
+                if is_transient_db_error(exc):
+                    raise StageWaiting(
+                        f"Media review paused on {row.get('file_path')}: {exc}"
+                    ) from exc
+                try:
                     _store(
                         db,
                         job_id,
@@ -556,29 +734,64 @@ def run_media_review(db, job_id, *, schema_name):
                             or "Media could not be reviewed"
                         ),
                         details,
-                        error=str(exc),
+                        error=str(exc)[:2000],
                     )
-                finally:
-                    if temp:
-                        Path(temp).unlink(missing_ok=True)
-                counts = fetchone(
-                    db,
-                    "SELECT count(*) FILTER(WHERE status='done') AS done,count(*) FILTER(WHERE status='failed') AS failed FROM forensic_media_observations WHERE job_id=:jid",
-                    {"jid": job_id},
-                )
-                report_progress(
-                    db,
-                    job_id,
-                    "media_review",
-                    total=total,
-                    completed=int(counts["done"]),
-                    failed=int(counts["failed"]),
-                    label="Source-linked image and video observations",
-                )
-            last = str(rows[-1]["id"])
+                except Exception as store_exc:
+                    rollback_aborted_transaction(db)
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
+                    raise StageWaiting(
+                        f"Media review paused on {row.get('file_path')}: {exc}"
+                    ) from store_exc
+            finally:
+                if temp:
+                    Path(temp).unlink(missing_ok=True)
+            counts = fetchone(
+                db,
+                "SELECT count(*) FILTER(WHERE status='done') AS done,count(*) FILTER(WHERE status='failed') AS failed,count(*) FILTER(WHERE status='skipped') AS skipped FROM forensic_media_observations WHERE job_id=:jid",
+                {"jid": job_id},
+            )
+            report_progress(
+                db,
+                job_id,
+                "media_review",
+                total=total,
+                completed=int(counts["done"]),
+                failed=int(counts["failed"]),
+                skipped=int(counts["skipped"]),
+                label="Unclear image and video evidence only",
+            )
+        for part, wanted in by_part.items():
+            _note_shard(
+                db,
+                job_id,
+                'media_review',
+                f'Reading the next image/video shard ({len(wanted)} files)',
+                timeout_seconds=1800,
+                advanced=True,
+            )
+            seen = set()
+            for norm, spilled in iter_spilled_files_from_part(part, set(wanted)):
+                seen.add(norm)
+                row = wanted.get(norm)
+                if row is None or not spilled:
+                    if spilled:
+                        Path(spilled).unlink(missing_ok=True)
+                    continue
+                if pipeline_should_stop(db, job_id):
+                    Path(spilled).unlink(missing_ok=True)
+                    raise StageWaiting('Media observations paused by user')
+                review_one(row, spilled)
+            for path, row in wanted.items():
+                if path not in seen:
+                    review_one(row, None)
+        for row in loose:
+            review_one(row, None)
     counts = fetchone(
         db,
-        "SELECT count(*) FILTER(WHERE status='done') AS done,count(*) FILTER(WHERE status='failed') AS failed,count(*) FILTER(WHERE flagged) AS flagged FROM forensic_media_observations WHERE job_id=:jid",
+        "SELECT count(*) FILTER(WHERE status='done') AS done,count(*) FILTER(WHERE status='failed') AS failed,count(*) FILTER(WHERE status='skipped') AS skipped,count(*) FILTER(WHERE flagged) AS flagged FROM forensic_media_observations WHERE job_id=:jid",
         {"jid": job_id},
     )
     return {
@@ -586,6 +799,7 @@ def run_media_review(db, job_id, *, schema_name):
         "total": total,
         "completed": int(counts["done"]),
         "failed": int(counts["failed"]),
+        "skipped": int(counts["skipped"]),
         "flagged": int(counts["flagged"]),
         "model": visual_model(),
         "video_coverage": "sampled_frames",
@@ -603,7 +817,7 @@ def media_observations_page(db, job_id, *, page=1, page_size=50, flagged_only=Tr
     )
     items = fetchall(
         db,
-        """SELECT * FROM forensic_media_observations WHERE job_id=:jid AND (flagged OR NOT :flagged)
+        """SELECT * FROM forensic_media_observations WHERE job_id=:jid AND status<>'skipped' AND (flagged OR NOT :flagged)
         ORDER BY source_path,job_artifact_id LIMIT :lim OFFSET :off""",
         {
             "jid": job_id,

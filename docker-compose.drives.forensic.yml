@@ -5,105 +5,145 @@
 services:
   api:
     volumes:
-      - type: bind
-        source: 'C:/'
+      - type: volume
+        source: aetheris_hostdrive_c_8635bfe8086f
         target: '/host/c'
         read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: 'D:/'
+        volume:
+          nocopy: true
+      - type: volume
+        source: aetheris_hostdrive_d_116ee6e5c644
         target: '/host/d'
         read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: 'E:/'
+        volume:
+          nocopy: true
+      - type: volume
+        source: aetheris_hostdrive_e_4e99e62d9f52
         target: '/host/e'
         read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: 'F:/'
+        volume:
+          nocopy: true
+      - type: volume
+        source: aetheris_hostdrive_f_a21974c125b4
         target: '/host/f'
         read_only: true
-        bind:
-          create_host_path: false
+        volume:
+          nocopy: true
   worker-disk:
     volumes:
-      - type: bind
-        source: 'C:/'
+      - type: volume
+        source: aetheris_hostdrive_c_8635bfe8086f
         target: '/host/c'
         read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: 'D:/'
+        volume:
+          nocopy: true
+      - type: volume
+        source: aetheris_hostdrive_d_116ee6e5c644
         target: '/host/d'
         read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: 'E:/'
+        volume:
+          nocopy: true
+      - type: volume
+        source: aetheris_hostdrive_e_4e99e62d9f52
         target: '/host/e'
         read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: 'F:/'
+        volume:
+          nocopy: true
+      - type: volume
+        source: aetheris_hostdrive_f_a21974c125b4
         target: '/host/f'
         read_only: true
-        bind:
-          create_host_path: false
+        volume:
+          nocopy: true
   worker-parse:
     volumes:
-      - type: bind
-        source: 'C:/'
+      - type: volume
+        source: aetheris_hostdrive_c_8635bfe8086f
         target: '/host/c'
         read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: 'D:/'
+        volume:
+          nocopy: true
+      - type: volume
+        source: aetheris_hostdrive_d_116ee6e5c644
         target: '/host/d'
         read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: 'E:/'
+        volume:
+          nocopy: true
+      - type: volume
+        source: aetheris_hostdrive_e_4e99e62d9f52
         target: '/host/e'
         read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: 'F:/'
+        volume:
+          nocopy: true
+      - type: volume
+        source: aetheris_hostdrive_f_a21974c125b4
         target: '/host/f'
         read_only: true
-        bind:
-          create_host_path: false
+        volume:
+          nocopy: true
   worker-report:
     volumes:
-      - type: bind
-        source: 'C:/'
+      - type: volume
+        source: aetheris_hostdrive_c_8635bfe8086f
         target: '/host/c'
         read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: 'D:/'
+        volume:
+          nocopy: true
+      - type: volume
+        source: aetheris_hostdrive_d_116ee6e5c644
         target: '/host/d'
         read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: 'E:/'
+        volume:
+          nocopy: true
+      - type: volume
+        source: aetheris_hostdrive_e_4e99e62d9f52
         target: '/host/e'
         read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: 'F:/'
+        volume:
+          nocopy: true
+      - type: volume
+        source: aetheris_hostdrive_f_a21974c125b4
         target: '/host/f'
         read_only: true
-        bind:
-          create_host_path: false
+        volume:
+          nocopy: true
+  worker-agent:
+    volumes:
+      - type: volume
+        source: aetheris_hostdrive_c_8635bfe8086f
+        target: '/host/c'
+        read_only: true
+        volume:
+          nocopy: true
+      - type: volume
+        source: aetheris_hostdrive_d_116ee6e5c644
+        target: '/host/d'
+        read_only: true
+        volume:
+          nocopy: true
+      - type: volume
+        source: aetheris_hostdrive_e_4e99e62d9f52
+        target: '/host/e'
+        read_only: true
+        volume:
+          nocopy: true
+      - type: volume
+        source: aetheris_hostdrive_f_a21974c125b4
+        target: '/host/f'
+        read_only: true
+        volume:
+          nocopy: true
+
+volumes:
+  aetheris_hostdrive_c_8635bfe8086f:
+    external: true
+    name: aetheris_hostdrive_c_8635bfe8086f
+  aetheris_hostdrive_d_116ee6e5c644:
+    external: true
+    name: aetheris_hostdrive_d_116ee6e5c644
+  aetheris_hostdrive_e_4e99e62d9f52:
+    external: true
+    name: aetheris_hostdrive_e_4e99e62d9f52
+  aetheris_hostdrive_f_a21974c125b4:
+    external: true
+    name: aetheris_hostdrive_f_a21974c125b4

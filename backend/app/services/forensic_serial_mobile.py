@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
+import time
 
 from app.db.session import firm_session
 from app.db.sql_helpers import execute, fetchall, fetchone
@@ -21,6 +22,47 @@ from app.services.mobile_forensic.storage import (
 )
 
 SIDECARS = ("-wal", "-shm", "-journal")
+_PROGRESS_LOCK = threading.Lock()
+_PROGRESS_AT = 0.0
+
+
+def _publish_work_progress(db, job_id, stage, stage_run_id, *, force=False):
+    """Record bundle progress on the stage row.
+
+    Recovery used to finish thousands of files without moving progress_at.
+    progressAgent then treated the stage as stalled, cancelled it, and the
+    card fell back to waiting at 0 even though the finished bundles remained.
+    """
+    global _PROGRESS_AT
+    now = time.monotonic()
+    with _PROGRESS_LOCK:
+        if not force and now - _PROGRESS_AT < 5:
+            return
+        _PROGRESS_AT = now
+    counts = fetchone(
+        db,
+        """SELECT count(*) AS total,count(*) FILTER (WHERE status='done') AS done,
+        count(*) FILTER (WHERE status='failed') AS failed
+        FROM pipeline_work_items WHERE stage_run_id=:sid""",
+        {"sid": stage_run_id},
+    )
+    if not counts or not int(counts["total"] or 0):
+        return
+    from app.services.forensic_serial_stages import report_progress
+
+    labels = {
+        "parse": "Native forensic parsing",
+        "recovery": "Deleted / recovery analysis",
+    }
+    report_progress(
+        db,
+        job_id,
+        stage,
+        total=int(counts["total"]),
+        completed=int(counts["done"] or 0),
+        failed=int(counts["failed"] or 0),
+        label=labels.get(stage, stage),
+    )
 
 
 def _persist_inventory_bulk(db, job_id, items):
@@ -334,6 +376,7 @@ def run_mobile_stage(db, job_id, stage, *, schema_name, stage_run_id):
     bundles = evidence_bundles(items)
     _seed_work(db, stage_run_id, bundles)
     db.commit()
+    _publish_work_progress(db, job_id, stage, stage_run_id, force=True)
     from app.services.forensic_priority_evidence import PRIORITY_ORDER_SQL
     cancelled = threading.Event()
 
@@ -475,6 +518,7 @@ def run_mobile_stage(db, job_id, stage, *, schema_name, stage_run_id):
                         },
                     )
                     wdb.commit()
+                    _publish_work_progress(wdb, job_id, stage, stage_run_id)
                     context.clear_byte_cache()
                 except Exception as exc:
                     wdb.rollback()

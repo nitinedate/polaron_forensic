@@ -112,6 +112,26 @@ def test_stage_order_and_ui_do_not_start_downstream_work():
     )
 
 
+def test_parse_card_keeps_the_extracted_file_count():
+    rows = rows_at("recovery")
+    parse = next(row for row in rows if row["stage"] == "parse")
+    parse["total_items"] = 53974
+    parse["completed_items"] = 53974
+    parse["details"] = {
+        "total": 53974,
+        "completed": 53974,
+        "mobile": {"total": 26987, "completed": 26987},
+    }
+    card = next(
+        stage
+        for stage in pipeline.snapshot_from_rows(rows)["stages"]
+        if stage["id"] == "parse"
+    )
+    assert card["total"] == 26987
+    assert card["completed"] == 26987
+    assert card["pct"] == 100
+
+
 def test_failed_stage_cannot_be_bypassed():
     rows = rows_at("recovery", "failed")
     assert pipeline.first_open_stage(rows)["stage"] == "recovery"

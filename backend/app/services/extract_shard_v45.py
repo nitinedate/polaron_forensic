@@ -124,6 +124,15 @@ def plan_readers(vd: VirtualDisk, requested_readers: int) -> tuple[int, int, str
     never exceed the configured semaphore.
     """
     requested = max(1, int(requested_readers))
+    # One ZipFile on a Docker Desktop drive mount (/host/<letter>/…). Two threads
+    # seeking that file return [Errno 5] and can drop the mount entirely.
+    host_paths = [str(p).replace("\\", "/") for p in (getattr(vd, "segment_paths", None) or [])]
+    if (
+        len(host_paths) == 1
+        and host_paths[0].lower().endswith(".zip")
+        and host_paths[0].startswith("/host/")
+    ):
+        return 1, 1, "single_zip_host_mount:readers<=1"
     media, detection = "unknown", "unavailable"
     try:
         from app.services.disk_io_profile import detect_source_io_profile

@@ -289,6 +289,11 @@ services:
       timeout: 10s
       retries: 20
       start_period: 30s
+    networks:
+      default: {}
+      aetheris-common:
+        aliases:
+          - ollama
 
   # One-shot: pull ALL required Ollama models via compose (no manual ollama pull)
   ollama-init:

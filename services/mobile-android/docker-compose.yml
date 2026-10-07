@@ -37,6 +37,8 @@ x-mobile-env: &mobile-env
   TMPDIR: /app/data/tmp
   TMP: /app/data/tmp
   TEMP: /app/data/tmp
+  # Shard tar spools are multi-GB. Keep them off the evidence/backup drive.
+  EXTRACT_SCRATCH_DIR: /scratch
   AETHERIS_WORKER: "1"
   IDLE_IN_TRANSACTION_SESSION_TIMEOUT: "0"
   EXTRACT_MODE: mobile
@@ -98,6 +100,11 @@ x-app-common: &app-common
     - type: bind
       source: ${AETHERIS_BACKUP_DIR:-./backup}/huggingface-android
       target: /root/.cache/huggingface
+    # Compressed shard temps. Point EXTRACT_SCRATCH_HOST_DIR at a volume with
+    # tens of GB free; a full backup drive returns EIO on these writes.
+    - type: bind
+      source: ${EXTRACT_SCRATCH_HOST_DIR:-${AETHERIS_BACKUP_DIR:-./backup}/forensic-data/scratch}
+      target: /scratch
 
 services:
   nvidia-cuda:

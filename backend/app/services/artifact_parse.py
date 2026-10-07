@@ -754,7 +754,9 @@ def _timeout_for_path(path: str, default_sec: int, *, size_bytes: int | None = N
 def _parse_work_item(item: tuple[dict, str, bytes | None], timeout_sec: int) -> dict[str, Any]:
     """CPU-bound parse step — safe to run in a thread pool (no DB)."""
     artifact, path, data = item
-    if not data:
+    # None means the shard read failed. b"" is a real empty file (.nomedia, marker,
+    # zero-byte placeholder) and must be recorded, not counted as an exception.
+    if data is None:
         return {"artifact": artifact, "path": path, "kind": "no_data"}
     effective_timeout = _timeout_for_path(
         path, timeout_sec, size_bytes=len(data) if data else artifact.get("size_bytes"),
@@ -943,9 +945,27 @@ def parse_job_artifacts_for_paths(
                 part_of[str(art["id"])] = part
                 counts[part] += 1
             best_part, _ = counts.most_common(1)[0]
-            coalesced = [a for a in artifacts if part_of.get(str(a["id"])) == best_part]
-            shard_cap = max(limit, min(2500, len(coalesced)))
-            artifacts = coalesced[:shard_cap]
+            # One pass over the part. A 700-file slice forces another full read of
+            # the same multi-GB zstd shard, and the card sits still during that scan.
+            if best_part and not str(best_part).startswith("direct:"):
+                wanted = [p for p, uri in index_map.items() if uri == best_part]
+                rows: list[dict] = []
+                for chunk in iter_path_chunks(wanted, PATH_ANY_CHUNK):
+                    rows.extend(
+                        fetchall(
+                            db,
+                            """SELECT id, file_path, minio_uri, size_bytes, metadata
+                               FROM job_artifacts
+                               WHERE job_id=:jid AND parse_status='pending'
+                                 AND replace(file_path, chr(92), '/') = ANY(:paths)""",
+                            {"jid": job_id, "paths": chunk},
+                        )
+                    )
+                artifacts = rows or [a for a in artifacts if part_of.get(str(a["id"])) == best_part]
+            else:
+                coalesced = [a for a in artifacts if part_of.get(str(a["id"])) == best_part]
+                shard_cap = max(limit, min(2500, len(coalesced)))
+                artifacts = coalesced[:shard_cap]
         artifacts = _claim_artifacts_by_id(db, [a["id"] for a in artifacts])
     if artifacts:
         db.commit()
@@ -1032,11 +1052,43 @@ def parse_job_artifacts_for_paths(
         except Exception:
             pass
             _refresh_parsing_claims(db, claimed_ids)
+        job_done = stats["parsed"]
+        job_total = 0
+        try:
+            counts = fetchone(
+                db,
+                """SELECT count(*) FILTER (WHERE parse_status='parsed') AS done,
+                          count(*) FILTER (WHERE parse_status IN ('failed','error')) AS failed,
+                          count(*) FILTER (WHERE parse_status IN ('skipped','no_parser')) AS skipped,
+                          count(*) AS total
+                   FROM job_artifacts WHERE job_id=:jid""",
+                {"jid": job_id},
+            )
+            job_done = int(counts["done"] or 0)
+            job_total = int(counts["total"] or 0)
+            from app.services.forensic_serial_stages import report_progress
+
+            report_progress(
+                db,
+                job_id,
+                "parse",
+                total=job_total,
+                completed=job_done,
+                failed=int(counts["failed"] or 0),
+                skipped=int(counts["skipped"] or 0),
+                label="Native forensic parsing",
+            )
+        except Exception:
+            log.debug("Parse progress publish skipped", exc_info=True)
         write_disk_log(
             db,
             job_id,
-            f"Parse in progress — {stats['parsed']:,} parsed, {stats['skipped']:,} skipped this batch "
-            f"({parse_workers} workers)",
+            (
+                f"Native forensic parsing — {job_done:,} / {job_total:,}"
+                if job_total
+                else f"Native forensic parsing — {stats['parsed']:,} parsed this batch"
+            )
+            + f" ({parse_workers} workers)",
             stage="parse",
         )
         if update_status or (total - last_orchestration_at) >= 500:
@@ -1184,6 +1236,18 @@ def _run_claimed_parse_batch(
                 stage="parse",
                 metadata={"part_uri": part_uri, "files": len(paths_set)},
             )
+            try:
+                from app.services.progress_agent import note_operation
+
+                note_operation(
+                    db,
+                    job_id,
+                    "parse",
+                    f"parse: streaming {len(paths_set):,} files from shard",
+                    timeout_seconds=900,
+                )
+            except Exception:
+                log.debug("Parse shard deadline refresh skipped", exc_info=True)
             db.commit()
         except Exception:
             try:

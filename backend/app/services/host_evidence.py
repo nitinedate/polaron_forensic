@@ -3150,6 +3150,27 @@ def register_segments(
                     f"Selected {prior_os} but the package looks like {detected}. "
                     f"{'iOS Agent' if detected == 'ios' else 'Android Agent'} will own extract and RAG."
                 )
+            from app.service_identity import job_type_platform
+
+            typed = job_type_platform(job_type)
+            if typed and typed != detected:
+                corrected = "ios_mobile" if detected == "ios" else "android_mobile"
+                execute(
+                    db,
+                    "UPDATE jobs SET type=:t, updated_at=NOW() WHERE id=:job_id",
+                    {"t": corrected, "job_id": job_id},
+                )
+                job_type = corrected
+                write_disk_log(
+                    db,
+                    job_id,
+                    (
+                        f"Evidence platform is {detected}; job type corrected from {typed} "
+                        f"to {corrected} so the owning product heartbeats and extracts."
+                    ),
+                    stage="evidence_register",
+                    level="warning",
+                )
         update_meta = persist_owner_on_disk_source(update_meta, detected)
         merged = merge_mobile_meta_into_disk_source(prior_ds, update_meta)
         execute(

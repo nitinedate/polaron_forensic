@@ -592,6 +592,37 @@ def plan_mobile_extract_io(
     return readers, shards, reason
 
 
+def _transient_extract_io(exc: BaseException) -> bool:
+    """Docker Desktop drive mounts surface a wedged read as errno 5, not a missing file."""
+    if isinstance(exc, OSError) and exc.errno in {5, 116, 121}:
+        return True
+    text = str(exc).lower()
+    return "input/output error" in text
+
+
+def _call_shard_with_io_retry(call, *, shard_id: int, emit, attempts: int = 3) -> dict:
+    """Re-run one shard after a transient read error. The part file is not uploaded until the shard finishes."""
+    last: BaseException | None = None
+    for attempt in range(1, max(int(attempts), 1) + 1):
+        try:
+            return call()
+        except JobStopRequested:
+            raise
+        except Exception as exc:
+            last = exc
+            if attempt >= attempts or not _transient_extract_io(exc):
+                raise
+            emit(
+                f"Shard {shard_id} I/O error — retrying ({attempt}/{attempts}): {exc}",
+                level="warning",
+                metadata={"shard_id": shard_id, "error": str(exc)[:300], "attempt": attempt},
+            )
+            time.sleep(8 * attempt)
+    if last is not None:
+        raise last
+    raise RuntimeError(f"shard {shard_id} retry exhausted")
+
+
 def _pack_full_evidence_zip(dest: Path, original: Path, on_progress) -> None:
     """Late packaging: same four-file layout the acquisition writes (V22).
 
@@ -1960,9 +1991,13 @@ def build_extracted_disk_to_minio(db, job_id: str, vd: VirtualDisk, *, schema_na
                             worker_count=worker_count,
                         )
                     try:
-                        result = shard_worker_v45(
-                            p, progress, progress_flusher, stop_poller,
-                            shared_vd=vd, event_bus=progress_flusher.event_bus,
+                        result = _call_shard_with_io_retry(
+                            lambda p=p: shard_worker_v45(
+                                p, progress, progress_flusher, stop_poller,
+                                shared_vd=vd, event_bus=progress_flusher.event_bus,
+                            ),
+                            shard_id=int(p["shard_id"]),
+                            emit=progress_flusher.event_bus.emit,
                         )
                     except JobStopRequested:
                         return _handle_stop(
@@ -1991,8 +2026,13 @@ def build_extracted_disk_to_minio(db, job_id: str, vd: VirtualDisk, *, schema_na
                 with ThreadPoolExecutor(max_workers=min(parallel_readers, len(payloads))) as pool:
                     futures = {
                         pool.submit(
-                            shard_worker_v45, p, progress, progress_flusher, stop_poller,
-                            event_bus=progress_flusher.event_bus,
+                            _call_shard_with_io_retry,
+                            lambda p=p: shard_worker_v45(
+                                p, progress, progress_flusher, stop_poller,
+                                event_bus=progress_flusher.event_bus,
+                            ),
+                            shard_id=int(p["shard_id"]),
+                            emit=progress_flusher.event_bus.emit,
                         ): p["shard_id"]
                         for p in payloads
                     }

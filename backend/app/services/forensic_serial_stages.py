@@ -337,7 +337,7 @@ def _ocr(db, job_id, schema_name):
                 "ocr",
                 total=before,
                 completed=max(before - after, 0),
-                label="OCR on CUDA; native text on CPU",
+                label="OCR on CUDA",
             )
             if after > 0 and (after >= previous or result.get("gpu_deferred")):
                 raise StageWaiting(
@@ -565,9 +565,10 @@ def execute_stage(db, job_id, stage, *, schema_name, stage_run_id):
             result["mobile"] = run_mobile_stage(
                 db, job_id, "parse", schema_name=schema_name, stage_run_id=stage_run_id
             )
-            result["total"] += int(result["mobile"]["total"])
-            result["completed"] += int(result["mobile"]["completed"])
-            result["failed"] += int(result["mobile"]["failed"])
+            # Keep the stage denominator on the extracted file count. The mobile
+            # pass reparses those same files; adding its bundle count doubled the card.
+            result["native_total"] = int(result["total"])
+            result["mobile_work_active"] = True
         return result
     if stage == "recovery":
         if mobile:
@@ -743,7 +744,7 @@ def validate_stage_barrier(db, job_id, stage, result, *, stage_run_id):
             f"{stage} barrier: {result.get('reason') or result.get('error') or result['status']}"
         )
     if stage == "media_review" and result.get("status") != "skipped":
-        if int(result.get("completed") or 0)+int(result.get("failed") or 0)<int(result.get("total") or 0):
+        if int(result.get("completed") or 0)+int(result.get("failed") or 0)+int(result.get("skipped") or 0)<int(result.get("total") or 0):
             raise StageWaiting("Media observations have unfinished evidence files")
     if stage == "materialize":
         registered = int(

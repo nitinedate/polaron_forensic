@@ -107,9 +107,11 @@ services:
       - "127.0.0.1:9005:9005"
     volumes:
       # Object storage grows with every disk/mobile job. Keep it on a normal
-      # host folder (AETHERIS_BACKUP_DIR) so DockerDesktopWSL does not absorb it.
+      # host folder so DockerDesktop WSL does not absorb it. Point MINIO_DATA_DIR
+      # at a volume with tens of GB free; MinIO refuses writes once the drive
+      # crosses its minimum free-space watermark (XMinioStorageFull).
       - type: bind
-        source: ${AETHERIS_BACKUP_DIR:-./backup}/minio
+        source: ${MINIO_DATA_DIR:-./backup/minio}
         target: /data
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000'"]

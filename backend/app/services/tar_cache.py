@@ -110,6 +110,10 @@ def iter_files_from_part(
                     remaining.discard(norm)
                     yield norm, content
     except Exception as exc:
+        # A stage cancel is raised on the main thread from SIGTERM. Do not treat
+        # it as a short read and keep parsing the rest of the shard.
+        if type(exc).__name__ == "StageWaiting":
+            raise
         log.warning("Streamed tar read failed part=%s: %s", part_uri, exc)
     finally:
         try:
@@ -119,6 +123,70 @@ def iter_files_from_part(
 
     for p in remaining:
         yield p, None
+
+
+def iter_spilled_files_from_part(part_uri: str, paths: set[str], *, directory: str | None = None):
+    """Stream wanted members to temp files in one shard pass.
+
+    Callers review one file and delete it before the next member is read, so a
+    shard is decompressed once instead of once per picture.
+    """
+    import os
+    import tempfile
+
+    wanted = {p.replace("\\", "/") for p in paths}
+    if not wanted:
+        return
+    stream = open_object_stream(part_uri)
+    if stream is None:
+        return
+    try:
+        dctx = zstd.ZstdDecompressor()
+        with dctx.stream_reader(stream) as zreader:
+            with tarfile.open(fileobj=zreader, mode="r|") as tar:
+                for member in tar:
+                    if not wanted:
+                        break
+                    if not member.isfile():
+                        continue
+                    norm = member.name.replace("\\", "/")
+                    if norm not in wanted:
+                        continue
+                    handle = tar.extractfile(member)
+                    if handle is None:
+                        wanted.discard(norm)
+                        yield norm, None
+                        continue
+                    suffix = os.path.splitext(norm)[1][:16]
+                    tmp = tempfile.NamedTemporaryFile(
+                        prefix="aetheris-media-",
+                        suffix=suffix,
+                        dir=directory or "/tmp",
+                        delete=False,
+                    )
+                    try:
+                        while True:
+                            chunk = handle.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            tmp.write(chunk)
+                        tmp.flush()
+                    except Exception:
+                        tmp.close()
+                        os.unlink(tmp.name)
+                        raise
+                    tmp.close()
+                    wanted.discard(norm)
+                    yield norm, tmp.name
+    except Exception as exc:
+        if type(exc).__name__ == "StageWaiting":
+            raise
+        log.warning("Streamed tar spill failed part=%s: %s", part_uri, exc)
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
 
 
 def read_file_from_part(part_uri: str, path: str, *, max_bytes: int | None = None) -> bytes | None:

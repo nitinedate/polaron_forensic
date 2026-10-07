@@ -188,6 +188,26 @@ def extraction_barrier(row: dict) -> tuple[bool, str]:
     return True, "Finalized extracted evidence"
 
 
+def _evidence_file_counts(row: dict, total: int, completed: int) -> tuple[int, int]:
+    """Keep the parse card on the extracted file count.
+
+    The mobile pass stores one work row per file and the stage result used to
+    add that count on top of the native parse, so 26,987 files displayed as
+    53,974.
+    """
+    if row.get("stage") != "parse":
+        return total, completed
+    details = _obj(row.get("details"))
+    native_total = int(details.get("native_total") or 0)
+    mobile = details.get("mobile")
+    mobile_total = int(mobile.get("total") or 0) if isinstance(mobile, dict) else 0
+    if native_total <= 0 and mobile_total > 0 and total > mobile_total:
+        native_total = total - mobile_total
+    if native_total > 0 and total > native_total:
+        return native_total, min(completed, native_total)
+    return total, completed
+
+
 def snapshot_from_rows(rows: list[dict], progress: dict | None = None) -> dict:
     progress = progress or {}
     stages = []
@@ -210,6 +230,7 @@ def snapshot_from_rows(rows: list[dict], progress: dict | None = None) -> dict:
             if progress.get("phase") in aliases.get(row["stage"], {row["stage"]}):
                 total = max(total, int(progress.get("total") or 0))
                 completed = max(completed, int(progress.get("completed") or 0))
+        total, completed = _evidence_file_counts(row, total, completed)
         pct = (
             100
             if status in TERMINAL
@@ -264,7 +285,7 @@ def serial_progress_snapshot(db, job_id: str, *, row=None) -> dict | None:
     )
     pp = _obj((row or {}).get("pipeline_progress"))
     active_row = first_open_stage(rows)
-    if active_row and active_row["status"] == "running":
+    if active_row and active_row["status"] not in TERMINAL:
         work = fetchone(
             db,
             """SELECT count(*) AS total,count(*) FILTER (WHERE status='done') AS done,
@@ -273,13 +294,22 @@ def serial_progress_snapshot(db, job_id: str, *, row=None) -> dict | None:
         )
         if work and int(work["total"] or 0):
             native = _obj(active_row.get("details"))
-            active_row["total_items"] = int(native.get("native_total") or 0) + int(
-                work["total"]
-            )
-            active_row["completed_items"] = int(
-                native.get("native_completed") or 0
-            ) + int(work["done"])
-            active_row["failed_items"] = int(work["failed"])
+            native_total = int(native.get("native_total") or 0)
+            work_total = int(work["total"] or 0)
+            work_done = int(work["done"] or 0)
+            # Mobile bundles are the same extracted files. Adding the two
+            # counts made 26,987 files display as 53,974.
+            if native.get("mobile_work_active") and native_total > 0 and work_total > 0:
+                active_row["total_items"] = native_total
+                active_row["completed_items"] = min(
+                    native_total, (native_total * work_done) // work_total
+                )
+            else:
+                active_row["total_items"] = native_total + work_total
+                active_row["completed_items"] = int(
+                    native.get("native_completed") or 0
+                ) + work_done
+                active_row["failed_items"] = int(work["failed"] or 0)
     serial = snapshot_from_rows(rows, pp)
     agents = {}
     # Alias old UI cards to persisted stages; they never infer completion from logs.
@@ -623,6 +653,14 @@ def run_serial_stage(
             )
             persist_snapshot(db, job_id)
             write_disk_log(db, job_id, f"Serial stage started: {stage}", stage=stage)
+            # A restart after a progressAgent interrupt is recovery, not a live fault.
+            execute(
+                db,
+                """UPDATE disk_build_logs SET level='info'
+                WHERE job_id=:jid AND stage=:stage AND level='warning'
+                AND message LIKE 'Serial stage waiting:%interrupted by progressAgent%'""",
+                {"jid": job_id, "stage": stage},
+            )
             db.commit()
             try:
                 with (

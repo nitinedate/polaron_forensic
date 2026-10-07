@@ -169,7 +169,13 @@ def _resolve_evidence_path(raw: str) -> Path:
         raise ValueError("empty evidence path")
     cached = _evidence_path_cache.get(stripped)
     if cached is not None:
-        return cached
+        try:
+            if cached.exists():
+                return cached
+        except OSError:
+            pass
+        # A miss during a Docker drive-mount blip must not stick for the process lifetime.
+        _evidence_path_cache.pop(stripped, None)
 
     primary = _path_from_uri(f"file://{stripped}" if not stripped.startswith("file://") else stripped)
     try:
@@ -197,11 +203,46 @@ def _resolve_evidence_path(raw: str) -> Path:
         from app.services.host_evidence import resolve_host_path
 
         resolved = resolve_host_path(stripped, strict=False)
-        _evidence_path_cache[stripped] = resolved
+        try:
+            if resolved.exists():
+                _evidence_path_cache[stripped] = resolved
+                return resolved
+        except OSError:
+            pass
         return resolved
     except Exception:
-        _evidence_path_cache[stripped] = primary
         return primary
+
+
+def require_visible_evidence_paths(raw_paths: list[str], *, attempts: int = 4) -> list[Path]:
+    """Resolve evidence paths, retrying while a Docker drive mount is still attaching.
+
+    ``Path.exists()`` is briefly false right after a worker restart even when the
+    file is on the host. Caching that miss made the next open fail immediately.
+    """
+    last_missing: list[str] = []
+    for attempt in range(max(int(attempts), 1)):
+        resolved = [_resolve_evidence_path(p) for p in raw_paths]
+        missing: list[str] = []
+        for raw, path in zip(raw_paths, resolved):
+            try:
+                visible = path.exists()
+            except OSError:
+                visible = False
+            if not visible:
+                missing.append(str(path))
+                _evidence_path_cache.pop((raw or "").strip(), None)
+        if not missing:
+            return resolved
+        last_missing = missing
+        if attempt + 1 < attempts:
+            time.sleep(1.5 * (attempt + 1))
+    shown = last_missing[0] if last_missing else "(none)"
+    extra = f" (+{len(last_missing) - 1} more)" if len(last_missing) > 1 else ""
+    raise ValueError(
+        "Evidence path(s) not accessible in this worker "
+        f"(path not visible at the registered location): {shown}{extra}"
+    )
 
 
 def _segment_sort_key(path: Path) -> tuple:
@@ -461,14 +502,7 @@ def open_virtual_disk(
     if not paths:
         raise ValueError("no host paths on registered evidence files")
 
-    path_objs = [_resolve_evidence_path(p) for p in paths]
-    missing = [str(p) for p in path_objs if not p.exists()]
-    if missing:
-        raise ValueError(
-            "Evidence path(s) not accessible in this worker "
-            f"(path not visible at the registered location): {missing[0]}"
-            + (f" (+{len(missing) - 1} more)" if len(missing) > 1 else "")
-        )
+    path_objs = require_visible_evidence_paths(paths)
 
     # Prefer resolved container paths for subsequent open/walk
     paths = [str(p) for p in path_objs]
@@ -558,10 +592,7 @@ def open_virtual_disk_from_paths(
     """
     if not paths:
         raise ValueError("no segment paths")
-    path_objs = [_resolve_evidence_path(p) for p in paths]
-    missing = [str(p) for p in path_objs if not p.exists()]
-    if missing:
-        raise ValueError(f"Evidence path(s) not accessible in this worker: {missing[0]}")
+    path_objs = require_visible_evidence_paths(paths)
     first = path_objs[0]
     resolved = [str(p) for p in path_objs]
     hashes = list(hashes or [])

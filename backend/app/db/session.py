@@ -50,7 +50,14 @@ def _idle_in_transaction_timeout() -> str:
         return api_value if valid.fullmatch(api_value) else "60s"
 
     explicit = (os.environ.get("IDLE_IN_TRANSACTION_SESSION_TIMEOUT") or "").strip()
-    is_worker = "celery" in argv or bool(os.environ.get("CELERY_LOADER"))
+    # The serial stage child is `python -m app.services.forensic_stage_worker`.
+    # It is not Celery, but it streams evidence for minutes inside one session.
+    # The 60s API guardrail was closing that connection mid-file.
+    is_worker = (
+        "celery" in argv
+        or "forensic_stage_worker" in argv
+        or bool(os.environ.get("CELERY_LOADER"))
+    )
     if is_worker:
         return explicit if explicit and valid.fullmatch(explicit) else "0"
 

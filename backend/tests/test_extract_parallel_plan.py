@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+from app.services.extract_shard_v45 import plan_readers
 from app.services.extracted_disk import plan_ewf_extract_io, plan_mobile_extract_io
 
 
@@ -119,6 +120,14 @@ def test_metadata_zip_sealed_paths_use_folder_readers():
     assert readers == 4
     assert shards >= readers
     assert reason.startswith("plain_folder")
+
+
+def test_single_zip_on_docker_host_mount_reads_sequentially():
+    vd = SimpleNamespace(segment_paths=["/host/e/evidence/cases/dump.zip"])
+    readers, gate, reason = plan_readers(vd, 4)
+    assert readers == 1
+    assert gate == 1
+    assert reason.startswith("single_zip_host_mount")
 
 
 def test_zip_dump_uses_payload_parallel_readers():

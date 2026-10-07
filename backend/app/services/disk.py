@@ -179,8 +179,12 @@ def _extract_already_complete(db, job_id: str) -> bool:
         return False
     total = int(row.get("files_total") or 0)
     done = int(row.get("files_extracted") or 0)
-    # File counts are the source of truth. A leftover checkpoint or a status
-    # flipped back to processing must not restart a finished copy.
+    # A finished copy always publishes extracted_disk_uri. File counters can
+    # reach the total while a later shard upload failed (MinIO full), and
+    # treating that as complete skips the resume that still has to write the
+    # missing parts.
+    if not row.get("extracted_disk_uri"):
+        return False
     return total > 0 and done >= total
 
 

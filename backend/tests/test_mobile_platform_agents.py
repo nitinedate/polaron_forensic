@@ -168,6 +168,28 @@ def test_iosagent_starts_extract_not_inventory_when_zero_files():
     assert votes["iosagent"]["dispatch_agent"] == "extract_agent"
 
 
+def test_evidence_platform_owns_job_when_type_disagrees():
+    """An iPhone package must not stay on the Android supervisor.
+
+    Otherwise Android resumes extract every minute, the task dies on the
+    platform check before any heartbeat, and the UI loops on "no heartbeat".
+    """
+    row = {
+        "type": "android_mobile",
+        "disk_source": {
+            "mobile_os": "ios",
+            "owner_agent": "iosagent",
+            "evidence_platform": "iOS",
+            "axiom_platform": "iOS",
+        },
+    }
+    assert mobile_os_family_from_row(row) == "ios"
+    from app.services.mobile_forensic.extraction import canonical_type_for_platform
+
+    assert canonical_type_for_platform("ios") == "ios_mobile"
+    assert canonical_type_for_platform("android") == "android_mobile"
+
+
 def test_only_the_owning_product_runs_the_job():
     from unittest.mock import patch
 

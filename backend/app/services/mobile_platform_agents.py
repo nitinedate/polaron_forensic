@@ -183,12 +183,37 @@ def _classify_text(raw: str) -> MobilePlatform | None:
     return None
 
 
+def explicit_evidence_platform(disk_source: dict[str, Any] | None) -> MobilePlatform | None:
+    """Platform stamped on the evidence record.
+
+    ``mobile_os`` of ``other`` is not a platform. A conflicting job type must
+    not erase this: the supervisor uses it to decide which product may run.
+    """
+    ds = disk_source if isinstance(disk_source, dict) else {}
+    mobile_os = normalize_mobile_os(str(ds.get("mobile_os") or ""))
+    if mobile_os not in {"ios", "android"}:
+        mobile_os = None
+    return detect_mobile_platform(
+        ds.get("owner_agent"),
+        mobile_os,
+        ds.get("axiom_platform"),
+        ds.get("evidence_platform"),
+        ds.get("os_family"),
+    )
+
+
 def mobile_os_family_from_job_row(row: dict[str, Any] | None) -> MobilePlatform | None:
     from app.forensic_common.job_types import _as_dict
 
     if not row:
         return None
     ds = _as_dict(row.get("disk_source"))
+    # Evidence owner wins over jobs.type. An android_mobile row whose package
+    # was identified as iOS must be supervised by iOS, or Android will resume
+    # a task that dies before it can heartbeat.
+    explicit = explicit_evidence_platform(ds)
+    if explicit:
+        return explicit
     family = detect_mobile_platform(
         ds.get("owner_agent"),
         ds.get("mobile_os"),

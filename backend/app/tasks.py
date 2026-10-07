@@ -2291,6 +2291,33 @@ def build_extracted_disk_task(self, schema_name: str, job_id: str) -> dict:
         raise
 
 
+def _record_mobile_extract_boundary(schema_name: str, job_id: str, exc: BaseException) -> None:
+    """Persist a permanent platform refusal so progressAgent does not resume it as a stall."""
+    message = str(exc)[:500]
+    try:
+        from app.db.session import firm_session
+        from app.db.sql_helpers import execute
+        from app.services.disk_build_log import write_disk_log
+
+        with firm_session(schema_name) as db:
+            write_disk_log(
+                db,
+                job_id,
+                f"Extraction refused — {message}",
+                stage="extract",
+                level="error",
+            )
+            execute(
+                db,
+                """UPDATE jobs SET status='failed', error=:err, celery_task_id=NULL, updated_at=NOW()
+                   WHERE id=:id AND status IN ('processing', 'building_disk', 'extracting')""",
+                {"err": message, "id": job_id},
+            )
+            db.commit()
+    except Exception:
+        log.exception("Could not persist mobile extract boundary for job %s", job_id)
+
+
 @celery.task(bind=True, name="app.tasks.build_extracted_mobile_task")
 def build_extracted_mobile_task(self, schema_name: str, job_id: str) -> dict:
     """Mobile-only extraction task; never enters the Disk orchestration backend."""
@@ -2300,6 +2327,22 @@ def build_extracted_mobile_task(self, schema_name: str, job_id: str) -> dict:
     try:
         return build_extracted_mobile_sync(schema_name, job_id)
     except Exception as exc:
+        from app.services.mobile_forensic.extraction import (
+            MobileExtractionBoundaryError,
+            MobileExtractionHandoff,
+        )
+
+        if isinstance(exc, MobileExtractionHandoff):
+            log.info(
+                "Mobile extract handed off job=%s to %s (%s)",
+                job_id,
+                exc.platform,
+                exc.job_type,
+            )
+            return {"status": "handed_off", "platform": exc.platform, "job_type": exc.job_type}
+        if isinstance(exc, MobileExtractionBoundaryError):
+            _record_mobile_extract_boundary(schema_name, job_id, exc)
+            return {"status": "failed", "error": str(exc)[:500]}
         from app.services.job_locks import CpuHeavySlotTimeout
 
         if isinstance(exc, CpuHeavySlotTimeout):
