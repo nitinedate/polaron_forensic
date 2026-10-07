@@ -221,7 +221,7 @@ class Settings(BaseSettings):
     # When true, laptop GPU clamp will not lower user .env thermal ceilings.
     gpu_thermal_honor_env: bool = Field(default=True, validation_alias="GPU_THERMAL_HONOR_ENV")
     ocr_enabled: bool = Field(default=True, validation_alias="OCR_ENABLED")
-    ocr_engine: str = Field(default="glm-ocr", validation_alias="OCR_ENGINE")
+    ocr_engine: str = Field(default="easyocr", validation_alias="OCR_ENGINE")
     ocr_model: str = Field(default="zai-org/GLM-OCR", validation_alias="OCR_MODEL")
     ocr_device: str = Field(default="auto", validation_alias="OCR_DEVICE")
     # Exclusive OCR slot may use more VRAM than RAG's tight laptop cap.

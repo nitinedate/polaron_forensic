@@ -129,3 +129,22 @@ def test_owned_lease_cleanup_keeps_other_pid_and_replaced_tokens(monkeypatch):
     values['owned']={**owned,'token':'replacement-token'}
     for release,client,key,token in tokens:release(client,key,token)
     assert removed==[] and values['other']['token']=='other-token'
+
+
+def test_closed_database_connection_is_retryable():
+    decision, _reason = progress.classify_stage(
+        {},
+        stage(status="failed", error="(psycopg2.InterfaceError) connection already closed", recovery_dispatches=0),
+        now=NOW,
+    )
+    assert decision == "recover"
+
+
+def test_stage_process_keeps_the_worker_idle_timeout(monkeypatch):
+    from app.db.session import _idle_in_transaction_timeout
+
+    monkeypatch.setattr(sys, "argv", ["python", "-m", "app.services.forensic_stage_worker", "firm", "job", "parse"])
+    monkeypatch.setenv("IDLE_IN_TRANSACTION_SESSION_TIMEOUT", "0")
+    monkeypatch.delenv("CELERY_LOADER", raising=False)
+    monkeypatch.setenv("AETHERIS_STAGE_OWNER_PID", "4242")
+    assert _idle_in_transaction_timeout() == "0"

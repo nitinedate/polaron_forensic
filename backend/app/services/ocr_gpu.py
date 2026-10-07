@@ -1,4 +1,4 @@
-"""GLM-OCR for document images and scanned PDFs — GPU-accelerated with thermal guards."""
+"""GPU text detection for scans, screens, and video frames — thermal guards included."""
 
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ log = logging.getLogger("ocr_gpu")
 _glm_model = None
 _glm_processor = None
 _glm_device: str | None = None
+_fast_reader = None
+_fast_reader_failed = False
 _glm_lock = threading.Lock()
 _fitz_lock = threading.Lock()
 _glm_unavailable = False
@@ -100,18 +102,19 @@ def _prepare_cuda_for_ocr_load() -> None:
 
 
 def unload_glm_ocr() -> bool:
-    """Free GLM-OCR VRAM so RAG embeddings can load without CUDA OOM.
+    """Free the OCR reader so another GPU job can use the card.
 
-    OCR and RAG share the rag-index worker process; leaving the model resident
-    after OCR drain exhausts the per-process CUDA memory fraction.
+    The name stays because RAG, thermal shutdown, and the OCR slot already
+    call it when this process must drop its CUDA weights.
     """
-    global _glm_model, _glm_processor, _glm_device
+    global _glm_model, _glm_processor, _glm_device, _fast_reader
     with _glm_lock:
-        if _glm_model is None and _glm_processor is None:
+        if _glm_model is None and _glm_processor is None and _fast_reader is None:
             return False
         _glm_model = None
         _glm_processor = None
         _glm_device = None
+        _fast_reader = None
     try:
         import gc
 
@@ -121,10 +124,10 @@ def unload_glm_ocr() -> bool:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
-        log.info("Unloaded GLM-OCR from GPU memory")
+        log.info("Unloaded GPU OCR from memory")
         return True
     except Exception as exc:
-        log.debug("GLM-OCR unload cleanup: %s", exc)
+        log.debug("GPU OCR unload cleanup: %s", exc)
         return True
 
 IMAGE_EXT = frozenset({".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".gif", ".webp", ".heic"})
@@ -284,10 +287,11 @@ def is_photo_like_path(path: str) -> bool:
 
 
 def forensic_photos_allowed() -> bool:
-    """Images and videos are OCR evidence unless documents-only mode is on.
+    """Images and videos may be prepared for OCR unless documents-only mode is on.
 
-    Clear digital documents never use the GPU; that decision is made from the
-    file's own text. Documents-only mode still limits pictures to document folders.
+    Clear photographs and clear video frames are skipped from the pixels.
+    Scans, screens, and other text-like pictures still go to the GPU.
+    Documents-only mode still limits pictures to document folders.
     """
     return not bool(getattr(get_settings(), "ocr_documents_only", True))
 
@@ -515,7 +519,7 @@ def _get_glm_ocr():
 def _glm_micro_batch_size() -> int:
     """How many page images share one GLM forward pass. Same model and token cap."""
     try:
-        raw = int(os.environ.get("OCR_GLM_MICRO_BATCH") or 4)
+        raw = int(os.environ.get("OCR_GLM_MICRO_BATCH") or 8)
     except (TypeError, ValueError):
         raw = 4
     return max(1, min(raw, 8))
@@ -550,66 +554,149 @@ def _glm_generate(model, inputs, *, max_tokens: int, infer_sec: int, batch_n: in
     return box["output"]
 
 
-def _glm_ocr_images(images: list, *, prompt: str) -> list[tuple[str, float]]:
-    """OCR several pages in one CUDA forward pass. Falls back to one page at a time."""
+def _fast_ocr_model_dir() -> str:
+    configured = os.environ.get("EASYOCR_MODULE_PATH")
+    if configured:
+        return configured
+    home = os.environ.get("HF_HOME") or "/root/.cache/huggingface"
+    return os.path.join(home, "easyocr")
+
+
+def _fast_ocr_languages() -> list[str]:
+    raw = os.environ.get("OCR_LANGS") or "en"
+    langs = [part.strip() for part in raw.split(",") if part.strip()]
+    return langs or ["en"]
+
+
+def _get_fast_ocr():
+    """Detection plus recognition on CUDA. This is ordinary OCR, not a language model."""
+    global _fast_reader, _fast_reader_failed
+    if _fast_reader is not None:
+        return _fast_reader
+    if _fast_reader_failed:
+        return None
+    with _glm_lock:
+        if _fast_reader is not None:
+            return _fast_reader
+        if _fast_reader_failed:
+            return None
+        try:
+            import easyocr
+
+            _prepare_cuda_for_ocr_load()
+            gpu = _cuda_usable()
+            if not gpu:
+                raise RuntimeError("GPU OCR requires CUDA")
+            model_dir = _fast_ocr_model_dir()
+            os.makedirs(model_dir, exist_ok=True)
+            _fast_reader = easyocr.Reader(
+                _fast_ocr_languages(),
+                gpu=True,
+                model_storage_directory=model_dir,
+                download_enabled=True,
+                quantize=False,
+                verbose=False,
+            )
+            from app.services.gpu_thermal import gpu_log_prefix
+
+            log.info("%s GPU text detection loaded (easyocr %s)", gpu_log_prefix(), ",".join(_fast_ocr_languages()))
+            return _fast_reader
+        except ImportError as exc:
+            _fast_reader_failed = True
+            log.warning("GPU text detection unavailable: %s", exc)
+            return None
+        except Exception as exc:
+            log.warning("GPU text detection could not load: %s", exc)
+            return None
+
+
+def _image_array(img):
+    import numpy as np
+
+    if hasattr(img, "convert"):
+        img = img.convert("RGB")
+        return np.asarray(img)
+    return np.asarray(img)
+
+
+def _text_from_detections(rows) -> tuple[str, float]:
+    """Join detected words in reading order. Confidence is the detector's own score."""
+    kept: list[tuple[float, float, str, float]] = []
+    for row in rows or []:
+        if not row or len(row) < 3:
+            continue
+        box, text, conf = row[0], str(row[1] or "").strip(), float(row[2] or 0.0)
+        if not text:
+            continue
+        xs: list[float] = []
+        ys: list[float] = []
+        for point in box or []:
+            if isinstance(point, (list, tuple)) and len(point) >= 2:
+                xs.append(float(point[0]))
+                ys.append(float(point[1]))
+        kept.append((min(ys) if ys else 0.0, min(xs) if xs else 0.0, text, conf))
+    if not kept:
+        return "", 0.0
+    kept.sort()
+    return "\n".join(item[2] for item in kept), sum(item[3] for item in kept) / len(kept)
+
+
+def _read_with_timeout(fn, seconds: float):
+    box: dict = {}
+
+    def _go() -> None:
+        try:
+            box["value"] = fn()
+        except Exception as exc:
+            box["error"] = exc
+
+    worker = threading.Thread(target=_go, name="gpu-ocr", daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        raise GlmOcrTimeout(f"infer exceeded {seconds:.0f}s")
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
+
+
+def _fast_ocr_images(images: list) -> list[tuple[str, float]]:
+    """Find text on each picture and read it. One loaded detector serves the batch."""
     if not images:
         return []
-    if len(images) == 1:
-        return [_glm_ocr_image(images[0], prompt=prompt)]
-    model, processor, device = _get_glm_ocr()
-    if model is None or processor is None:
+    reader = _get_fast_ocr()
+    if reader is None:
         return [("", 0.0) for _ in images]
     from app.services.gpu_thermal import thermal_guard_before_batch
 
-    thermal_guard_before_batch(reason="glm_ocr")
-    try:
-        import torch
+    thermal_guard_before_batch(reason="gpu_ocr")
+    settings = get_settings()
+    infer_sec = int(getattr(settings, "ocr_max_infer_sec", 30) or 30)
+    infer_sec = max(8, min(infer_sec, 45))
+    arrays = [_image_array(img) for img in images]
 
-        conversations = [
-            [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": img},
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ]
-            for img in images
-        ]
-        inputs = processor.apply_chat_template(
-            conversations,
-            tokenize=True,
-            add_generation_prompt=True,
-            return_dict=True,
-            return_tensors="pt",
-            padding=True,
-        )
-        target = model.device if hasattr(model, "device") else device
-        inputs = {k: v.to(target) if hasattr(v, "to") else v for k, v in inputs.items()}
-        settings = get_settings()
-        max_tokens = int(getattr(settings, "ocr_max_new_tokens", 512) or 512)
-        max_tokens = max(128, min(max_tokens, 1024))
-        infer_sec = int(getattr(settings, "ocr_max_infer_sec", 90) or 90)
-        infer_sec = max(20, min(infer_sec, 180))
-        output = _glm_generate(
-            model, inputs, max_tokens=max_tokens, infer_sec=infer_sec, batch_n=len(images)
-        )
-        decoded: list[tuple[str, float]] = []
-        rows = output if hasattr(output, "__len__") else [output]
-        if len(rows) < len(images):
-            raise RuntimeError(f"GLM batch returned {len(rows)} rows for {len(images)} images")
-        for row in rows[: len(images)]:
-            decoded.append(_decode_glm_output(processor, row, prompt))
-        return decoded
+    def _detect() -> list:
+        if len(arrays) > 1 and hasattr(reader, "readtext_batched"):
+            return list(reader.readtext_batched(arrays))
+        return [reader.readtext(arr, detail=1, paragraph=False) for arr in arrays]
+
+    try:
+        detected = _read_with_timeout(_detect, infer_sec * max(len(arrays), 1))
+        if not isinstance(detected, list) or len(detected) < len(arrays):
+            raise RuntimeError("GPU OCR returned fewer images than it was given")
+        return [_text_from_detections(rows) for rows in detected[: len(arrays)]]
     except GlmOcrTimeout:
         raise
     except Exception as exc:
-        log.warning("GLM-OCR batch of %s failed (%s) — running pages one at a time", len(images), exc)
+        log.warning("GPU OCR batch of %s failed (%s) — reading one image at a time", len(images), exc)
         out: list[tuple[str, float]] = []
-        for img in images:
+        for arr in arrays:
             try:
-                out.append(_glm_ocr_image(img, prompt=prompt))
+                rows = _read_with_timeout(
+                    lambda arr=arr: reader.readtext(arr, detail=1, paragraph=False),
+                    infer_sec,
+                )
+                out.append(_text_from_detections(rows))
             except GlmOcrTimeout:
                 raise
             except Exception:
@@ -628,55 +715,15 @@ def _glm_ocr_images(images: list, *, prompt: str) -> list[tuple[str, float]]:
             pass
 
 
+def _glm_ocr_images(images: list, *, prompt: str) -> list[tuple[str, float]]:
+    """OCR several pictures. ``prompt`` is unused: detection reads the text itself."""
+    del prompt
+    return _fast_ocr_images(images)
+
+
 def _glm_ocr_image(img, *, prompt: str) -> tuple[str, float]:
-    model, processor, device = _get_glm_ocr()
-    if model is None or processor is None:
-        return "", 0.0
-    from app.services.gpu_thermal import thermal_guard_before_batch
-
-    thermal_guard_before_batch(reason="glm_ocr")
-    try:
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": img},
-                    {"type": "text", "text": prompt},
-                ],
-            }
-        ]
-        inputs = processor.apply_chat_template(
-            messages,
-            tokenize=True,
-            add_generation_prompt=True,
-            return_dict=True,
-            return_tensors="pt",
-        )
-        target = model.device if hasattr(model, "device") else device
-        inputs = {k: v.to(target) if hasattr(v, "to") else v for k, v in inputs.items()}
-        settings = get_settings()
-        max_tokens = int(getattr(settings, "ocr_max_new_tokens", 512) or 512)
-        max_tokens = max(128, min(max_tokens, 1024))
-        infer_sec = int(getattr(settings, "ocr_max_infer_sec", 90) or 90)
-        infer_sec = max(20, min(infer_sec, 180))
-        output = _glm_generate(model, inputs, max_tokens=max_tokens, infer_sec=infer_sec, batch_n=1)
-        return _decode_glm_output(processor, output[0], prompt)
-    except GlmOcrTimeout:
-        raise
-    except Exception as exc:
-        log.warning("GLM-OCR inference failed: %s", exc)
-        return "", 0.0
-    finally:
-        try:
-            from app.services.gpu_thermal import should_empty_cuda_cache
-
-            if should_empty_cuda_cache(batch_num=8):
-                import torch
-
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-        except Exception:
-            pass
+    rows = _glm_ocr_images([img], prompt=prompt)
+    return rows[0] if rows else ("", 0.0)
 
 
 def _ocr_image_bytes(data: bytes, *, path: str) -> tuple[str, float]:
@@ -808,7 +855,7 @@ def _prepare_office_ocr(data: bytes, *, path: str, full: bool = False) -> dict:
         "path": path,
         "text": "",
         "conf": 0.0,
-        "engine": "glm-ocr",
+        "engine": "easyocr",
         "segments": segments,
     }
 
@@ -855,12 +902,90 @@ def _digital_text_usable(text: str | None) -> bool:
     return sum(ch.isalnum() for ch in t) >= 8
 
 
-def _raster_needs_actual_ocr(img) -> bool:
-    """True when a picture or scan can hold readable evidence.
+def _ink_run_stats(img) -> tuple[float, float, float, float]:
+    """Horizontal and vertical ink-run density and mean run length.
 
-    Blank and tiny images are skipped. A color photograph is still examined:
-    signs, screens, and photographed pages are evidence. Clear digital
-    documents never reach here.
+    Printed text and scan lines have repeated edges with strokes several
+    pixels wide. A clear photograph is either smooth or speckled, so it does
+    not match both the density and the run length.
+    """
+    gray = img.convert("L")
+    small = gray.copy()
+    small.thumbnail((240, 240))
+    width, height = small.size
+    pixels = list(small.getdata())
+
+    def stats(lines: list[list[int]]) -> tuple[float, float]:
+        runs: list[int] = []
+        transitions = 0
+        samples = 0
+        for line in lines:
+            if len(line) < 2:
+                continue
+            run = 1
+            dark = line[0] < 140
+            for value in line[1:]:
+                current = value < 140
+                samples += 1
+                if current == dark:
+                    run += 1
+                else:
+                    transitions += 1
+                    runs.append(run)
+                    run = 1
+                    dark = current
+            runs.append(run)
+        if not samples or not runs:
+            return 0.0, 0.0
+        return transitions / samples, sum(runs) / len(runs)
+
+    rows = [pixels[y * width : (y + 1) * width] for y in range(0, height, 2)]
+    cols = [
+        [pixels[y * width + x] for y in range(height)] for x in range(0, width, 2)
+    ]
+    horizontal_density, horizontal_run = stats(rows)
+    vertical_density, vertical_run = stats(cols)
+    return horizontal_density, horizontal_run, vertical_density, vertical_run
+
+
+def _raster_has_text_structure(img) -> bool:
+    """True for scans, screenshots, and photographed pages — not a clear photo."""
+    try:
+        horizontal_density, horizontal_run, vertical_density, vertical_run = _ink_run_stats(img)
+    except Exception:
+        return False
+    horizontal = 0.035 <= horizontal_density <= 0.45 and horizontal_run >= 3
+    vertical = 0.03 <= vertical_density <= 0.50 and vertical_run >= 3
+    return horizontal or vertical
+
+
+def raster_is_hard_to_view(img) -> bool:
+    """True when the picture itself is too dark, washed out, or soft to examine."""
+    try:
+        gray = img.convert("L")
+        small = gray.copy()
+        small.thumbnail((120, 120))
+        hist = small.histogram()
+        count = float(sum(hist) or 1)
+        mean = sum(index * value for index, value in enumerate(hist)) / count
+        if mean < 36 or mean > 225:
+            return True
+        width, height = small.size
+        tiny = small.resize((max(1, width // 8), max(1, height // 8)))
+        restored = tiny.resize((width, height))
+        sharp = list(small.getdata())
+        soft = list(restored.getdata())
+        energy = sum((left - right) ** 2 for left, right in zip(sharp, soft)) / float(len(sharp) or 1)
+        return energy < 35
+    except Exception:
+        return False
+
+
+def _raster_needs_actual_ocr(img) -> bool:
+    """True only when the picture looks like text that is not already extracted.
+
+    Blank, tiny, and clear photographs are skipped. A scan or a screen of
+    writing still goes to OCR. Clear digital documents never reach here.
     """
     try:
         gray = img.convert("L")
@@ -876,9 +1001,9 @@ def _raster_needs_actual_ocr(img) -> bool:
         pixels = float(sum(hist) or 1)
         if max(hist) / pixels > 0.92:
             return False
-        return True
+        return _raster_has_text_structure(img)
     except Exception:
-        return True
+        return False
 
 
 def _sample_video_ocr_frames(data: bytes, *, limit: int = 4) -> list:
@@ -991,7 +1116,7 @@ def cpu_prepare_ocr_item(
                 "path": path,
                 "text": "",
                 "conf": 0.0,
-                "engine": "glm-ocr",
+                "engine": "easyocr",
                 "segments": out,
             }
         if _digital_text_usable(native):
@@ -1025,7 +1150,7 @@ def cpu_prepare_ocr_item(
             "path": path,
             "text": "",
             "conf": 0.0,
-            "engine": "glm-ocr",
+            "engine": "easyocr",
             "segments": segments,
         }
     if any(lower.endswith(ext) for ext in IMAGE_EXT):
@@ -1045,7 +1170,7 @@ def cpu_prepare_ocr_item(
             "path": path,
             "text": "",
             "conf": 0.0,
-            "engine": "glm-ocr",
+            "engine": "easyocr",
             "segments": [
                 {"type": "image", "image": prepared, "prompt": _ocr_prompt_for_path(path)}
             ],
@@ -1134,7 +1259,7 @@ def _gpu_ocr_prepared(prep: dict) -> tuple[str, float, str]:
             decoded = _glm_ocr_images([seg.get("image") for seg in chunk], prompt=prompt)
         except GlmOcrTimeout:
             timed_out = True
-            log.warning("GLM-OCR abandoned remaining pages for %s after infer timeout", prep.get("path"))
+            log.warning("GPU OCR abandoned remaining pages for %s after infer timeout", prep.get("path"))
             break
         for text, conf in decoded:
             if text:
@@ -1142,7 +1267,7 @@ def _gpu_ocr_prepared(prep: dict) -> tuple[str, float, str]:
                 confs.append(conf)
     if not texts:
         return "", 0.0, "timeout" if timed_out else "stub"
-    return "\n\n".join(texts), (sum(confs) / len(confs) if confs else 0.0), "glm-ocr"
+    return "\n\n".join(texts), (sum(confs) / len(confs) if confs else 0.0), "easyocr"
 
 
 def _extract_pdf_text_layer(data: bytes, *, full: bool = False) -> tuple[str, float]:
@@ -1283,7 +1408,7 @@ def _ocr_cpu_process_one(payload: dict) -> dict:
     return {
         "row": row,
         "status": "needs_gpu",
-        "engine": "glm-ocr",
+        "engine": "easyocr",
         "text": "",
         "conf": 0.0,
     }
@@ -1301,15 +1426,15 @@ def ocr_bytes(
     if prep.get("status") == "skip":
         engine = str(prep.get("engine") or "na")
         if engine == "stub":
-            return f"[PDF {len(data)} bytes — no text layer, GLM-OCR unavailable]", 0.2, "stub"
+            return f"[PDF {len(data)} bytes — no text layer, GPU OCR unavailable]", 0.2, "stub"
         return "", 0.0, engine
     text, conf, engine = _gpu_ocr_prepared(prep)
     if text:
         return text, conf, engine
     if str(path).lower().endswith(".pdf"):
-        return f"[PDF {len(data)} bytes — no text layer, GLM-OCR unavailable]", 0.2, "stub"
+        return f"[PDF {len(data)} bytes — no text layer, GPU OCR unavailable]", 0.2, "stub"
     if any(str(path).lower().endswith(ext) for ext in IMAGE_EXT):
-        return f"[Image {path} — GLM-OCR unavailable, {len(data)} bytes]", 0.0, "stub"
+        return f"[Image {path} — GPU OCR unavailable, {len(data)} bytes]", 0.0, "stub"
     return "", 0.0, "na"
 
 
@@ -1317,8 +1442,7 @@ def _ocr_engine_available() -> bool:
     _, gpu = _resolve_ocr_device()
     if not gpu:
         return False
-    model, processor, _ = _get_glm_ocr()
-    return model is not None and processor is not None
+    return _get_fast_ocr() is not None
 
 
 def skip_ocr_noise_pending(db, job_id: str) -> int:
@@ -1336,22 +1460,15 @@ def skip_ocr_noise_pending(db, job_id: str) -> int:
     except Exception:
         pass
 
-    demoted = execute(
-        db,
-        f"""UPDATE job_artifacts SET ocr_status='na', updated_at=NOW()
-            WHERE job_id=:jid AND ocr_status='pending'
-              AND NOT ({OCR_ELIGIBLE_EXT_SQL})""",
-        {"jid": job_id},
-    )
-    skipped = int(getattr(demoted, "rowcount", 0) or 0)
     result = execute(
         db,
         f"""UPDATE job_artifacts SET ocr_status='skipped', updated_at=NOW()
             WHERE job_id=:jid AND ocr_status='pending'
+              AND ({OCR_ELIGIBLE_EXT_SQL})
               AND ({OCR_NOISE_SQL})""",
         {"jid": job_id},
     )
-    skipped += int(getattr(result, "rowcount", 0) or 0)
+    skipped = int(getattr(result, "rowcount", 0) or 0)
     if not forensic_photos_allowed():
         extra = execute(
             db,
@@ -1540,20 +1657,25 @@ def _ocr_pending_filter_sql(*, cpu_bucket: bool) -> str:
 
 
 def _ocr_pending_order_sql(*, glm_first: bool) -> str:
-    """GPU drain pulls images/scans first so GLM is not stuck behind digital PDFs."""
+    """Pictures that can hold text come first, smallest of those first.
+
+    The largest videos used to lead the queue. Each one was read from the
+    archive before any GPU work, so the GPU sat idle.
+    """
     if glm_first:
         return """
                ORDER BY
                  CASE
-                   WHEN lower(coalesce(extension, '')) <> '.pdf' THEN 0
-                   WHEN lower(file_path) LIKE '%scan%' THEN 1
-                   WHEN lower(file_path) LIKE '%/documents/%' THEN 2
-                   WHEN lower(file_path) LIKE '%/download%' THEN 3
-                   ELSE 4
+                   WHEN lower(coalesce(extension, '')) IN (
+                     '.mp4','.mkv','.mov','.avi','.m4v','.webm','.mpeg','.mpg','.3gp','.3gpp'
+                   ) THEN 3
+                   WHEN lower(coalesce(extension, '')) = '.pdf' THEN 2
+                   WHEN coalesce(size_bytes, 0) BETWEEN 20000 AND 2000000 THEN 0
+                   ELSE 1
                  END,
-                 size_bytes DESC NULLS LAST
+                 size_bytes ASC NULLS LAST
         """
-    return " ORDER BY size_bytes DESC NULLS LAST"
+    return " ORDER BY size_bytes ASC NULLS LAST"
 
 
 def this_is_glm_drain_task() -> bool:
@@ -1688,8 +1810,9 @@ def run_ocr_for_job(
     from app.services.forensic_serial_policy import current_stage
 
     if current_stage() == "ocr":
-        # Zero is the explicit all-pages sentinel, carried into CPU threads.
-        ocr_page_budget = 0
+        # A disk image has thousands of PDFs. Read the configured page cap.
+        # Clear text stays on CPU; only pages that still look like scans go to GPU.
+        ocr_page_budget = int(getattr(settings, "ocr_max_pages", 8) or 8)
 
     # Thermal-safe batch — live plan + in-process governor (never above .env ceiling).
     configured = max(int(batch_limit or getattr(settings, "ocr_batch_limit", 40) or 40), 1)
@@ -1702,7 +1825,35 @@ def run_ocr_for_job(
     limit = recommended_ocr_batch_limit(configured)
     limit = min(max(limit, 1), 80)
 
-    if paths:
+    # One archive, pictures only. Text detection runs as each picture is
+    # found, so the GPU is not waiting on the largest videos in the shard.
+    rows = []
+    if current_stage() == "ocr" and not paths and ocr_bucket is None:
+        rows = fetchall(
+            db,
+            f"""WITH picked AS (
+                 SELECT metadata->>'extracted_part_uri' AS uri
+                 FROM job_artifacts
+                 WHERE job_id=:jid AND ocr_status='pending' AND {OCR_ELIGIBLE_EXT_SQL}
+                   AND NOT ({OCR_NOISE_SQL})
+                   AND lower(coalesce(extension, '')) NOT IN (
+                     '.mp4','.mkv','.mov','.avi','.m4v','.webm','.mpeg','.mpg','.3gp','.3gpp'
+                   )
+                   AND coalesce(metadata->>'extracted_part_uri', '') <> ''
+                 GROUP BY 1
+                 ORDER BY count(*) DESC
+                 LIMIT 1
+               )
+               SELECT id, file_path, size_bytes, sha256 FROM job_artifacts
+               WHERE job_id=:jid AND ocr_status='pending' AND {OCR_ELIGIBLE_EXT_SQL}
+                 AND NOT ({OCR_NOISE_SQL})
+                 AND lower(coalesce(extension, '')) NOT IN (
+                   '.mp4','.mkv','.mov','.avi','.m4v','.webm','.mpeg','.mpg','.3gp','.3gpp'
+                 )
+                 AND metadata->>'extracted_part_uri' = (SELECT uri FROM picked)""",
+            {"jid": job_id},
+        )
+    if paths and not rows:
         rows = fetchall(
             db,
             f"""SELECT id, file_path, size_bytes, sha256 FROM job_artifacts
@@ -1712,14 +1863,15 @@ def run_ocr_for_job(
                LIMIT :lim""",
             {"jid": job_id, "paths": paths, "lim": limit},
         )
-    else:
+    elif not rows:
         cpu_bucket = ocr_bucket is not None
         bucket_sql = _ocr_bucket_sql(ocr_bucket, ocr_buckets)
         filt = _ocr_pending_filter_sql(cpu_bucket=cpu_bucket)
         rows = fetchall(
             db,
             f"""SELECT id, file_path, size_bytes, sha256 FROM job_artifacts
-               WHERE job_id=:jid AND ocr_status='pending' AND {OCR_ELIGIBLE_EXT_SQL}{bucket_sql}{filt}
+               WHERE job_id=:jid AND ocr_status='pending' AND {OCR_ELIGIBLE_EXT_SQL}
+                 AND NOT ({OCR_NOISE_SQL}){bucket_sql}{filt}
                {_ocr_pending_order_sql(glm_first=not cpu_bucket)}
                LIMIT :lim""",
             {"jid": job_id, "lim": limit},
@@ -1743,7 +1895,7 @@ def run_ocr_for_job(
         db,
         job_id,
         (
-            f"GPU OCR — {len(rows)} document(s); CPU prep {cpu_n} worker(s), GLM on CUDA"
+            f"GPU OCR — {len(rows)} document(s); CPU prep {cpu_n} worker(s), text detection on CUDA"
             if gpu
             else f"CPU OCR — {len(rows)} text-layer document(s) with {cpu_n} CPU worker(s)"
         ),
@@ -1861,92 +2013,265 @@ def run_ocr_for_job(
             )
         return None, 0.0, "reuse"
 
-    work_rows: list[dict] = []
-    for row in rows:
-        row_path = str(row.get("file_path") or "")
-        skip_photo = (not image_ev) and (not forensic_photos_allowed()) and is_photo_like_path(row_path)
-        if skip_photo or is_os_vendor_ocr_path(row_path):
-            execute(
-                db,
-                "UPDATE job_artifacts SET ocr_status='skipped', updated_at=NOW() WHERE id=:id",
-                {"id": row["id"]},
-            )
-            db.commit()
-            continue
-        text, conf, engine = _reuse_ocr(row)
-        if text:
-            _persist_ocr_ok(row, text, conf, engine)
-            db.commit()
-            done += 1
-            continue
-        db.commit()
-        work_rows.append(dict(row))
-
-    payloads: list[dict] = []
-    preload = getattr(read_file_fn, "preload", None)
-    if callable(preload) and work_rows:
-        try:
-            preload([str(r.get("file_path") or "") for r in work_rows])
-        except Exception as exc:
-            log.warning("OCR batch file read failed: %s", exc)
-    for r in work_rows:
-        path = str(r.get("file_path") or "")
-        try:
-            data = read_file_fn(r["file_path"])
-        except Exception:
-            data = None
-        payloads.append(
-            {
-                "row": {"id": r["id"], "file_path": path},
-                "data": data,
-                "path": path,
-                "max_pages": ocr_page_budget,
-                "allow_photos": image_ev or forensic_photos_allowed(),
-            }
-        )
-
-    inflight: dict = {}
-    payload_iter = iter(payloads)
-    needs_gpu_rows: list[dict] = []
-
-    def _fill(pool) -> None:
-        while len(inflight) < cpu_n:
-            try:
-                nxt = next(payload_iter)
-            except StopIteration:
-                return
-            inflight[pool.submit(_ocr_cpu_process_one, nxt)] = nxt
-
-    with open_ocr_cpu_pool(cpu_n) as pool:
-
-        _fill(pool)
-        while inflight:
-            finished, _ = wait(inflight, return_when=FIRST_COMPLETED)
-            for fut in finished:
-                payload = inflight.pop(fut, None)
+    def _gpu_chunk(chunk: list[dict]) -> None:
+        nonlocal done
+        prepared: list[tuple[dict, dict]] = []
+        for payload in chunk:
+            row = (payload.get("row") or {}) if isinstance(payload, dict) else {}
+            path = str(payload.get("path") or row.get("file_path") or "")
+            data = payload.get("data")
+            if data is None:
                 try:
-                    result = fut.result()
-                except Exception as exc:
-                    log.warning("CPU OCR worker failed: %s", exc)
+                    data = read_file_fn(path)
+                except Exception:
+                    data = None
+            prep = cpu_prepare_ocr_item(
+                data or b"",
+                path=path,
+                max_pages=ocr_page_budget,
+                allow_photos=image_ev or forensic_photos_allowed(),
+            )
+            prepared.append((payload, prep))
+        image_jobs: list[tuple[int, object, str]] = []
+        piece_lists: list[list[str]] = [[] for _ in prepared]
+        conf_lists: list[list[float]] = [[] for _ in prepared]
+        for prep_i, (_payload, prep) in enumerate(prepared):
+            if prep.get("status") == "cpu_done" and prep.get("text"):
+                piece_lists[prep_i].append(str(prep.get("text") or ""))
+                conf_lists[prep_i].append(float(prep.get("conf") or 0.9))
+                continue
+            for seg in prep.get("segments") or []:
+                if seg.get("type") == "text" and seg.get("text"):
+                    piece_lists[prep_i].append(str(seg["text"]))
+                    conf_lists[prep_i].append(0.90)
                     continue
-                row = result.get("row") or {}
-                if result.get("status") == "ok" and result.get("text"):
-                    log.info("OCR text-layer %s", row.get("file_path") or row.get("id"))
-                    _persist_ocr_ok(
-                        row,
-                        str(result.get("text") or ""),
-                        float(result.get("conf") or 0.0),
-                        str(result.get("engine") or "pypdf"),
-                    )
-                    db.commit()
-                    done += 1
+                img = seg.get("image")
+                if img is None:
                     continue
-                if result.get("status") == "needs_gpu":
-                    needs_gpu_rows.append(dict(payload or {}) if payload else {"row": row})
-                    continue
-                _mark_ocr_skip(row, engine=str(result.get("engine") or "na"))
+                image_jobs.append((prep_i, img, str(seg.get("prompt") or "Text Recognition:")))
+        grouped: dict[str, list[tuple[int, object]]] = {}
+        for prep_i, img, prompt in image_jobs:
+            grouped.setdefault(prompt, []).append((prep_i, img))
+        for prompt, jobs in grouped.items():
+            try:
+                decoded = _glm_ocr_images([img for _i, img in jobs], prompt=prompt)
+            except Exception as exc:
+                log.warning("GPU OCR batch failed: %s", exc)
+                decoded = [("", 0.0) for _ in jobs]
+            for (prep_i, _img), (text, conf) in zip(jobs, decoded):
+                if text:
+                    piece_lists[prep_i].append(text)
+                    conf_lists[prep_i].append(conf)
+        for (payload, prep), pieces, confs in zip(prepared, piece_lists, conf_lists):
+            row = (payload.get("row") or {}) if isinstance(payload, dict) else {}
+            if pieces:
+                text = "\n\n".join(pieces)
+                conf = sum(confs) / len(confs) if confs else 0.0
+                _persist_ocr_ok(
+                    row,
+                    text,
+                    conf,
+                    "easyocr" if prep.get("status") != "cpu_done" else str(prep.get("engine") or "pypdf"),
+                )
                 db.commit()
+                done += 1
+            elif prep.get("status") == "skip":
+                _mark_ocr_skip(row, engine=str(prep.get("engine") or "na"))
+                db.commit()
+            else:
+                _mark_ocr_skip(row, engine="ocr_empty")
+                db.commit()
+
+    iter_found = getattr(read_file_fn, "iter_found", None)
+    stream_archive = current_stage() == "ocr" and callable(iter_found)
+    work_rows: list[dict] = []
+    if stream_archive:
+        work_rows = [dict(row) for row in rows]
+    else:
+        for row in rows:
+            row_path = str(row.get("file_path") or "")
+            skip_photo = (not image_ev) and (not forensic_photos_allowed()) and is_photo_like_path(row_path)
+            if skip_photo or is_os_vendor_ocr_path(row_path):
+                execute(
+                    db,
+                    "UPDATE job_artifacts SET ocr_status='skipped', updated_at=NOW() WHERE id=:id",
+                    {"id": row["id"]},
+                )
+                db.commit()
+                continue
+            text, conf, engine = _reuse_ocr(row)
+            if text:
+                _persist_ocr_ok(row, text, conf, engine)
+                db.commit()
+                done += 1
+                continue
+            db.commit()
+            work_rows.append(dict(row))
+
+    needs_gpu_rows: list[dict] = []
+    streamed = False
+    if stream_archive and work_rows:
+        streamed = True
+        by_path = {
+            str(r.get("file_path") or "").replace("\\", "/"): r for r in work_rows
+        }
+        flush_at = 1
+        announced = False
+        allow_photos = image_ev or forensic_photos_allowed()
+
+        def _touch(label: str) -> None:
+            from app.services.forensic_serial_stages import report_progress
+            from app.services.progress_agent import note_operation
+
+            note_operation(db, job_id, "ocr", label, timeout_seconds=900, advanced=True)
+            total_row = fetchone(
+                db,
+                "SELECT total_items FROM pipeline_stage_runs WHERE job_id=:jid AND stage='ocr'",
+                {"jid": job_id},
+            )
+            total = int((total_row or {}).get("total_items") or 0)
+            pending_now = count_pending_ocr(db, job_id)
+            if total > 0:
+                report_progress(
+                    db,
+                    job_id,
+                    "ocr",
+                    total=total,
+                    completed=max(total - pending_now, 0),
+                    label=label,
+                )
+
+        def _flush_gpu() -> None:
+            nonlocal flush_at, announced
+            if not needs_gpu_rows or not gpu:
+                return
+            if not announced:
+                write_disk_log(
+                    db,
+                    job_id,
+                    f"OCR agent — GPU text detection on {len(needs_gpu_rows)} picture(s)",
+                    stage="ocr",
+                    metadata={"gpu": True, "device": device_label},
+                )
+                announced = True
+                db.commit()
+            chunk = list(needs_gpu_rows)
+            needs_gpu_rows.clear()
+            _gpu_chunk(chunk)
+            flush_at = _glm_micro_batch_size()
+            _touch(f"GPU text detection — {done:,} document(s)")
+
+        seen = 0
+        for norm, data in iter_found(list(by_path)):
+            row = by_path.pop(norm, None)
+            if row is None:
+                continue
+            if is_os_vendor_ocr_path(norm):
+                _mark_ocr_skip({"id": row["id"], "file_path": norm}, engine="os_vendor")
+                db.commit()
+                seen += 1
+                continue
+            payload = {
+                "row": {"id": row["id"], "file_path": norm},
+                "data": data,
+                "path": norm,
+                "max_pages": ocr_page_budget,
+                "allow_photos": allow_photos,
+            }
+            try:
+                result = _ocr_cpu_process_one(payload)
+            except Exception as exc:
+                log.warning("CPU OCR prepare failed: %s", exc)
+                continue
+            row_out = result.get("row") or payload["row"]
+            if result.get("status") == "ok" and result.get("text"):
+                _persist_ocr_ok(
+                    row_out,
+                    str(result.get("text") or ""),
+                    float(result.get("conf") or 0.0),
+                    str(result.get("engine") or "pypdf"),
+                )
+                db.commit()
+                done += 1
+            elif result.get("status") == "needs_gpu":
+                needs_gpu_rows.append(payload)
+            else:
+                _mark_ocr_skip(row_out, engine=str(result.get("engine") or "na"))
+                db.commit()
+            seen += 1
+            if len(needs_gpu_rows) >= flush_at:
+                _flush_gpu()
+            elif seen % 25 == 0:
+                _touch("Reading pictures for GPU text detection")
+        for leftover in by_path.values():
+            _mark_ocr_skip(leftover, engine="na")
+            db.commit()
+        _flush_gpu()
+
+    if not streamed:
+        payloads: list[dict] = []
+        preload = getattr(read_file_fn, "preload", None)
+        if callable(preload) and work_rows:
+            try:
+                preload([str(r.get("file_path") or "") for r in work_rows])
+            except Exception as exc:
+                log.warning("OCR batch file read failed: %s", exc)
+        for r in work_rows:
+            path = str(r.get("file_path") or "")
+            try:
+                data = read_file_fn(r["file_path"])
+            except Exception:
+                data = None
+            payloads.append(
+                {
+                    "row": {"id": r["id"], "file_path": path},
+                    "data": data,
+                    "path": path,
+                    "max_pages": ocr_page_budget,
+                    "allow_photos": image_ev or forensic_photos_allowed(),
+                }
+            )
+
+        inflight: dict = {}
+        payload_iter = iter(payloads)
+
+        def _fill(pool) -> None:
+            while len(inflight) < cpu_n:
+                try:
+                    nxt = next(payload_iter)
+                except StopIteration:
+                    return
+                inflight[pool.submit(_ocr_cpu_process_one, nxt)] = nxt
+
+        with open_ocr_cpu_pool(cpu_n) as pool:
             _fill(pool)
+            while inflight:
+                finished, _ = wait(inflight, return_when=FIRST_COMPLETED)
+                for fut in finished:
+                    payload = inflight.pop(fut, None)
+                    try:
+                        result = fut.result()
+                    except Exception as exc:
+                        log.warning("CPU OCR worker failed: %s", exc)
+                        continue
+                    row = result.get("row") or {}
+                    if result.get("status") == "ok" and result.get("text"):
+                        log.info("OCR text-layer %s", row.get("file_path") or row.get("id"))
+                        _persist_ocr_ok(
+                            row,
+                            str(result.get("text") or ""),
+                            float(result.get("conf") or 0.0),
+                            str(result.get("engine") or "pypdf"),
+                        )
+                        db.commit()
+                        done += 1
+                        continue
+                    if result.get("status") == "needs_gpu":
+                        needs_gpu_rows.append(dict(payload or {}) if payload else {"row": row})
+                        continue
+                    _mark_ocr_skip(row, engine=str(result.get("engine") or "na"))
+                    db.commit()
+                _fill(pool)
 
     if needs_gpu_rows and gpu:
         from app.services.job_locks import gpu_heavy_slot
@@ -1970,7 +2295,7 @@ def run_ocr_for_job(
                 db,
                 job_id,
                 (
-                    f"OCR agent — GLM-OCR {len(needs_gpu_rows)} scan(s)/image(s) on CUDA"
+                    f"OCR agent — GPU text detection on {len(needs_gpu_rows)} scan(s)/image(s)"
                 ),
                 stage="ocr",
                 metadata={
@@ -1983,7 +2308,17 @@ def run_ocr_for_job(
             write_ocr_live_progress(
                 db,
                 job_id,
-                label=f"GPU OCR — GLM on CUDA, {len(needs_gpu_rows)} scan(s)",
+                label=f"GPU OCR — text detection, {len(needs_gpu_rows)} scan(s)",
+            )
+            from app.services.progress_agent import note_operation
+
+            note_operation(
+                db,
+                job_id,
+                "ocr",
+                f"GPU text detection on {len(needs_gpu_rows)} images",
+                timeout_seconds=900,
+                advanced=True,
             )
             db.commit()
             glm_ran = True
@@ -1991,7 +2326,7 @@ def run_ocr_for_job(
             write_disk_log(
                 db,
                 job_id,
-                f"OCR agent — CUDA GLM micro-batch {micro} (same model, token cap, and page size)",
+                f"OCR agent — CUDA text detection, {micro} picture(s) at a time",
                 stage="ocr",
             )
             db.commit()
@@ -2038,7 +2373,7 @@ def run_ocr_for_job(
                     try:
                         decoded = _glm_ocr_images([img for _i, img in jobs], prompt=prompt)
                     except Exception as exc:
-                        log.warning("GLM micro-batch failed: %s", exc)
+                        log.warning("GPU OCR batch failed: %s", exc)
                         decoded = [("", 0.0) for _ in jobs]
                     for (prep_i, _img), (text, conf) in zip(jobs, decoded):
                         if text:
@@ -2050,14 +2385,14 @@ def run_ocr_for_job(
                     if pieces:
                         text = "\n\n".join(pieces)
                         conf = sum(confs) / len(confs) if confs else 0.0
-                        _persist_ocr_ok(row, text, conf, "glm-ocr" if prep.get("status") != "cpu_done" else str(prep.get("engine") or "pypdf"))
+                        _persist_ocr_ok(row, text, conf, "easyocr" if prep.get("status") != "cpu_done" else str(prep.get("engine") or "pypdf"))
                         db.commit()
                         done += 1
                     elif prep.get("status") == "skip":
                         _mark_ocr_skip(row, engine=str(prep.get("engine") or "na"))
                         db.commit()
                     else:
-                        _mark_ocr_skip(row, engine="glm_empty")
+                        _mark_ocr_skip(row, engine="ocr_empty")
                         db.commit()
                     write_ocr_live_progress(db, job_id)
                     db.commit()
@@ -2102,7 +2437,7 @@ def run_ocr_for_job(
     return {
         "status": "ok",
         "ocr_count": done,
-        "engine": "glm-ocr" if gpu else "cpu-ocr",
+        "engine": "easyocr" if gpu else "cpu-ocr",
         "gpu": gpu,
         "device": device_label,
         "pending_left": pending_left,

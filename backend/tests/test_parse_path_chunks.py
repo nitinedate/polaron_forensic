@@ -145,3 +145,67 @@ def test_parse_commits_once_per_batch_not_per_file(monkeypatch):
     )
     assert stats["parsed"] == 10
     assert len(commits) == 3
+
+
+def test_disk_priority_does_not_revisit_every_picture():
+    from types import SimpleNamespace
+
+    from app.services.forensic_priority_evidence import (
+        disk_priority_parsers,
+        disk_priority_web_document,
+    )
+
+    picture = SimpleNamespace(name="files_media_parser")
+    source = SimpleNamespace(name="communication_evidence")
+    logs = SimpleNamespace(name="system_network_parser")
+    browser = SimpleNamespace(name="browser_parser")
+    history = "Users/a/AppData/Local/Google/Chrome/User Data/Default/History"
+    assert disk_priority_parsers([picture, source, logs, browser], history) == [browser]
+    assert disk_priority_parsers([source], "Users/a/Mail/note.eml") == [source]
+    assert disk_priority_parsers(
+        [source],
+        "Program Files/Microsoft Office/root/Office16/FPEXT.MSG",
+    ) == []
+    assert disk_priority_parsers([source], "ProgramData/HP/Logs/service.log") == []
+    assert not disk_priority_web_document(
+        "new data/IITB/Bloomscope/build/static/media/logo.png"
+    )
+    assert disk_priority_web_document("Users/a/Documents/invoice.html")
+    assert disk_priority_web_document("Users/a/Desktop/link.url")
+    contacts = SimpleNamespace(name="contacts_parser")
+    assert disk_priority_parsers(
+        [contacts],
+        "Program Files/Adobe/Acrobat DC/WebResources/images/AddressBook2x.png",
+    ) == []
+    assert disk_priority_parsers(
+        [browser],
+        "Users/a/AppData/Local/Google/Chrome/User Data/Default/History",
+    ) == [browser]
+    assert disk_priority_parsers(
+        [browser],
+        "Users/a/AppData/Local/Google/Chrome/User Data/GPUPersistentCache/cache.db",
+    ) == []
+    assert disk_priority_parsers(
+        [browser],
+        "Users/a/AppData/Local/Google/Chrome/User Data/Snapshots/127.0/Default/History",
+    ) == []
+    from app.services.forensic_priority_evidence import disk_priority_database
+
+    assert not disk_priority_database(
+        "Program Files (x86)/Xiph.Org/Open Codecs/HISTORY"
+    )
+
+
+def test_priority_json_keeps_browser_titles_postgres_safe():
+    import json
+
+    from app.services.mobile_forensic.storage import _dumps
+
+    text = _dumps({"title": "a\x00b\ud800c"})
+    assert "\\u0000" not in text
+    assert json.loads(text)["title"] == "ab?c"
+    from app.services.artifact_parse import _parse_work_item
+
+    artifact = {"id": "1", "size_bytes": 0}
+    assert _parse_work_item((artifact, "Chrome/LOCK", b""), 0)["kind"] == "empty"
+    assert _parse_work_item((artifact, "Chrome/LOCK", None), 0)["kind"] == "no_data"

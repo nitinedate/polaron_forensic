@@ -23,7 +23,11 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, (bytes, bytearray, memoryview)):
         raw = bytes(value)
         return {"binary_length": len(raw), "hex_prefix": raw[:32].hex()}
-    if isinstance(value, (str, int, float, bool)) or value is None:
+    if isinstance(value, str):
+        # Postgres jsonb rejects NUL and lone surrogates ("unsupported Unicode
+        # escape sequence"), which show up in browser history titles.
+        return value.replace("\x00", "").encode("utf-8", "replace").decode("utf-8")
+    if isinstance(value, (int, float, bool)) or value is None:
         return value
     return str(value)
 

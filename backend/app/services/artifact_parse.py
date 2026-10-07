@@ -604,6 +604,34 @@ def bulk_skip_non_parser_pending(db, job_id: str) -> int:
     return skipped
 
 
+def skip_empty_pending_artifacts(db, job_id: str) -> int:
+    """Mark zero-byte files skipped.
+
+    An empty lock or log has nothing to parse. Treating it as a missing read
+    puts it back to pending, the serial loop sees no progress, and the stage
+    is failed after a few retries.
+    """
+    row = fetchone(
+        db,
+        """WITH updated AS (
+               UPDATE job_artifacts
+               SET parse_status='skipped', ocr_status='na',
+                   metadata=coalesce(metadata, '{}'::jsonb)
+                            || '{"skip_reason":"empty file"}'::jsonb,
+                   updated_at=NOW()
+               WHERE job_id=:jid AND parse_status IN ('pending','parsing')
+                 AND coalesce(size_bytes, 0) = 0
+               RETURNING 1
+           )
+           SELECT count(*)::int AS c FROM updated""",
+        {"jid": job_id},
+    )
+    skipped = int(row["c"]) if row else 0
+    if skipped:
+        db.commit()
+    return skipped
+
+
 def _parse_attempts(artifact: dict) -> int:
     meta = artifact.get("metadata")
     if isinstance(meta, str):
@@ -885,8 +913,10 @@ def _timeout_for_path(path: str, default_sec: int, *, size_bytes: int | None = N
 def _parse_work_item(item: tuple[dict, str, bytes | None], timeout_sec: int) -> dict[str, Any]:
     """CPU-bound parse step — safe to run in a thread pool (no DB)."""
     artifact, path, data = item
-    if not data:
+    if data is None:
         return {"artifact": artifact, "path": path, "kind": "no_data"}
+    if len(data) == 0:
+        return {"artifact": artifact, "path": path, "kind": "empty"}
     effective_timeout = _timeout_for_path(
         path, timeout_sec, size_bytes=len(data) if data else artifact.get("size_bytes"),
     )
@@ -939,7 +969,19 @@ def _process_parse_work_parallel(
         artifact = result["artifact"]
         path = result["path"]
         kind = result.get("kind")
-        if kind == "no_data":
+        if kind == "empty":
+            _exec_locked(
+                db,
+                """UPDATE job_artifacts
+                   SET parse_status='skipped', ocr_status='na',
+                       metadata=coalesce(metadata, '{}'::jsonb)
+                                || '{"skip_reason":"empty file"}'::jsonb,
+                       updated_at=NOW()
+                   WHERE id=:id""",
+                {"id": artifact["id"]},
+            )
+            stats["skipped"] += 1
+        elif kind == "no_data":
             if is_forensic_full_read_path(path) or is_critical_evtx_path(path):
                 _defer_or_skip_forensic(db, artifact, path, reason="no_data", defer_commit=True)
             else:

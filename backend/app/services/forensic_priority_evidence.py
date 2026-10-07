@@ -97,59 +97,276 @@ def persist_disk_records(db, job_id, file_id, artifacts):
     return len(values)
 
 
+def _priority_inventory(db, job_id):
+    """Page the artifact list and commit each page.
+
+    One query for every file, including its metadata, left the transaction
+    idle while Python built the list. The stage process is not Celery, so
+    Postgres closed that connection and the parse stage died at the last step.
+    """
+    from app.services.mobile_forensic.discovery import _ext, _mime_hint
+    from app.services.mobile_forensic.models import InventoryItem
+    from app.services.progress_agent import note_operation
+
+    items: list = []
+    sources: dict = {}
+    last = ""
+    while True:
+        rows = fetchall(
+            db,
+            """SELECT id::text AS id, file_path, size_bytes, extension, sha256,
+                      coalesce(metadata->>'priority_parsed_v4','') AS priority_done
+               FROM job_artifacts
+               WHERE job_id=:jid AND file_path > :last
+               ORDER BY file_path
+               LIMIT 5000""",
+            {"jid": job_id, "last": last},
+        )
+        db.commit()
+        if not rows:
+            break
+        for row in rows:
+            path = str(row.get("file_path") or "").replace("\\", "/")
+            if not path:
+                continue
+            ext = (row.get("extension") or _ext(path) or "").lower()
+            if ext and not ext.startswith("."):
+                ext = f".{ext}"
+            done = str(row.get("priority_done") or "").lower() in {"true", "t", "1"}
+            items.append(
+                InventoryItem(
+                    path=path,
+                    size=int(row.get("size_bytes") or 0),
+                    extension=ext,
+                    mime_hint=_mime_hint(path),
+                    sha256=row.get("sha256"),
+                    status="discovered",
+                    meta={},
+                )
+            )
+            sources[path] = {"id": row["id"], "metadata": {"priority_parsed_v4": done} if done else {}}
+        last = str(rows[-1]["file_path"] or last)
+        note_operation(
+            db,
+            job_id,
+            "parse",
+            f"Priority evidence indexed {len(items):,} files",
+            timeout_seconds=900,
+        )
+    return items, sources
+
+
+def disk_priority_web_document(path: str) -> bool:
+    """User documents and shortcuts. Not every HTML file in source trees or caches.
+
+    Pictures and ordinary documents are already in the native parse count.
+    OCR and media review own those later. This pass is for text that is only
+    sitting inside a saved page or a browser shortcut.
+    """
+    low = str(path or "").replace("\\", "/").lower()
+    if not low.endswith((".url", ".webloc", ".html", ".htm")):
+        return False
+    return any(
+        seg in low
+        for seg in (
+            "/documents/",
+            "/desktop/",
+            "/downloads/",
+            "/favorites/",
+            "/mail/",
+            "/outlook/",
+        )
+    )
+
+
+_DISK_PRIORITY_KEEP = {
+    "browser_parser",
+    "whatsapp_parser",
+    "telegram_parser",
+    "signal_parser",
+    "messenger_parser",
+    "instagram_parser",
+    "snapchat_parser",
+    "discord_parser",
+    "viber_parser",
+    "wechat_parser",
+    "line_parser",
+    "tiktok_parser",
+    "linkedin_parser",
+    "contacts_parser",
+    "calendar_notes_parser",
+    "sms_calls_parser",
+}
+_MAIL_EXTENSIONS = (".eml", ".emlx", ".msg", ".mbox", ".mbx")
+_DB_SUFFIXES = (".db", ".sqlite", ".sqlite3", ".sqlitedb")
+_BROWSER_STORES = {
+    "history",
+    "cookies",
+    "bookmarks",
+    "login data",
+    "web data",
+    "favicons",
+    "top sites",
+}
+
+
+def disk_priority_mail(path: str) -> bool:
+    low = str(path or "").replace("\\", "/").lower()
+    if not low.endswith(_MAIL_EXTENSIONS):
+        return False
+    return any(
+        seg in low
+        for seg in (
+            "/documents/",
+            "/desktop/",
+            "/downloads/",
+            "/favorites/",
+            "/mail/",
+            "/outlook/",
+        )
+    )
+
+
+def _file_name(path: str) -> str:
+    return str(path or "").replace("\\", "/").lower().rsplit("/", 1)[-1]
+
+
+def disk_priority_browser_store(path: str) -> bool:
+    """Chrome/Firefox store names only. Not every SQLite file under a Chrome path.
+
+    Version snapshots repeat the live profile. The live History, Cookies, and
+    Web Data are the copies this pass reads.
+    """
+    low = str(path or "").replace("\\", "/").lower()
+    if "/snapshots/" in low:
+        return False
+    return _file_name(path) in _BROWSER_STORES or _file_name(path) in {
+        "history.db",
+        "history.sqlite",
+        "history.plist",
+        "bookmarks.db",
+        "bookmarks.plist",
+        "places.sqlite",
+        "cookies.sqlite",
+        "browser.db",
+        "browser2.db",
+        "browserstate.db",
+        "searchhistory.db",
+        "downloads.db",
+    }
+
+
+def disk_priority_database(path: str) -> bool:
+    name = _file_name(path)
+    if name.endswith(_DB_SUFFIXES):
+        return True
+    if name not in _BROWSER_STORES:
+        return False
+    low = str(path or "").replace("\\", "/").lower()
+    return any(
+        seg in low
+        for seg in (
+            "/chrome/",
+            "/edge/",
+            "/firefox/",
+            "/safari/",
+            "/opera/",
+            "/brave/",
+            "/user data/",
+            "/browser/",
+        )
+    )
+
+
+def disk_priority_parsers(parsers, path: str = ""):
+    """Keep browser, chat, and mail databases.
+
+    Parser name checks are not enough: a contacts parser also matches any
+    file whose name contains "addressbook", including pictures. Ordinary
+    Windows logs, shortcuts, and images stay in the native parse count.
+    """
+    mail = disk_priority_mail(path)
+    if not mail and not disk_priority_database(path):
+        return []
+    kept = []
+    for parser in parsers:
+        name = getattr(parser, "name", "")
+        if name == "browser_parser" and not disk_priority_browser_store(path):
+            continue
+        if name in _DISK_PRIORITY_KEEP or (name == "communication_evidence" and mail):
+            kept.append(parser)
+    return kept
+
+
 def run_disk_priority_evidence(db, job_id):
     from app.services.forensic_serial_mobile import _context, evidence_bundles
     from app.services.forensic_serial_pipeline import StageWaiting
     from app.services.job_control import pipeline_should_stop
-    from app.services.mobile_forensic.discovery import inventory_from_job_artifacts
     from app.services.mobile_forensic.parsers.browser import BrowserHistoryParser
     from app.services.mobile_forensic.parsers.messaging import WhatsAppParser
     from app.services.mobile_forensic.plugins import get_plugin_registry
     from app.services.mobile_forensic.recovery.analyzers import SqliteHistoryAnalyzer
 
     ensure_priority_schema(db)
-    items = inventory_from_job_artifacts(db, job_id)
+    from app.services.progress_agent import note_operation
+
+    note_operation(
+        db,
+        job_id,
+        "parse",
+        "Priority evidence from parsed sources",
+        timeout_seconds=900,
+    )
+    items, sources = _priority_inventory(db, job_id)
     ds = (
         fetchone(db, "SELECT disk_source FROM jobs WHERE id=:jid", {"jid": job_id})[
             "disk_source"
         ]
         or {}
     )
+    db.commit()
     if isinstance(ds, str):
         ds = json.loads(ds)
     context = _context(db, job_id, ds, evidence_paths=(it.path for it in items))
-    sources = {
-        r["file_path"].replace("\\", "/"): r
-        for r in fetchall(
-            db,
-            "SELECT id,file_path,metadata FROM job_artifacts WHERE job_id=:jid",
-            {"jid": job_id},
-        )
-    }
     browser, whatsapp = (
         BrowserHistoryParser(),
         WhatsAppParser(),
     )
-    written = errors = processed = 0
+    written = errors = processed = scanned = 0
     for bundle in evidence_bundles(items):
         item = bundle[0]
+        scanned += 1
+        if scanned % 20000 == 0:
+            note_operation(
+                db,
+                job_id,
+                "parse",
+                f"Priority evidence scanned {scanned:,} files",
+                advanced=True,
+            )
         source = sources[item.path]
         if (source.get("metadata") or {}).get("priority_parsed_v4"):
             continue
-        low = item.path.lower()
-        parsers = get_plugin_registry().route(item, context)
-        web_text = low.endswith((".url", ".webloc", ".html", ".htm"))
-        storage = any(
-            x in low
-            for x in (
-                "indexeddb",
-                "local storage",
-                "session storage",
-                "webcachev01.dat",
-            )
-        )
-        if not parsers and not storage and not web_text:
+        if (
+            not disk_priority_database(item.path)
+            and not disk_priority_web_document(item.path)
+            and not disk_priority_mail(item.path)
+        ):
             continue
+        parsers = disk_priority_parsers(
+            get_plugin_registry().route(item, context), item.path
+        )
+        web_text = disk_priority_web_document(item.path)
+        if not parsers and not web_text:
+            continue
+        note_operation(
+            db,
+            job_id,
+            "parse",
+            "Priority source: " + item.path,
+            timeout_seconds=900,
+            advanced=True,
+        )
         if pipeline_should_stop(db, job_id):
             raise StageWaiting("Priority evidence parsing paused by user")
         context.extra["read_errors"].clear()
@@ -214,24 +431,18 @@ def run_disk_priority_evidence(db, job_id):
                         db.commit()
             if context.extra["read_errors"]:
                 raise ValueError("Acquired source/SQLite sidecar was unreadable")
-            if storage:
-                reason = "Web storage source preserved; native parser/OCR text is indexed separately. Encrypted WhatsApp Web messages require readable records and keys."
         except Exception as exc:
             reason = str(exc)
             errors += 1
         if reason:
             buffer.append(
                 NormalizedArtifact.create(
-                    artifact_type="web_storage_source"
-                    if storage
-                    else "priority_source_exception",
+                    artifact_type="priority_source_exception",
                     source_domain="browser"
-                    if storage or any(p.name == browser.name for p in parsers)
+                    if any(p.name == browser.name for p in parsers)
                     else "messaging_apps",
                     data={
-                        "artifact_family": "web_storage_sources"
-                        if storage
-                        else "priority_exceptions",
+                        "artifact_family": "priority_exceptions",
                         "path": item.path,
                         "note": reason,
                         "reference_only": True,
@@ -253,8 +464,7 @@ def run_disk_priority_evidence(db, job_id):
         db.commit()
         processed += 1
         context.clear_byte_cache()
-        from app.services.progress_agent import note_operation
-        note_operation(db, job_id, 'parse', 'Priority source parsed: '+item.path, advanced=True)
+        note_operation(db, job_id, "parse", "Priority source parsed: " + item.path, advanced=True)
     return {
         "sources_processed": processed,
         "records_written": written,

@@ -139,7 +139,9 @@ def test_cpu_bucket_does_not_claim_cuda_unavailable() -> None:
 
 def test_gpu_drain_orders_images_before_pdfs() -> None:
     order = ocr_gpu._ocr_pending_order_sql(glm_first=True)
-    assert "<> '.pdf'" in order
+    assert "= '.pdf' THEN 2" in order
+    assert "'.mp4'" in order
+    assert "size_bytes ASC" in order
     filt = ocr_gpu._ocr_pending_filter_sql(cpu_bucket=True)
     assert ".pdf" in filt
     assert ocr_gpu._ocr_pending_filter_sql(cpu_bucket=False) == ""
@@ -316,23 +318,23 @@ def test_cpu_prepare_skips_blank_image() -> None:
     assert prep["engine"] in ("blank", "tiny")
 
 
-def test_color_photo_is_ocr_evidence() -> None:
+def test_clear_photo_skips_ocr() -> None:
     import io
 
     from PIL import Image
 
-    img = Image.linear_gradient("L").convert("RGB").resize((320, 240))
+    img = Image.new("RGB", (320, 240))
     pixels = img.load()
     for y in range(240):
         for x in range(320):
-            pixels[x, y] = ((x * 3) % 256, (y * 5) % 256, (x + y) % 256)
+            pixels[x, y] = (40 + x // 3, 70 + y // 4, 130)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     prep = ocr_gpu.cpu_prepare_ocr_item(
         buf.getvalue(), path="Users/a/Pictures/whiteboard.png", allow_photos=True
     )
-    assert prep["status"] == "needs_gpu"
-    assert prep["engine"] == "glm-ocr"
+    assert prep["status"] == "skip"
+    assert prep["engine"] == "blank"
 
 
 def test_video_is_queued_for_evidence_ocr(monkeypatch) -> None:
@@ -362,7 +364,41 @@ def test_cpu_prepare_scan_like_image_needs_glm() -> None:
     img.save(buf, format="PNG")
     prep = ocr_gpu.cpu_prepare_ocr_item(buf.getvalue(), path="invoice-scan.png", allow_photos=True)
     assert prep["status"] == "needs_gpu"
-    assert prep["engine"] == "glm-ocr"
+    assert prep["engine"] == "easyocr"
+
+
+def test_dark_photo_is_hard_to_view_but_not_ocr() -> None:
+    from PIL import Image
+
+    dark = Image.new("RGB", (200, 160), (8, 8, 8))
+    assert ocr_gpu.raster_is_hard_to_view(dark)
+    assert not ocr_gpu._raster_needs_actual_ocr(dark)
+
+
+def test_detection_text_is_read_top_to_bottom() -> None:
+    text, conf = ocr_gpu._text_from_detections(
+        [
+            ([[0, 40], [20, 40], [20, 55], [0, 55]], "second", 0.5),
+            ([[0, 0], [20, 0], [20, 12], [0, 12]], "first", 0.9),
+            ([[0, 80], [20, 80], [20, 90], [0, 90]], "   ", 0.2),
+        ]
+    )
+    assert text == "first\nsecond"
+    assert conf == 0.7
+
+
+def test_image_ocr_uses_the_detector_not_the_language_model(monkeypatch) -> None:
+    monkeypatch.setattr(
+        ocr_gpu,
+        "_fast_ocr_images",
+        lambda images: [("Invoice 42", 0.88) for _ in images],
+    )
+
+    def _boom():
+        raise AssertionError("language model loaded")
+
+    monkeypatch.setattr(ocr_gpu, "_get_glm_ocr", _boom)
+    assert ocr_gpu._glm_ocr_image(object(), prompt="Text Recognition:") == ("Invoice 42", 0.88)
 
 
 def test_digital_text_usable() -> None:

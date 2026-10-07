@@ -85,6 +85,7 @@ def classify_stage(job, stage, *, now=None):
         error = str(stage.get("error") or "").lower()
         retryable = any(token in error for token in (
             "deadlock", "connection reset", "connection broken", "connection aborted",
+            "connection already closed", "idle-in-transaction", "idle in transaction",
             "incompleteread", "server closed", "broken pipe", "protocolerror",
             "chunkedencoding", "remote disconnected", "transient stream",
             "extract shard stream interrupted",

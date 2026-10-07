@@ -50,7 +50,16 @@ def _idle_in_transaction_timeout() -> str:
         return api_value if valid.fullmatch(api_value) else "60s"
 
     explicit = (os.environ.get("IDLE_IN_TRANSACTION_SESSION_TIMEOUT") or "").strip()
-    is_worker = "celery" in argv or bool(os.environ.get("CELERY_LOADER"))
+    # The parse/OCR stage is a child of Celery (`python -m forensic_stage_worker`).
+    # Its argv does not contain "celery", so it was given the 60s API limit.
+    # A finished query then sat idle while hundreds of thousands of rows were
+    # turned into objects, and Postgres closed the connection.
+    is_worker = (
+        "celery" in argv
+        or "forensic_stage_worker" in argv
+        or bool(os.environ.get("CELERY_LOADER"))
+        or bool(os.environ.get("AETHERIS_STAGE_OWNER_PID"))
+    )
     if is_worker:
         return explicit if explicit and valid.fullmatch(explicit) else "0"
 

@@ -98,6 +98,27 @@ def check_model():
         )
 
 
+def frame_needs_observation(image_bytes: bytes) -> bool:
+    """Visual review is for evidence that is hard to read or hard to view.
+
+    A clear photograph is left for the examiner. Scans, screens, dark frames,
+    and soft frames are still described.
+    """
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        from app.services.ocr_gpu import _raster_needs_actual_ocr, raster_is_hard_to_view
+
+        with Image.open(BytesIO(image_bytes)) as image:
+            image.load()
+            frame = image.convert("RGB")
+    except Exception:
+        return True
+    return _raster_needs_actual_ocr(frame) or raster_is_hard_to_view(frame)
+
+
 def describe_frame(image_bytes):
     from app.services.model_router import _ollama_post
 
@@ -349,6 +370,38 @@ def _store(db, job_id, row, kind, status, description, details, *, error=None):
     db.commit()
 
 
+def close_out_of_scope_media(db, job_id) -> None:
+    """Mark program, cache, and thumbnail media done without opening the files.
+
+    User pictures and videos stay pending so hard-to-view frames can be described.
+    """
+    from app.services.ocr_gpu import OCR_NOISE_SQL
+
+    extensions = sorted(_IMAGE | _VIDEO)
+    videos = sorted(_VIDEO)
+    predicate = """(lower(CASE WHEN left(extension,1)='.' THEN extension ELSE '.'||extension END)=ANY(:extensions)
+        OR COALESCE(metadata->>'mime','') LIKE 'image/%' OR COALESCE(metadata->>'mime','') LIKE 'video/%'
+        OR COALESCE(metadata->>'detected_mime','') LIKE 'image/%' OR COALESCE(metadata->>'detected_mime','') LIKE 'video/%')"""
+    execute(
+        db,
+        f"""INSERT INTO forensic_media_observations
+            (job_artifact_id,job_id,media_kind,source_path,source_sha256,status,description,flagged,details)
+            SELECT ja.id, ja.job_id,
+                   CASE WHEN lower(CASE WHEN left(ja.extension,1)='.' THEN ja.extension ELSE '.'||ja.extension END)=ANY(:videos)
+                        THEN 'video' ELSE 'image' END,
+                   ja.file_path, ja.sha256, 'done', '', false,
+                   jsonb_build_object('skip_reason','Program, cache, or thumbnail media; visual review skipped')
+            FROM job_artifacts ja
+            WHERE ja.job_id=:jid AND {predicate}
+              AND ({OCR_NOISE_SQL})
+              AND NOT EXISTS (
+                    SELECT 1 FROM forensic_media_observations o
+                    WHERE o.job_artifact_id=ja.id AND o.status IN ('done','failed')
+              )""",
+        {"jid": job_id, "extensions": extensions, "videos": videos},
+    )
+
+
 def run_media_review(db, job_id, *, schema_name):
     from app.services.artifact_media_properties import _stream_to_temp
     from app.services.forensic_serial_stages import report_progress
@@ -379,29 +432,11 @@ def run_media_review(db, job_id, *, schema_name):
     )
     if not total:
         return {"status": "ok", "total": 0, "completed": 0}
-    pending = fetchone(
-        db,
-        f"""SELECT count(*) AS c FROM job_artifacts ja WHERE ja.job_id=:jid AND {predicate}
-        AND NOT EXISTS(SELECT 1 FROM forensic_media_observations o WHERE o.job_artifact_id=ja.id AND o.status IN ('done','failed'))""",
-        params,
-    )["c"]
-    if pending:
-        check_model()
+    close_out_of_scope_media(db, job_id)
+    db.commit()
     last = "00000000-0000-0000-0000-000000000000"
+    vision_ready = False
     with ExitStack() as stack:
-        if pending:
-            db.commit()
-            stack.enter_context(gpu_heavy_slot("serial_media_review", fail_closed=True))
-            from app.services.gpu_thermal import prepare_gpu_for_heavy_work
-
-            prepare_gpu_for_heavy_work(reason="serial_media_review", unload_ollama=True)
-            stack.callback(
-                lambda: _ollama_post(
-                    "/api/generate",
-                    {"model": visual_model(), "prompt": "", "keep_alive": 0},
-                    timeout=30,
-                )
-            )
         while True:
             rows = fetchall(
                 db,
@@ -489,14 +524,41 @@ def run_media_review(db, job_id, *, schema_name):
                         for frame in details["frames"]
                     }
                     for blob, time, coverage in frames:
-                        from app.services.progress_agent import note_operation
-                        note_operation(db,job_id,'media_review','Describe the next acquired image/video frame',
-                            timeout_seconds=max(60,float(os.environ.get('FORENSIC_MEDIA_VISION_TIMEOUT_SECONDS','300'))+30))
-                        if pipeline_should_stop(db, job_id):
-                            raise StageWaiting("Media observations paused by user")
                         if time.get("requested_sample_seconds") in completed_times:
                             continue
-                        db.commit()
+                        if not frame_needs_observation(blob):
+                            continue
+                        if not vision_ready:
+                            check_model()
+                            db.commit()
+                            stack.enter_context(
+                                gpu_heavy_slot("serial_media_review", fail_closed=True)
+                            )
+                            from app.services.gpu_thermal import prepare_gpu_for_heavy_work
+
+                            prepare_gpu_for_heavy_work(
+                                reason="serial_media_review", unload_ollama=False
+                            )
+                            stack.callback(
+                                lambda: _ollama_post(
+                                    "/api/generate",
+                                    {"model": visual_model(), "prompt": "", "keep_alive": 0},
+                                    timeout=30,
+                                )
+                            )
+                            vision_ready = True
+                        from app.services.progress_agent import note_operation
+                        note_operation(
+                            db,
+                            job_id,
+                            "media_review",
+                            "Describe a hard-to-view image or video frame",
+                            timeout_seconds=max(
+                                60,
+                                float(os.environ.get("FORENSIC_MEDIA_VISION_TIMEOUT_SECONDS", "300"))
+                                + 30,
+                            ),
+                        )
                         try:
                             observation = describe_frame(blob)
                         except (OSError, TimeoutError) as exc:
@@ -526,6 +588,8 @@ def run_media_review(db, job_id, *, schema_name):
                         )
                         _store(db, job_id, row, kind, "running", description, details)
                         note_operation(db,job_id,'media_review','Frame evidence persisted',advanced=True,timeout_seconds=330)
+                    if not details["frames"]:
+                        details["skip_reason"] = "Clear image or video; visual review skipped"
                     ocr = fetchall(
                         db,
                         "SELECT ocr_text FROM ocr_results WHERE job_artifact_id=:aid ORDER BY page_index",

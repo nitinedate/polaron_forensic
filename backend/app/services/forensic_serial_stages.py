@@ -218,6 +218,9 @@ def _parse(db, job_id, schema_name):
 
     _advance_parse_stage(db, job_id, "Loading extract index for native parsing")
     index_map = _index_map(db, job_id)
+    from app.services.artifact_parse import _PARSE_ATTEMPT_MAX, skip_empty_pending_artifacts
+
+    stalls = 0
     total = int(
         fetchone(
             db,
@@ -226,6 +229,7 @@ def _parse(db, job_id, schema_name):
         )["c"]
     )
     while True:
+        skip_empty_pending_artifacts(db, job_id)
         row = fetchone(
             db,
             """SELECT count(*) FILTER (WHERE parse_status IN ('pending','parsing')) AS pending,
@@ -283,9 +287,16 @@ def _parse(db, job_id, schema_name):
             )["c"]
         )
         if after >= int(row["pending"]) and after:
-            raise StageWaiting(
-                "Parsing made no progress; remaining evidence claims must finish"
-            )
+            # A forensic miss is put back to pending on purpose. Count that as
+            # a retry inside this run. Only a run that never moves, even after
+            # those retries, is a real stall.
+            stalls += 1
+            if stalls > _PARSE_ATTEMPT_MAX:
+                raise StageWaiting(
+                    "Parsing made no progress; remaining evidence claims must finish"
+                )
+            continue
+        stalls = 0
 
 
 def _recovery(db, job_id, *, publish_job_phase=True):
@@ -352,27 +363,120 @@ def _ocr(db, job_id, schema_name):
         count_pending_ocr,
         enqueue_eligible_ocr,
         run_ocr_for_job,
+        skip_ocr_noise_pending,
         unload_glm_ocr,
     )
     from app.services.tar_cache import read_file_from_part
 
     if not get_settings().ocr_enabled:
         return {"status": "skipped", "reason": "ocr_disabled"}
-    index_map = _index_map(db, job_id)
+    from app.services.progress_agent import note_operation
+
+    note_operation(
+        db,
+        job_id,
+        "ocr",
+        "GPU OCR — selecting unclear documents and hard-to-view images",
+        timeout_seconds=900,
+        advanced=True,
+    )
     enqueue_eligible_ocr(db, job_id)
+    skip_ocr_noise_pending(db, job_id)
     db.commit()
     before = count_pending_ocr(db, job_id)
     if before <= 0:
         return {"status": "ok", "total": 0, "completed": 0}
+    report_progress(
+        db,
+        job_id,
+        "ocr",
+        total=before,
+        completed=0,
+        label="OCR — unclear documents, images, and video frames",
+    )
+
+    part_cache: dict[str, str] = {}
+    file_bytes: dict[str, bytes | None] = {}
 
     def read(path):
-        uri = index_map.get(path)
+        key = str(path or "").replace("\\", "/")
+        if key in file_bytes:
+            return file_bytes.pop(key)
+        uri = part_cache.get(key)
+        if uri is None:
+            found = fetchone(
+                db,
+                """SELECT metadata->>'extracted_part_uri' AS uri
+                   FROM job_artifacts
+                   WHERE job_id=:jid AND replace(file_path, '\\', '/')=:path
+                   LIMIT 1""",
+                {"jid": job_id, "path": key},
+            )
+            uri = str((found or {}).get("uri") or "")
+            part_cache[key] = uri
         if uri:
             return read_file_from_part(uri, path)
         if path.startswith("derived/whatsapp_decrypted/"):
             from app.services.mobile_forensic.sqlite_counts import _read_artifact_bytes
             return _read_artifact_bytes(db, job_id, path, max_bytes=768_000_000)
         return None
+
+    def iter_found(paths: list[str]):
+        """Yield each picture as the archive scan reaches it."""
+        from collections import defaultdict
+
+        from app.services.progress_agent import note_operation
+        from app.services.tar_cache import iter_files_from_part
+
+        keys = [str(path or "").replace("\\", "/") for path in paths if path]
+        missing = [key for key in keys if key not in part_cache]
+        if missing:
+            found = fetchall(
+                db,
+                """SELECT replace(file_path, '\\', '/') AS path,
+                          metadata->>'extracted_part_uri' AS uri
+                   FROM job_artifacts
+                   WHERE job_id=:jid AND replace(file_path, '\\', '/') = ANY(:paths)""",
+                {"jid": job_id, "paths": missing},
+            )
+            for row in found:
+                part_cache[str(row["path"])] = str(row.get("uri") or "")
+            for key in missing:
+                part_cache.setdefault(key, "")
+        grouped: dict[str, set[str]] = defaultdict(set)
+        for key in keys:
+            uri = part_cache.get(key) or ""
+            if uri:
+                grouped[uri].add(key)
+            else:
+                file_bytes[key] = None
+                yield key, None
+        def _activity() -> None:
+            note_operation(
+                db,
+                job_id,
+                "ocr",
+                "Scanning the archive for pictures",
+                timeout_seconds=900,
+                advanced=True,
+            )
+        for uri, wanted in grouped.items():
+            seen: set[str] = set()
+            for norm, content in iter_files_from_part(uri, wanted, on_activity=_activity):
+                file_bytes[norm] = content
+                seen.add(norm)
+                yield norm, content
+            for key in wanted:
+                if key not in seen:
+                    file_bytes.setdefault(key, None)
+                    yield key, None
+
+    def preload(paths: list[str]) -> None:
+        for _norm, _content in iter_found(paths):
+            pass
+
+    read.iter_found = iter_found
+    read.preload = preload
 
     from app.services.embedding_gpu import resolve_device
     from app.services.job_control import pipeline_should_stop
