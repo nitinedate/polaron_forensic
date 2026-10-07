@@ -504,13 +504,18 @@ def test_obsolete_embedding_delivery_does_not_load_a_model(monkeypatch):
     assert "embedding" not in {name for name, _, _ in pipeline.STAGES}
 
 
-def test_ocr_cpu_workers_are_capped_even_with_old_settings(monkeypatch):
+def test_ocr_cpu_workers_use_the_host_not_the_stage_cap(monkeypatch):
     from app.services import ocr_gpu
 
+    monkeypatch.setattr(ocr_gpu.os, "cpu_count", lambda: 12)
+    monkeypatch.setattr(
+        ocr_gpu, "get_settings", lambda: SimpleNamespace(ocr_cpu_workers=4)
+    )
+    assert ocr_gpu._ocr_cpu_worker_count(gpu=True, n_items=100) == 10
     monkeypatch.setattr(
         ocr_gpu, "get_settings", lambda: SimpleNamespace(ocr_cpu_workers=32)
     )
-    assert ocr_gpu._ocr_cpu_worker_count(gpu=True, n_items=100) == 4
+    assert ocr_gpu._ocr_cpu_worker_count(gpu=True, n_items=100) == 12
     assert ocr_gpu._ocr_cpu_worker_count(gpu=True, n_items=2) == 2
 
 

@@ -1327,14 +1327,21 @@ def _ocr_pdf_pages(data: bytes, *, path: str, max_pages: int | None = None) -> t
 
 
 def _ocr_cpu_worker_count(*, gpu: bool, n_items: int, num_buckets: int = 1) -> int:
+    """How many CPU threads prepare pictures before GPU text detection.
+
+    Other serial stages stay at four units of evidence. OCR preparation is
+    independent of that cap: a 12-core host was leaving eight cores idle.
+    """
     settings = get_settings()
-    wanted = int(getattr(settings, "ocr_cpu_workers", 8) or 8)
+    configured = int(getattr(settings, "ocr_cpu_workers", 0) or 0)
+    cpus = max(int(os.cpu_count() or 8), 1)
+    # 4 is the old serial-stage cap, not a request to leave the other cores idle.
+    wanted = configured if configured > 4 else max(8, cpus - 2)
+    wanted = min(wanted, cpus)
     buckets = max(int(num_buckets or 1), 1)
     if buckets > 1:
         wanted = max(2, wanted // buckets)
-    from app.services.forensic_serial_policy import parallelism
-
-    return parallelism(min(wanted, max(n_items, 1)))
+    return max(1, min(wanted, max(int(n_items or 1), 1)))
 
 
 def open_ocr_cpu_pool(workers: int):
@@ -1344,9 +1351,7 @@ def open_ocr_cpu_pool(workers: int):
     CUDA context deadlocks on this host (the pool never starts, so GLM never
     runs and the OCR card stays put). Threads share the process and stay safe.
     """
-    from app.services.forensic_serial_policy import parallelism
-
-    n = parallelism(workers)
+    n = max(1, int(workers or 1))
     cuda_ready = False
     try:
         import torch
@@ -2157,32 +2162,17 @@ def run_ocr_for_job(
                 db.commit()
             chunk = list(needs_gpu_rows)
             needs_gpu_rows.clear()
-            _gpu_chunk(chunk)
-            flush_at = _glm_micro_batch_size()
+            micro = _glm_micro_batch_size()
+            for start in range(0, len(chunk), micro):
+                _gpu_chunk(chunk[start : start + micro])
+            flush_at = cpu_n
             _touch(f"GPU text detection — {done:,} document(s)")
 
         seen = 0
-        for norm, data in iter_found(list(by_path)):
-            row = by_path.pop(norm, None)
-            if row is None:
-                continue
-            if is_os_vendor_ocr_path(norm):
-                _mark_ocr_skip({"id": row["id"], "file_path": norm}, engine="os_vendor")
-                db.commit()
-                seen += 1
-                continue
-            payload = {
-                "row": {"id": row["id"], "file_path": norm},
-                "data": data,
-                "path": norm,
-                "max_pages": ocr_page_budget,
-                "allow_photos": allow_photos,
-            }
-            try:
-                result = _ocr_cpu_process_one(payload)
-            except Exception as exc:
-                log.warning("CPU OCR prepare failed: %s", exc)
-                continue
+        window: list[dict] = []
+
+        def _apply_cpu(result: dict, payload: dict) -> None:
+            nonlocal done, seen
             row_out = result.get("row") or payload["row"]
             if result.get("status") == "ok" and result.get("text"):
                 _persist_ocr_ok(
@@ -2199,10 +2189,47 @@ def run_ocr_for_job(
                 _mark_ocr_skip(row_out, engine=str(result.get("engine") or "na"))
                 db.commit()
             seen += 1
-            if len(needs_gpu_rows) >= flush_at:
+
+        def _drain_window(pool) -> None:
+            if not window:
+                return
+            batch = list(window)
+            window.clear()
+            futures = [pool.submit(_ocr_cpu_process_one, payload) for payload in batch]
+            for fut, payload in zip(futures, batch):
+                try:
+                    result = fut.result()
+                except Exception as exc:
+                    log.warning("CPU OCR prepare failed: %s", exc)
+                    continue
+                _apply_cpu(result, payload)
+            if needs_gpu_rows:
                 _flush_gpu()
-            elif seen % 25 == 0:
+            elif seen and seen % 25 == 0:
                 _touch("Reading pictures for GPU text detection")
+
+        with open_ocr_cpu_pool(cpu_n) as pool:
+            for norm, data in iter_found(list(by_path)):
+                row = by_path.pop(norm, None)
+                if row is None:
+                    continue
+                if is_os_vendor_ocr_path(norm):
+                    _mark_ocr_skip({"id": row["id"], "file_path": norm}, engine="os_vendor")
+                    db.commit()
+                    seen += 1
+                    continue
+                window.append(
+                    {
+                        "row": {"id": row["id"], "file_path": norm},
+                        "data": data,
+                        "path": norm,
+                        "max_pages": ocr_page_budget,
+                        "allow_photos": allow_photos,
+                    }
+                )
+                if len(window) >= cpu_n:
+                    _drain_window(pool)
+            _drain_window(pool)
         for leftover in by_path.values():
             _mark_ocr_skip(leftover, engine="na")
             db.commit()
