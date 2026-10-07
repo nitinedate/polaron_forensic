@@ -45,7 +45,13 @@ def load_extract_nodes(nodes_uri: str) -> list[dict]:
 
 
 def load_index_entries(manifest: dict) -> list[dict]:
-    """Load all index entries from manifest index_uri and/or per-shard index files."""
+    """Load index entries from the combined index, or from shard indexes.
+
+    A finalized manifest stores the same rows in ``index_uri`` and again in
+    ``shard_indexes``. Reading both listed every file twice. After path
+    dedupe, materialize then looked short of ``files_extracted`` and aborted.
+    Partial manifests have no combined index yet, so they still use the shards.
+    """
     entries: list[dict] = []
     index_uri = manifest.get("index_uri") or ""
     if index_uri:
@@ -57,6 +63,8 @@ def load_index_entries(manifest: dict) -> list[dict]:
                 for line in data.decode("utf-8", errors="replace").splitlines()
                 if line.strip()
             )
+    if entries and not manifest.get("partial"):
+        return entries
     for sid, uri in sorted((manifest.get("shard_indexes") or {}).items(), key=lambda x: int(x[0])):
         if not uri:
             continue

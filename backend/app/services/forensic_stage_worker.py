@@ -145,7 +145,8 @@ def main(argv=None):
                 result={'result':execute_stage(db,job_id,stage,schema_name=schema,stage_run_id=stage_id)}
     except Exception as exc:
         from app.services.db_resilience import is_transient_db_error
-        waiting=isinstance(exc,StageWaiting) or is_transient_db_error(exc) or type(exc).__name__ in {
+        from app.services.storage import is_transient_stream_error
+        waiting=isinstance(exc,StageWaiting) or is_transient_db_error(exc) or is_transient_stream_error(exc) or type(exc).__name__ in {
             'GpuHeavySlotTimeout','GpuThermalAbort','ResourceSemaphoreTimeout','CpuHeavySlotTimeout'}
         result={'error':str(exc)[:4000],'kind':'waiting' if waiting else 'failed'}
     finally:

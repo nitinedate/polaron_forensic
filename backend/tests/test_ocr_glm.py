@@ -316,7 +316,7 @@ def test_cpu_prepare_skips_blank_image() -> None:
     assert prep["engine"] in ("blank", "tiny")
 
 
-def test_cpu_prepare_skips_clear_color_photo() -> None:
+def test_color_photo_is_ocr_evidence() -> None:
     import io
 
     from PIL import Image
@@ -329,10 +329,24 @@ def test_cpu_prepare_skips_clear_color_photo() -> None:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     prep = ocr_gpu.cpu_prepare_ocr_item(
-        buf.getvalue(), path="Users/a/Documents/holiday.png", allow_photos=True
+        buf.getvalue(), path="Users/a/Pictures/whiteboard.png", allow_photos=True
     )
-    assert prep["status"] == "skip"
-    assert prep["engine"] == "blank"
+    assert prep["status"] == "needs_gpu"
+    assert prep["engine"] == "glm-ocr"
+
+
+def test_video_is_queued_for_evidence_ocr(monkeypatch) -> None:
+    monkeypatch.setattr(
+        ocr_gpu,
+        "get_settings",
+        lambda: SimpleNamespace(ocr_documents_only=False),
+    )
+    assert ocr_gpu.ocr_status_for_artifact(
+        "Users/a/Videos/meeting.mp4", extension=".mp4", size_bytes=4_000_000
+    ) == "pending"
+    assert ocr_gpu.ocr_status_for_artifact(
+        "Users/a/AppData/Local/Temp/cache.mp4", extension=".mp4", size_bytes=4_000_000
+    ) == "skipped"
 
 
 def test_cpu_prepare_scan_like_image_needs_glm() -> None:

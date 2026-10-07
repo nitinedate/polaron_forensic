@@ -132,11 +132,15 @@ IMAGE_EXT = frozenset({".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".gif",
 # never reaches GLM. A file that does arrive is handled in cpu_prepare: pictures
 # only, and a document with no pictures is finished from its own text.
 OFFICE_EXT = frozenset({".doc", ".docx", ".docm", ".xls", ".xlsx", ".xlsm", ".ppt", ".pptx"})
-DOCUMENT_EXT = frozenset({".pdf", *IMAGE_EXT})
+VIDEO_EXT = frozenset({
+    ".mp4", ".mkv", ".mov", ".avi", ".m4v", ".webm", ".mpeg", ".mpg", ".3gp", ".3gpp",
+})
+DOCUMENT_EXT = frozenset({".pdf", *IMAGE_EXT, *VIDEO_EXT})
 
 OCR_ELIGIBLE_EXT_SQL = """
 lower(coalesce(extension, '')) IN (
-  '.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.webp', '.bmp', '.gif', '.heic'
+  '.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.webp', '.bmp', '.gif', '.heic',
+  '.mp4', '.mkv', '.mov', '.avi', '.m4v', '.webm', '.mpeg', '.mpg', '.3gp', '.3gpp'
 )
 """
 OCR_DOC_FOLDER_SQL = """
@@ -280,10 +284,10 @@ def is_photo_like_path(path: str) -> bool:
 
 
 def forensic_photos_allowed() -> bool:
-    """Camera rolls are not OCR'd unless OCR_DOCUMENTS_ONLY is off.
+    """Images and videos are OCR evidence unless documents-only mode is on.
 
-    GLM is reserved for scanned PDFs and document-folder images with no
-    extractable text. Pictures / DCIM / screenshots are skipped.
+    Clear digital documents never use the GPU; that decision is made from the
+    file's own text. Documents-only mode still limits pictures to document folders.
     """
     return not bool(getattr(get_settings(), "ocr_documents_only", True))
 
@@ -851,33 +855,13 @@ def _digital_text_usable(text: str | None) -> bool:
     return sum(ch.isalnum() for ch in t) >= 8
 
 
-def _is_clear_photograph(img) -> bool:
-    """True for a color picture. Scanned pages are mostly gray paper and ink."""
-    try:
-        small = img.convert("RGB")
-        small.thumbnail((48, 48))
-        reader = getattr(small, "get_flattened_data", None) or small.getdata
-        pixels = list(reader())
-        if len(pixels) < 16:
-            return False
-        colorful = 0
-        for r, g, b in pixels:
-            if max(r, g, b) - min(r, g, b) > 28:
-                colorful += 1
-        return (colorful / float(len(pixels))) >= 0.38
-    except Exception:
-        return False
-
-
 def _raster_needs_actual_ocr(img) -> bool:
-    """True for scanned pages with no digital text.
+    """True when a picture or scan can hold readable evidence.
 
-    Blank pages and clear color photographs are skipped. GLM stays on
-    document scans. Born-digital PDFs never reach here because
-    `_digital_text_usable` already returned cpu_done.
+    Blank and tiny images are skipped. A color photograph is still examined:
+    signs, screens, and photographed pages are evidence. Clear digital
+    documents never reach here.
     """
-    if _is_clear_photograph(img):
-        return False
     try:
         gray = img.convert("L")
         w, h = gray.size
@@ -895,6 +879,53 @@ def _raster_needs_actual_ocr(img) -> bool:
         return True
     except Exception:
         return True
+
+
+def _sample_video_ocr_frames(data: bytes, *, limit: int = 4) -> list:
+    """A few frames from a video, for text that is only visible on screen."""
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    if not data or shutil.which("ffmpeg") is None:
+        return []
+    frames = []
+    try:
+        from PIL import Image
+    except Exception:
+        return []
+    with tempfile.TemporaryDirectory(prefix="ocr-video-") as tmp:
+        src = Path(tmp) / "clip.bin"
+        src.write_bytes(data)
+        pattern = str(Path(tmp) / "frame-%02d.png")
+        try:
+            proc = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    str(src),
+                    "-vf",
+                    "fps=1/15,scale=1280:-2",
+                    "-frames:v",
+                    str(max(1, limit)),
+                    pattern,
+                ],
+                capture_output=True,
+                timeout=120,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+        if proc.returncode != 0:
+            return []
+        for path in sorted(Path(tmp).glob("frame-*.png")):
+            with Image.open(path) as img:
+                img.load()
+                frames.append(img.convert("RGB").copy())
+    return frames
 
 
 def cpu_prepare_ocr_item(
@@ -973,6 +1004,30 @@ def cpu_prepare_ocr_item(
                 "segments": [],
             }
         return {"status": "skip", "path": path, "text": "", "conf": 0.2, "engine": "stub", "segments": []}
+    if any(lower.endswith(ext) for ext in VIDEO_EXT):
+        frames = _sample_video_ocr_frames(data)
+        if not frames:
+            return {"status": "skip", "path": path, "text": "", "conf": 0.0, "engine": "video", "segments": []}
+        settings = get_settings()
+        max_edge = int(getattr(settings, "ocr_max_image_edge", 1280) or 1280)
+        segments = []
+        for frame in frames:
+            prepared = prepare_ocr_image(frame, max_edge=max_edge)
+            if prepared is None or not _raster_needs_actual_ocr(prepared):
+                continue
+            segments.append(
+                {"type": "image", "image": prepared, "prompt": "Text Recognition:"}
+            )
+        if not segments:
+            return {"status": "skip", "path": path, "text": "", "conf": 0.0, "engine": "blank", "segments": []}
+        return {
+            "status": "needs_gpu",
+            "path": path,
+            "text": "",
+            "conf": 0.0,
+            "engine": "glm-ocr",
+            "segments": segments,
+        }
     if any(lower.endswith(ext) for ext in IMAGE_EXT):
         try:
             from PIL import Image  # type: ignore

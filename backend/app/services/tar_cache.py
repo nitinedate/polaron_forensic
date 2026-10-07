@@ -6,6 +6,7 @@ import io
 import logging
 import tarfile
 import threading
+import time
 from collections import OrderedDict
 from collections.abc import Iterator
 
@@ -56,6 +57,7 @@ def iter_files_from_part(
     paths: set[str],
     *,
     max_bytes: int | None = None,
+    on_activity=None,
 ) -> Iterator[tuple[str, bytes | None]]:
     """Yield ``(path, content)`` for wanted members via streamed MinIO/zstd/tar.
 
@@ -87,35 +89,72 @@ def iter_files_from_part(
             yield p, None
         return
 
-    try:
-        dctx = zstd.ZstdDecompressor()
-        with dctx.stream_reader(stream) as zreader:
-            with tarfile.open(fileobj=zreader, mode="r|") as tar:
-                for member in tar:
-                    if not remaining:
-                        break
-                    if not member.isfile():
-                        continue
-                    norm = member.name.replace("\\", "/")
-                    if norm not in remaining:
-                        continue
-                    f = tar.extractfile(member)
-                    if not f:
-                        remaining.discard(norm)
-                        yield norm, None
-                        continue
-                    content = f.read(max_bytes) if max_bytes else f.read()
-                    if max_bytes is None:
-                        _cache_file(part_uri, norm, content)
-                    remaining.discard(norm)
-                    yield norm, content
-    except Exception as exc:
-        log.warning("Streamed tar read failed part=%s: %s", part_uri, exc)
-    finally:
+    attempts = 3
+    for attempt in range(1, attempts + 1):
+        if attempt > 1:
+            try:
+                stream.close()
+            except Exception:
+                pass
+            stream = open_object_stream(part_uri)
+            if stream is None:
+                break
         try:
-            stream.close()
-        except Exception:
-            pass
+            dctx = zstd.ZstdDecompressor()
+            with dctx.stream_reader(stream) as zreader:
+                with tarfile.open(fileobj=zreader, mode="r|") as tar:
+                    scanned = 0
+                    last_activity = time.monotonic()
+                    for member in tar:
+                        scanned += 1
+                        now = time.monotonic()
+                        if on_activity and (scanned % 2000 == 0 or now - last_activity >= 20):
+                            last_activity = now
+                            on_activity()
+                        if not remaining:
+                            break
+                        if not member.isfile():
+                            continue
+                        norm = member.name.replace("\\", "/")
+                        if norm not in remaining:
+                            continue
+                        f = tar.extractfile(member)
+                        if not f:
+                            remaining.discard(norm)
+                            yield norm, None
+                            continue
+                        content = f.read(max_bytes) if max_bytes else f.read()
+                        if max_bytes is None:
+                            _cache_file(part_uri, norm, content)
+                        remaining.discard(norm)
+                        yield norm, content
+            break
+        except Exception as exc:
+            log.warning(
+                "Streamed tar read failed part=%s attempt %s/%s: %s",
+                part_uri,
+                attempt,
+                attempts,
+                exc,
+            )
+            from app.services.storage import TransientStreamError, is_transient_stream_error
+
+            # Range reads already retried the broken slice. Restarting the
+            # multi-GB archive would only repeat the same download.
+            if is_transient_stream_error(exc):
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+                raise TransientStreamError(
+                    f"Extract shard stream interrupted ({part_uri}): {exc}"
+                ) from exc
+            if attempt == attempts:
+                raise
+    try:
+        stream.close()
+    except Exception:
+        pass
 
     for p in remaining:
         yield p, None

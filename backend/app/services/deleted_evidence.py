@@ -107,6 +107,20 @@ def title_with_deleted_date(file_name: str | None, metadata: dict[str, Any] | No
     return f"{name} {format_deleted_date_bracket(meta.get('deleted_at'))}"
 
 
+# Fill only keys the parser has not already written, in one row update.
+# A stale read-modify-write here used to drop metadata native parsing had just saved.
+MERGE_DELETED_PATH_HINT_SQL = """
+UPDATE job_artifacts
+SET metadata = COALESCE(metadata, '{}'::jsonb) || (
+    SELECT COALESCE(jsonb_object_agg(e.key, e.value), '{}'::jsonb)
+    FROM jsonb_each(CAST(:hint AS jsonb)) AS e
+    WHERE NOT (COALESCE(job_artifacts.metadata, '{}'::jsonb) ? e.key)
+),
+updated_at = NOW()
+WHERE id = :id
+"""
+
+
 def detect_deleted_path_hint(path: str) -> dict[str, Any] | None:
     """Path-based deleted/trash hint used at materialize time (before $I parse)."""
     norm = (path or "").replace("\\", "/").lower()

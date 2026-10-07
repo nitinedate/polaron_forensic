@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from contextlib import ExitStack
+
+log = logging.getLogger(__name__)
 
 from app.db.sql_helpers import execute, fetchall, fetchone
 from app.services.forensic_serial_pipeline import StageWaiting
@@ -13,7 +16,7 @@ NIL_ID = "00000000-0000-0000-0000-000000000000"
 
 
 def report_progress(
-    db, job_id, stage, *, total, completed, failed=0, skipped=0, label=None
+    db, job_id, stage, *, total, completed, failed=0, skipped=0, label=None, touch_job=True
 ):
     execute(
         db,
@@ -36,18 +39,19 @@ def report_progress(
             "skipped": skipped,
         },
     )
-    patch = {
-        "phase": stage,
-        "completed": completed,
-        "total": total,
-        "label": label or stage,
-    }
-    execute(
-        db,
-        """UPDATE jobs SET pipeline_progress=COALESCE(pipeline_progress,'{}'::jsonb) || CAST(:pp AS jsonb),
-        updated_at=NOW() WHERE id=:jid""",
-        {"jid": job_id, "pp": json.dumps(patch)},
-    )
+    if touch_job:
+        patch = {
+            "phase": stage,
+            "completed": completed,
+            "total": total,
+            "label": label or stage,
+        }
+        execute(
+            db,
+            """UPDATE jobs SET pipeline_progress=COALESCE(pipeline_progress,'{}'::jsonb) || CAST(:pp AS jsonb),
+            updated_at=NOW() WHERE id=:jid""",
+            {"jid": job_id, "pp": json.dumps(patch)},
+        )
     db.commit()
 
 
@@ -61,11 +65,26 @@ def _index_map(db, job_id):
     return {path.replace("\\", "/"): uri for path, uri in build_index_map(ds).items()}
 
 
+def _extend_materialize_deadline(db, job_id, operation, *, timeout_seconds=600):
+    from app.services.progress_agent import note_operation
+
+    note_operation(
+        db,
+        job_id,
+        "materialize",
+        operation,
+        timeout_seconds=timeout_seconds,
+        advanced=True,
+    )
+
+
 def _materialize_full(db, job_id):
     from psycopg2.extras import execute_values
 
     from app.services.artifact_materialize import materialize_index_entries
     from app.services.disk_manifest import load_index_entries, resolve_part_uri
+
+    _extend_materialize_deadline(db, job_id, "Loading extracted manifest", timeout_seconds=900)
 
     row = fetchone(
         db, "SELECT disk_source,files_extracted FROM jobs WHERE id=:id", {"id": job_id}
@@ -76,6 +95,8 @@ def _materialize_full(db, job_id):
         else row["disk_source"] or {}
     )
     by_path = {}
+    indexed = 0
+    duplicate_paths: list[str] = []
     for entry in load_index_entries(manifest):
         path = (entry.get("path") or "").replace("\\", "/")
         if not path:
@@ -83,15 +104,32 @@ def _materialize_full(db, job_id):
         part = resolve_part_uri(manifest, int(entry.get("part_id") or 0))
         if not part:
             raise RuntimeError(f"Extracted part is missing for {path}")
+        indexed += 1
         previous = by_path.get(path)
-        if previous and previous.get("sha256") and not entry.get("sha256"):
-            continue
+        if previous:
+            duplicate_paths.append(path)
+            # Keep a hashed copy over an unhashed repeat of the same path.
+            if previous.get("sha256") and not entry.get("sha256"):
+                continue
         by_path[path] = {**entry, "path": path, "part_uri": part}
+    extracted = int(row.get("files_extracted") or 0)
     expected = len(by_path)
-    if expected < int(row.get("files_extracted") or 0):
+    if indexed < extracted:
         raise RuntimeError(
-            f"Extracted manifest accounts for {expected:,} / {int(row['files_extracted']):,} extracted files"
+            f"Extracted manifest accounts for {indexed:,} / {extracted:,} extracted files"
         )
+    if duplicate_paths:
+        sample = ", ".join(duplicate_paths[:5])
+        message = (
+            f"Registered {expected:,} unique paths. "
+            f"{len(duplicate_paths):,} repeated paths in the extract were kept once"
+            + (f" — {sample}" if sample else "")
+        )
+        log.info(message)
+        from app.services.disk_build_log import write_disk_log
+
+        write_disk_log(db, job_id, message, stage="materialize", level="info")
+        db.commit()
     entries = list(by_path.values())
     # Every extracted file enters inventory. Unsupported/no-text files are
     # explicit stage exceptions, never discarded by hash or path filters.
@@ -124,6 +162,13 @@ def _materialize_full(db, job_id):
                 page_size=500,
             )
         db.commit()
+        recorded = min(start + 1000, len(entries))
+        if recorded == len(entries) or recorded % 20000 == 0:
+            _extend_materialize_deadline(
+                db,
+                job_id,
+                f"Recording provenance — {recorded:,} / {len(entries):,}",
+            )
     report_progress(
         db,
         job_id,
@@ -159,7 +204,7 @@ def _materialize_full(db, job_id):
 
 def _parse(db, job_id, schema_name):
     from app.config import get_settings
-    from app.services.artifact_parse import parse_job_artifacts_for_paths
+    from app.services.artifact_parse import parse_job_artifacts_for_paths, serial_parse_workers
 
     # The execution lock proves no other serial parse runner is alive. Claims
     # left by a killed worker may be reset immediately rather than wait 30 min.
@@ -169,6 +214,9 @@ def _parse(db, job_id, schema_name):
         {"jid": job_id},
     )
     db.commit()
+    from app.services.artifact_parse import _advance_parse_stage
+
+    _advance_parse_stage(db, job_id, "Loading extract index for native parsing")
     index_map = _index_map(db, job_id)
     total = int(
         fetchone(
@@ -210,6 +258,11 @@ def _parse(db, job_id, schema_name):
 
         if pipeline_should_stop(db, job_id):
             raise StageWaiting("Parsing paused by user")
+        _advance_parse_stage(
+            db,
+            job_id,
+            f"Native forensic parsing — {int(row['pending']):,} files remaining",
+        )
         parse_job_artifacts_for_paths(
             db,
             job_id,
@@ -217,6 +270,8 @@ def _parse(db, job_id, schema_name):
             index_map=index_map,
             batch_limit=max(100, int(get_settings().parse_drain_batch_limit or 500)),
             update_status=False,
+            full_shard=True,
+            worker_cap=serial_parse_workers(),
         )
         db.commit()
         after = int(
@@ -233,18 +288,26 @@ def _parse(db, job_id, schema_name):
             )
 
 
-def _recovery(db, job_id):
+def _recovery(db, job_id, *, publish_job_phase=True):
     # Disk filesystem-level recovery remains in the one-time image acquisition.
     # This stage analyzes derived deleted files and preserves those source flags.
-    from app.services.deleted_evidence import detect_deleted_path_hint
+    # It only needs registered paths, so it can run beside native parsing.
+    from app.services.deleted_evidence import MERGE_DELETED_PATH_HINT_SQL, detect_deleted_path_hint
 
+    expected = int(
+        fetchone(
+            db,
+            "SELECT count(*) AS c FROM job_artifacts WHERE job_id=:jid",
+            {"jid": job_id},
+        )["c"]
+    )
     last = NIL_ID
-    tagged = total = 0
+    tagged = scanned = 0
     while True:
         rows = fetchall(
             db,
-            """SELECT id,file_path,metadata FROM job_artifacts
-            WHERE job_id=:jid AND id>:last ORDER BY id LIMIT 1000""",
+            """SELECT id,file_path FROM job_artifacts
+            WHERE job_id=:jid AND id>:last ORDER BY id LIMIT 2000""",
             {"jid": job_id, "last": last},
         )
         if not rows:
@@ -254,25 +317,30 @@ def _recovery(db, job_id):
             if hint:
                 execute(
                     db,
-                    """UPDATE job_artifacts SET metadata=CAST(:hint AS jsonb) || COALESCE(metadata,'{}'::jsonb),
-                    updated_at=NOW() WHERE id=:id""",
+                    MERGE_DELETED_PATH_HINT_SQL,
                     {"id": row["id"], "hint": json.dumps(hint)},
                 )
                 tagged += 1
-        total += len(rows)
+        scanned += len(rows)
         last = str(rows[-1]["id"])
         report_progress(
             db,
             job_id,
             "recovery",
-            total=total,
-            completed=total,
+            total=expected,
+            completed=scanned,
             label="Analyzing extracted deleted/recovered evidence",
+            touch_job=publish_job_phase,
         )
+        if not publish_job_phase:
+            from app.services.forensic_serial_pipeline import persist_snapshot
+
+            persist_snapshot(db, job_id)
+            db.commit()
     return {
         "status": "ok",
-        "total": total,
-        "completed": total,
+        "total": expected,
+        "completed": scanned,
         "deleted_sources_tagged": tagged,
         "scope": "derived_evidence; filesystem recovery is performed during extraction",
     }
@@ -337,7 +405,7 @@ def _ocr(db, job_id, schema_name):
                 "ocr",
                 total=before,
                 completed=max(before - after, 0),
-                label="OCR on CUDA; native text on CPU",
+                label="OCR — unclear documents, images, and video frames",
             )
             if after > 0 and (after >= previous or result.get("gpu_deferred")):
                 raise StageWaiting(
@@ -536,6 +604,10 @@ def execute_stage(db, job_id, stage, *, schema_name, stage_run_id):
     if stage == "materialize":
         return _materialize_full(db, job_id)
     if stage == "parse":
+        if not mobile:
+            from app.services.forensic_serial_pipeline import start_recovery_overlap
+
+            start_recovery_overlap(db, job_id, schema_name=schema_name)
         result = _parse(db, job_id, schema_name)
         if not mobile:
             from app.services.forensic_priority_evidence import (
@@ -904,7 +976,9 @@ def _validate_complete(db, job_id, *, mobile=False):
         if isinstance(row.get("disk_source"), str)
         else row.get("disk_source") or {}
     )
-    skipped = int(ds.get("files_skipped") or 0)
+    from app.services.forensic_serial_pipeline import extraction_skip_split
+
+    unreadable, policy_skipped = extraction_skip_split(ds)
     work_failed = int(
         fetchone(
             db,
@@ -933,9 +1007,10 @@ def _validate_complete(db, job_id, *, mobile=False):
             "priority_source_exceptions":priority_exceptions,
             "priority_acquisition_gaps":priority_gaps,
         },
-        "extraction_skipped": skipped,
+        "extraction_skipped": unreadable,
+        "policy_skipped": policy_skipped,
         "ocr_disabled": ocr_skipped,
-        "coverage_complete": not skipped
+        "coverage_complete": not unreadable
         and not work_failed
         and not ocr_skipped
         and not no_text

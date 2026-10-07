@@ -2412,6 +2412,14 @@ def forensic_serial_stage_task(self, schema_name: str, job_id: str, stage: str) 
     return run_serial_stage(schema_name, job_id, stage, task_id=self.request.id)
 
 
+@celery.task(bind=True, name="app.tasks.forensic_recovery_overlap_task", reject_on_worker_lost=True)
+def forensic_recovery_overlap_task(self, schema_name: str, job_id: str, task_id: str | None = None) -> dict:
+    """Deleted-path analysis on the disk pool, overlapping native parsing."""
+    from app.services.forensic_serial_pipeline import run_recovery_overlap
+
+    return run_recovery_overlap(schema_name, job_id, task_id or self.request.id)
+
+
 def nessus_scan_sync_run(schema_name: str, scan_job_id: str) -> dict:
     from app.services.nessus_sync import nessus_scan_sync
 

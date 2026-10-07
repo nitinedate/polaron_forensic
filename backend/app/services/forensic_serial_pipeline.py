@@ -71,11 +71,19 @@ def ensure_serial_schema(db) -> None:
         UNIQUE(job_id, stage), UNIQUE(job_id, sequence_no)
     )""",
     )
-    execute(
+    # Recovery may run beside native parsing. Every other stage stays single-active.
+    existing = fetchone(
         db,
-        """CREATE UNIQUE INDEX IF NOT EXISTS pipeline_one_active_stage
-        ON pipeline_stage_runs(job_id) WHERE status IN ('queued','running')""",
+        "SELECT pg_get_indexdef(to_regclass('pipeline_one_active_stage')) AS def",
     )
+    if not existing or "recovery" not in str(existing.get("def") or ""):
+        execute(db, "DROP INDEX IF EXISTS pipeline_one_active_stage")
+        execute(
+            db,
+            """CREATE UNIQUE INDEX pipeline_one_active_stage
+            ON pipeline_stage_runs(job_id)
+            WHERE status IN ('queued','running') AND stage <> 'recovery'""",
+        )
     for column in ("progress_at timestamptz", "operation text", "operation_deadline timestamptz", "cancel_requested_at timestamptz", "recovery_dispatches integer NOT NULL DEFAULT 0"):
         execute(db, f"ALTER TABLE pipeline_stage_runs ADD COLUMN IF NOT EXISTS {column}")
     execute(
@@ -163,6 +171,55 @@ def upgrade_serial_layout(db, job_id: str, *, schema_name: str, force: bool = Fa
 
 def first_open_stage(rows):
     return next((row for row in rows if row["status"] not in TERMINAL), None)
+
+
+def extraction_skip_split(disk_source: dict | None) -> tuple[int, int]:
+    """Return (unreadable exceptions, forensic policy exclusions).
+
+    ``files_skipped`` counts files the scope filter left out plus files the
+    extractor could not read. Policy exclusions are a completed filter, not
+    processing exceptions.
+    """
+    ds = _obj(disk_source)
+    recorded = int(ds.get("files_skipped") or 0)
+    policy = int(_obj(ds.get("filter_stats")).get("filtered_out") or 0)
+    if policy < 0:
+        policy = 0
+    if policy > recorded:
+        policy = recorded
+    return recorded - policy, policy
+
+
+def extraction_stage_seed(disk_source: dict | None, *, completed_before_controller: bool) -> tuple[int, dict]:
+    unreadable, policy = extraction_skip_split(disk_source)
+    details = {
+        "completed_before_controller": completed_before_controller,
+        "policy_skipped": policy,
+    }
+    if unreadable:
+        details["skip_reason"] = "Unreadable files"
+    return unreadable, details
+
+
+def apply_extraction_skip_accounting(row: dict, disk_source: dict | None) -> bool:
+    """Correct a stage row that stored policy exclusions as extractor exceptions."""
+    if row.get("stage") != "extraction":
+        return False
+    details = dict(_obj(row.get("details")))
+    unreadable, policy = extraction_skip_split(disk_source)
+    recorded = int(row.get("skipped_items") or 0)
+    mislabeled = details.get("skip_reason") == "Explicit extractor exceptions" or (
+        policy > 0 and recorded > unreadable
+    )
+    if not mislabeled:
+        return False
+    details.pop("skip_reason", None)
+    details["policy_skipped"] = policy
+    if unreadable:
+        details["skip_reason"] = "Unreadable files"
+    row["skipped_items"] = unreadable
+    row["details"] = details
+    return True
 
 
 def extraction_barrier(row: dict) -> tuple[bool, str]:
@@ -263,6 +320,23 @@ def serial_progress_snapshot(db, job_id: str, *, row=None) -> dict | None:
         db, "SELECT pipeline_progress FROM jobs WHERE id=:id", {"id": job_id}
     )
     pp = _obj((row or {}).get("pipeline_progress"))
+    extraction = next((item for item in rows if item["stage"] == "extraction"), None)
+    if extraction and (
+        _obj(extraction.get("details")).get("skip_reason") == "Explicit extractor exceptions"
+        or int(extraction.get("skipped_items") or 0) > 0
+    ):
+        source = fetchone(db, "SELECT disk_source FROM jobs WHERE id=:id", {"id": job_id})
+        if apply_extraction_skip_accounting(extraction, _obj((source or {}).get("disk_source"))):
+            execute(
+                db,
+                """UPDATE pipeline_stage_runs SET skipped_items=:skipped, details=CAST(:details AS jsonb),
+                updated_at=NOW() WHERE job_id=:jid AND stage='extraction'""",
+                {
+                    "jid": job_id,
+                    "skipped": int(extraction.get("skipped_items") or 0),
+                    "details": json.dumps(_obj(extraction.get("details"))),
+                },
+            )
     active_row = first_open_stage(rows)
     if active_row and active_row["status"] == "running":
         work = fetchone(
@@ -375,11 +449,13 @@ def start_serial_pipeline(
     fetchone(db, "SELECT id FROM jobs WHERE id=:id FOR UPDATE", {"id": job_id})
     for seq, (stage, _label, _agent) in enumerate(STAGES, 1):
         pre = seq <= 3
-        skipped = (
-            int(_obj(row.get("disk_source")).get("files_skipped") or 0)
-            if stage == "extraction"
-            else 0
-        )
+        if stage == "extraction":
+            skipped, extraction_details = extraction_stage_seed(
+                _obj(row.get("disk_source")), completed_before_controller=pre
+            )
+        else:
+            skipped = 0
+            extraction_details = None
         total = (
             int(row.get("files_total") or row.get("files_extracted") or 0)
             if stage == "extraction"
@@ -409,12 +485,9 @@ def start_serial_pipeline(
                 "done": completed,
                 "skipped": skipped,
                 "details": json.dumps(
-                    {
-                        "completed_before_controller": pre,
-                        "skip_reason": "Explicit extractor exceptions"
-                        if skipped
-                        else None,
-                    }
+                    extraction_details
+                    if stage == "extraction"
+                    else {"completed_before_controller": pre}
                 ),
             },
         )
@@ -442,7 +515,160 @@ def queue_for_stage(stage: str) -> str:
         if is_mobile_service(svc) and svc != "mobile-extract":
             return f"{mobile_queue_prefix(svc)}-ocr"
         return "ocr"
+    # Path-hint recovery does not need parse output. The disk pool is idle
+    # after extraction, so it can run there while parse keeps the parse cores.
+    if stage == "recovery" and not is_mobile_service(current_service()):
+        from app.forensic_common.pipeline_routing import phase3_queue
+
+        return phase3_queue()
     return parse_queue()
+
+
+def start_recovery_overlap(db, job_id: str, *, schema_name: str) -> dict:
+    """Queue deleted-path analysis on the disk pool while parse is still running.
+
+    The row stays pending when this is called again, or when recovery already
+    started, so a parse retry does not launch a second scan.
+    """
+    ensure_serial_schema(db)
+    tid = str(uuid.uuid4())
+    row = fetchone(
+        db,
+        """UPDATE pipeline_stage_runs
+           SET status='queued', task_id=:tid, error=NULL, updated_at=NOW()
+           WHERE job_id=:jid AND stage='recovery' AND status='pending'
+           RETURNING id""",
+        {"jid": job_id, "tid": tid},
+    )
+    if not row:
+        db.commit()
+        return {"status": "held", "stage": "recovery"}
+    from app.services.disk_build_log import write_disk_log
+
+    write_disk_log(
+        db,
+        job_id,
+        "Deleted / recovery analysis queued on the disk pool while native parsing continues",
+        stage="recovery",
+    )
+    db.commit()
+    try:
+        _enqueue_recovery_overlap(schema_name, job_id, tid)
+    except Exception as exc:
+        execute(
+            db,
+            """UPDATE pipeline_stage_runs SET status='pending', task_id=NULL, error=:err, updated_at=NOW()
+               WHERE job_id=:jid AND stage='recovery' AND status='queued' AND task_id=:tid""",
+            {"jid": job_id, "tid": tid, "err": f"Queue unavailable: {exc}"[:1000]},
+        )
+        db.commit()
+        return {"status": "waiting", "stage": "recovery", "reason": "queue_unavailable"}
+    return {"status": "queued", "stage": "recovery", "task_id": tid}
+
+
+def _enqueue_recovery_overlap(schema_name: str, job_id: str, task_id: str) -> None:
+    from app.tasks import forensic_recovery_overlap_task
+
+    forensic_recovery_overlap_task.apply_async(
+        args=(schema_name, job_id, task_id),
+        queue=queue_for_stage("recovery"),
+        task_id=task_id,
+    )
+
+
+def run_recovery_overlap(schema_name: str, job_id: str, task_id: str) -> dict:
+    """Run recovery without the parse execution lock, on the disk worker."""
+    from app.db.session import firm_session
+    from app.services.disk_build_log import write_disk_log
+    from app.services.forensic_serial_stages import _recovery
+
+    with firm_session(schema_name) as db:
+        with named_pipeline_lock(db, schema_name, job_id, "recovery") as acquired:
+            if not acquired:
+                return {"status": "busy", "stage": "recovery"}
+            row = fetchone(
+                db,
+                """SELECT status, task_id FROM pipeline_stage_runs
+                   WHERE job_id=:jid AND stage='recovery'""",
+                {"jid": job_id},
+            )
+            if not row or row["status"] in {"done", "skipped"}:
+                return {"status": row["status"] if row else "held", "stage": "recovery"}
+            if row.get("task_id") and row["task_id"] != task_id:
+                return {"status": "held", "reason": "superseded_delivery", "stage": "recovery"}
+            claimed = fetchone(
+                db,
+                """UPDATE pipeline_stage_runs
+                   SET status='running', attempt=attempt+1, started_at=COALESCE(started_at, NOW()),
+                       heartbeat_at=NOW(), progress_at=NOW(), cancel_requested_at=NULL,
+                       operation='Deleted / recovery analysis alongside native parsing',
+                       operation_deadline=NOW()+INTERVAL '15 minutes', updated_at=NOW(), error=NULL
+                   WHERE job_id=:jid AND stage='recovery' AND task_id=:tid
+                     AND status IN ('queued','running')
+                   RETURNING id""",
+                {"jid": job_id, "tid": task_id},
+            )
+            if not claimed:
+                db.commit()
+                return {"status": "held", "stage": "recovery"}
+            write_disk_log(
+                db,
+                job_id,
+                "Deleted / recovery analysis started on the disk pool while native parsing continues",
+                stage="recovery",
+            )
+            db.commit()
+            try:
+                result = _recovery(db, job_id, publish_job_phase=False)
+            except Exception as exc:
+                db.rollback()
+                execute(
+                    db,
+                    """UPDATE pipeline_stage_runs SET status='failed', error=:err, heartbeat_at=NOW(), updated_at=NOW()
+                       WHERE job_id=:jid AND stage='recovery' AND task_id=:tid""",
+                    {"jid": job_id, "tid": task_id, "err": str(exc)[:2000]},
+                )
+                write_disk_log(
+                    db,
+                    job_id,
+                    f"Deleted / recovery analysis failed — {exc}",
+                    stage="recovery",
+                    level="error",
+                )
+                persist_snapshot(db, job_id)
+                db.commit()
+                return {"status": "failed", "stage": "recovery", "error": str(exc)[:2000]}
+            execute(
+                db,
+                """UPDATE pipeline_stage_runs
+                   SET status='done', completed_at=NOW(), heartbeat_at=NOW(), updated_at=NOW(),
+                       error=NULL, details=CAST(:result AS jsonb),
+                       total_items=:total, completed_items=:done
+                   WHERE job_id=:jid AND stage='recovery' AND task_id=:tid AND status='running'""",
+                {
+                    "jid": job_id,
+                    "tid": task_id,
+                    "result": json.dumps(result, default=str),
+                    "total": int(result.get("total") or 0),
+                    "done": int(result.get("completed") or 0),
+                },
+            )
+            write_disk_log(
+                db,
+                job_id,
+                f"Deleted / recovery analysis complete — {int(result.get('deleted_sources_tagged') or 0):,} deleted paths tagged",
+                stage="recovery",
+            )
+            persist_snapshot(db, job_id)
+            db.commit()
+    return _dispatch_after_overlap(schema_name, job_id)
+
+
+def _dispatch_after_overlap(schema_name: str, job_id: str) -> dict:
+    from app.db.session import firm_session
+
+    with firm_session(schema_name) as db:
+        return dispatch_current_stage(db, job_id, schema_name=schema_name)
 
 
 def dispatch_current_stage(
@@ -514,6 +740,29 @@ def dispatch_current_stage(
             "reason": "queue_unavailable",
         }
     return {"status": "queued", "stage": active["stage"], "task_id": tid}
+
+
+@contextmanager
+def named_pipeline_lock(db, schema_name: str, job_id: str, name: str):
+    """A second advisory lock so recovery can run while parse holds the stage lock."""
+    from sqlalchemy import text
+
+    digest = hashlib.sha256(f"{name}:{schema_name}:{job_id}".encode()).digest()
+    params = {
+        "a": int.from_bytes(digest[:4], "big", signed=True),
+        "b": int.from_bytes(digest[4:8], "big", signed=True),
+    }
+    with (
+        db.get_bind().connect().execution_options(isolation_level="AUTOCOMMIT") as conn
+    ):
+        got = bool(
+            conn.execute(text("SELECT pg_try_advisory_lock(:a,:b)"), params).scalar()
+        )
+        try:
+            yield got
+        finally:
+            if got:
+                conn.execute(text("SELECT pg_advisory_unlock(:a,:b)"), params)
 
 
 @contextmanager
@@ -693,10 +942,12 @@ def run_serial_stage(
             except Exception as exc:
                 db.rollback()
                 from app.services.db_resilience import is_transient_db_error
+                from app.services.storage import is_transient_stream_error
 
                 resumable = (
                     isinstance(exc, StageWaiting)
                     or is_transient_db_error(exc)
+                    or is_transient_stream_error(exc)
                     or type(exc).__name__
                     in {
                         "GpuHeavySlotTimeout",

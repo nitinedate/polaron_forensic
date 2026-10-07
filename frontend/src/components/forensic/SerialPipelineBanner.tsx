@@ -7,11 +7,15 @@ export function SerialPipelineBanner({ pipeline, paused, compact, elapsed }: {
   pipeline: SerialPipeline; paused: boolean; compact: boolean; elapsed?: string | null;
 }) {
   const active = pipeline.stages.find((stage) => stage.id === pipeline.current_stage);
-  const exceptions = pipeline.stages.filter((stage) => stage.failed > 0 || stage.skipped > 0 || stage.status === "skipped"
+  const exceptionSkips = (stage: SerialPipeline["stages"][number]) => {
+    const policy = Number(stage.details?.policy_skipped || 0);
+    return Math.max(0, stage.skipped - policy);
+  };
+  const exceptions = pipeline.stages.filter((stage) => stage.failed > 0 || exceptionSkips(stage) > 0 || stage.status === "skipped"
     || stage.error || Number(stage.details?.errors || 0) > 0 || stage.details?.coverage_complete === false);
   const exceptionText = (stage: SerialPipeline["stages"][number]) => stage.error
     || (stage.failed > 0 ? `${stage.failed.toLocaleString()} failed work units`
-      : stage.skipped > 0 ? `${stage.skipped.toLocaleString()} skipped · ${stage.details?.skip_reason || "recorded evidence exceptions"}`
+      : exceptionSkips(stage) > 0 ? `${exceptionSkips(stage).toLocaleString()} skipped · ${stage.details?.skip_reason || "recorded evidence exceptions"}`
         : stage.status === "skipped" ? String(stage.details?.reason || "Stage explicitly skipped")
           : "Coverage exceptions recorded; review evidence counters.");
   const stateLabel = (status: string) => status === "done" ? "Completed" : status === "skipped" ? "Skipped"

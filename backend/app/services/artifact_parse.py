@@ -19,11 +19,55 @@ from app.db.sql_helpers import (
 )
 from app.parsers import PARSER_VERSION
 from app.services.disk_build_log import write_disk_log
-from app.services.storage import get_bytes
+from app.services.storage import TransientStreamError, get_bytes
 from app.services.tar_cache import iter_files_from_part
 
 
 log = logging.getLogger("artifact_parse")
+
+
+def _advance_parse_stage(db, job_id: str, operation: str, *, publish_counts: bool = False) -> None:
+    """Keep a long parse batch alive and, when files finish, show that on the stage.
+
+    progressAgent cancels a running stage once its operation deadline passes.
+    A shard stream or a multi-minute batch does not finish inside the initial
+    five-minute window, so the counter stayed at 0 and the stage restarted.
+    """
+    try:
+        if publish_counts:
+            from app.services.forensic_serial_stages import report_progress
+
+            row = fetchone(
+                db,
+                """SELECT count(*) FILTER (WHERE parse_status='parsed') AS done,
+                count(*) FILTER (WHERE parse_status IN ('skipped','no_parser')) AS skipped,
+                count(*) FILTER (WHERE parse_status IN ('failed','error')) AS failed,
+                count(*) AS total FROM job_artifacts WHERE job_id=:jid""",
+                {"jid": job_id},
+            )
+            report_progress(
+                db,
+                job_id,
+                "parse",
+                total=int(row["total"] or 0),
+                completed=int(row["done"] or 0),
+                failed=int(row["failed"] or 0),
+                skipped=int(row["skipped"] or 0),
+                label="Native forensic parsing",
+            )
+        from app.services.progress_agent import note_operation
+
+        note_operation(
+            db,
+            job_id,
+            "parse",
+            operation,
+            timeout_seconds=900,
+            advanced=True,
+        )
+    except Exception:
+        log.debug("parse stage progress update failed", exc_info=True)
+        rollback_aborted_transaction(db)
 
 IMAGE_EXT = frozenset({".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".pdf"})
 
@@ -148,6 +192,93 @@ def _claim_pending_rows(
                 WHERE ja.id = c.id
                 RETURNING ja.id, ja.file_path, ja.minio_uri, ja.size_bytes, ja.sha256, ja.metadata"""
     return retry_on_deadlock(db, lambda: fetchall(db, sql, values))
+
+
+_FULL_SHARD_CAP = 100_000
+
+
+def serial_parse_workers() -> int:
+    """Threads for the one serial parse process.
+
+    Leave at least two cores free on a laptop so the fan and the OS stay
+    responsive. Eight is the ceiling even when more CPUs are visible.
+    """
+    import os
+
+    cpus = os.cpu_count() or 4
+    return max(2, min(8, cpus - 2 if cpus > 4 else cpus))
+
+
+def parse_thermal_backoff(workers: int, *, busy_seconds: float = 0.0) -> tuple[int, float, str]:
+    """How many parse threads to keep, and how long to rest.
+
+    A busy CPU is the job running. Only chassis temperature sheds cores, and
+    it does so before a laptop's own shutdown trip. When no sensor is visible,
+    a short rest after a sustained run bleeds heat without giving the cores up.
+    """
+    from app.services.host_capacity import probe_host
+
+    workers = max(1, int(workers or 1))
+    try:
+        snap = probe_host()
+        settings = get_settings()
+        throttle_c = int(getattr(settings, "cpu_thermal_throttle_c", 86) or 86)
+        pause_c = int(getattr(settings, "cpu_thermal_pause_c", 94) or 94)
+        gpu_pause_c = int(getattr(settings, "gpu_thermal_pause_c", 92) or 92)
+    except Exception:
+        return workers, 0.0, ""
+    # Rest earlier than the configured 94C pause. Many laptops cut power near 95-100C.
+    hard_c = min(pause_c, 90)
+    temps = [int(t) for t in (snap.cpu_temp_c, snap.gpu_temp_c) if t is not None]
+    if snap.gpu_temp_c is not None and int(snap.gpu_temp_c) >= gpu_pause_c:
+        temps.append(hard_c)
+    if not temps:
+        if busy_seconds >= 75:
+            return workers, 4.0, "cooling rest; CPU temperature is not visible"
+        return workers, 0.0, ""
+    hottest = max(temps)
+    if hottest >= hard_c:
+        return 1, 8.0, f"{hottest}C — resting parse so the laptop does not shut down"
+    if hottest >= throttle_c:
+        return max(1, min(workers, 2)), 2.0, f"{hottest}C — fewer parse cores"
+    if hottest >= throttle_c - 6:
+        return max(2, min(workers, max(2, workers // 2))), 0.5, ""
+    return workers, 0.0, ""
+
+
+def _claim_full_shard(db, job_id: str, forensic_filter: str) -> list[dict]:
+    """Claim every pending file on the fullest extract shard.
+
+    A shard is one compressed tar. Taking a few hundred paths and then reading
+    that tar again for the next slice dominated parse time.
+    """
+    part = fetchone(
+        db,
+        f"""SELECT metadata->>'extracted_part_uri' AS part
+            FROM job_artifacts
+            WHERE job_id=:jid AND parse_status='pending'
+              AND coalesce(metadata->>'extracted_part_uri','') <> ''
+              {forensic_filter}
+            GROUP BY 1
+            ORDER BY MAX(CASE WHEN file_path ILIKE '%/config/SOFTWARE'
+                OR file_path ILIKE '%/config/SYSTEM' OR file_path ILIKE '%/config/SAM'
+                OR file_path ILIKE '%Security.evtx' THEN 1 ELSE 0 END) DESC,
+              count(*) DESC
+            LIMIT 1""",
+        {"jid": job_id},
+    )
+    if not part or not part.get("part"):
+        return []
+    rows = fetchall(
+        db,
+        f"""SELECT id FROM job_artifacts
+            WHERE job_id=:jid AND parse_status='pending'
+              AND metadata->>'extracted_part_uri' = :part
+              {forensic_filter}
+            LIMIT :lim""",
+        {"jid": job_id, "part": part["part"], "lim": _FULL_SHARD_CAP},
+    )
+    return _claim_artifacts_by_id(db, [row["id"] for row in rows])
 
 
 def _claim_artifacts_by_id(db, ids: list[Any]) -> list[dict]:
@@ -783,11 +914,15 @@ def _process_parse_work_parallel(
     stats: dict[str, int],
     heartbeat_fn,
     backoff_fn,
+    heartbeat_due_fn=None,
+    worker_limit_fn=None,
 ) -> None:
     """Parse many artifacts in parallel; DB writes stay on the caller thread."""
     if not work:
         return
 
+    if heartbeat_due_fn is None:
+        heartbeat_due_fn = lambda: False
     settings = get_settings()
     parallel = bool(getattr(settings, "parse_parallel_enabled", True)) and parse_workers > 1
     chunk_size = max(parse_workers * 12, 48) if parallel else len(work)
@@ -844,10 +979,12 @@ def _process_parse_work_parallel(
                     )
                 stats["skipped"] += 1
         pending_commits += 1
-        if pending_commits >= commit_batch:
+        # Commit a batch of artifact rows together. Flushing every file capped
+        # the shard at roughly one file per database round-trip.
+        # A heartbeat updates stage rows, so those artifact locks are committed
+        # first and only when that heartbeat is actually due.
+        if pending_commits >= commit_batch or heartbeat_due_fn():
             _flush_artifact_writes()
-        # jobs-row heartbeat must never share a transaction with artifact-row locks.
-        _flush_artifact_writes()
         heartbeat_fn()
         backoff_fn()
 
@@ -866,7 +1003,13 @@ def _process_parse_work_parallel(
     for offset in range(0, len(small_items), chunk_size):
         chunk = small_items[offset : offset + chunk_size]
         if parallel and len(chunk) > 1:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=parse_workers) as pool:
+            workers_now = parse_workers
+            if worker_limit_fn is not None:
+                try:
+                    workers_now = max(1, min(parse_workers, int(worker_limit_fn())))
+                except Exception:
+                    workers_now = parse_workers
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers_now) as pool:
                 futures = [pool.submit(_parse_work_item, item, timeout_sec) for item in chunk]
                 results = [fut.result() for fut in concurrent.futures.as_completed(futures)]
             results.sort(key=lambda r: str((r.get("artifact") or {}).get("id") or ""))
@@ -890,6 +1033,8 @@ def parse_job_artifacts_for_paths(
     forensic_only: bool = False,
     parse_bucket: int | None = None,
     parse_buckets: int | None = None,
+    full_shard: bool = False,
+    worker_cap: int | None = None,
 ) -> dict:
     settings = get_settings()
     limit = int(batch_limit if batch_limit is not None else getattr(settings, "parse_batch_limit", 5000) or 5000)
@@ -918,35 +1063,39 @@ def parse_job_artifacts_for_paths(
             limit=limit,
         )
     else:
-        # Probe without locking, then claim only the coalesced shard ids in id order.
-        probe_limit = max(limit * 6, limit, 2000) if index_map else limit
-        probed = fetchall(
-            db,
-            f"""SELECT id, file_path, minio_uri, size_bytes, metadata FROM job_artifacts
-               WHERE job_id=:jid AND parse_status='pending'
-               {forensic_filter}
-               ORDER BY {_FORENSIC_PARSE_ORDER_SQL}
-               LIMIT :lim""",
-            {"jid": job_id, "lim": probe_limit},
-        )
-        artifacts = probed
-        if artifacts and index_map and len(artifacts) > limit:
-            from collections import Counter
+        artifacts = []
+        if full_shard:
+            artifacts = _claim_full_shard(db, job_id, forensic_filter)
+        if not artifacts:
+            # Probe without locking, then claim only the coalesced shard ids in id order.
+            probe_limit = max(limit * 6, limit, 2000) if index_map else limit
+            probed = fetchall(
+                db,
+                f"""SELECT id, file_path, minio_uri, size_bytes, metadata FROM job_artifacts
+                   WHERE job_id=:jid AND parse_status='pending'
+                   {forensic_filter}
+                   ORDER BY {_FORENSIC_PARSE_ORDER_SQL}
+                   LIMIT :lim""",
+                {"jid": job_id, "lim": probe_limit},
+            )
+            artifacts = probed
+            if artifacts and index_map and len(artifacts) > limit:
+                from collections import Counter
 
-            part_of: dict[str, str] = {}
-            counts: Counter[str] = Counter()
-            for art in artifacts:
-                norm = str(art["file_path"]).replace("\\", "/")
-                part = index_map.get(norm) or index_map.get(art["file_path"]) or ""
-                if art.get("minio_uri"):
-                    part = f"direct:{art['id']}"
-                part_of[str(art["id"])] = part
-                counts[part] += 1
-            best_part, _ = counts.most_common(1)[0]
-            coalesced = [a for a in artifacts if part_of.get(str(a["id"])) == best_part]
-            shard_cap = max(limit, min(2500, len(coalesced)))
-            artifacts = coalesced[:shard_cap]
-        artifacts = _claim_artifacts_by_id(db, [a["id"] for a in artifacts])
+                part_of: dict[str, str] = {}
+                counts: Counter[str] = Counter()
+                for art in artifacts:
+                    norm = str(art["file_path"]).replace("\\", "/")
+                    part = index_map.get(norm) or index_map.get(art["file_path"]) or ""
+                    if art.get("minio_uri"):
+                        part = f"direct:{art['id']}"
+                    part_of[str(art["id"])] = part
+                    counts[part] += 1
+                best_part, _ = counts.most_common(1)[0]
+                coalesced = [a for a in artifacts if part_of.get(str(a["id"])) == best_part]
+                shard_cap = max(limit, min(2500, len(coalesced)))
+                artifacts = coalesced[:shard_cap]
+            artifacts = _claim_artifacts_by_id(db, [a["id"] for a in artifacts])
     if artifacts:
         db.commit()
     if not artifacts:
@@ -962,63 +1111,81 @@ def parse_job_artifacts_for_paths(
     heartbeat_every = 10 if update_status else 999999
     last_heartbeat_at = time.monotonic()
     last_orchestration_at = 0
+    last_cool_at = time.monotonic()
     settings = get_settings()
     parse_workers = max(int(getattr(settings, "parse_workers", 12) or 12), 1)
-    # Cap total parse threads across buckets (Performance agent may raise PARSE_WORKERS).
     from app.services.forensic_serial_policy import parallelism
 
-    parse_workers = parallelism(parse_workers)
+    if worker_cap:
+        parse_workers = max(1, int(worker_cap))
+    else:
+        # Cap total parse threads across buckets (Performance agent may raise PARSE_WORKERS).
+        parse_workers = parallelism(parse_workers)
     # When path-hash buckets already fan out across Celery processes, shrink per-bucket
     # threads so total CPU threads ≈ parse_workers (keeps thermal load under control).
     if parse_buckets and int(parse_buckets) > 1:
         parse_workers = max(1, parse_workers // int(parse_buckets))
-    try:
-        from app.services.gpu_thermal import recommended_parallel_workers
+    if not worker_cap:
+        # Serial parse sheds threads per batch from chassis temperature.
+        # This start-of-batch cut also treats a busy CPU as heat, which stalls a cool laptop.
+        try:
+            from app.services.gpu_thermal import recommended_parallel_workers
 
-        parse_workers = recommended_parallel_workers(parse_workers, min_workers=1)
-    except Exception:
-        pass
+            parse_workers = recommended_parallel_workers(parse_workers, min_workers=1)
+        except Exception:
+            pass
     try:
         from app.services.adaptive_semaphore import cap_parallelism
 
         parse_workers = cap_parallelism("parse_workers", parse_workers, min_workers=1)
     except Exception:
         pass
-    parse_workers = parallelism(parse_workers)
+    if not worker_cap:
+        parse_workers = parallelism(parse_workers)
     timeout_sec = _configured_parse_timeout_sec()
     commit_batch = max(int(getattr(settings, "parse_db_commit_batch", 25) or 25), 1)
-    # Thermal/load backoff interval scales with configured parse workers.
-    thermal_check_every = max(10, min(50, parse_workers * 5))
 
     def _maybe_cpu_backoff() -> None:
-        nonlocal parse_workers
-        total = stats["parsed"] + stats["skipped"]
-        if total == 0 or total % thermal_check_every != 0:
-            return
-        try:
-            from app.config import get_settings as _gs
-            from app.services.host_capacity import cpu_thermal_pace, probe_host
+        """Load alone must not stall parse. Temperature is applied per batch."""
+        return
 
-            pace = cpu_thermal_pace()
-            if pace < 0.95:
-                # Stronger sleep near thermal trip — prevent chassis shutdown.
-                time.sleep(max(0.2, (1.0 - pace) * 4.0))
-            snap = probe_host()
-            cpu_pause = int(getattr(_gs(), "cpu_thermal_pause_c", 92) or 92)
-            cpu_throttle = int(getattr(_gs(), "cpu_thermal_throttle_c", 85) or 85)
-            if snap.cpu_temp_c is not None and snap.cpu_temp_c >= cpu_pause:
-                time.sleep(8.0)
-                parse_workers = 1
-            elif snap.cpu_temp_c is not None and snap.cpu_temp_c >= cpu_throttle:
-                time.sleep(3.0)
-                parse_workers = max(1, min(parse_workers, 2))
-        except Exception:
-            pass
+    def _thermal_worker_cap() -> int:
+        nonlocal last_cool_at
+        busy = time.monotonic() - last_cool_at
+        cap, sleep_s, reason = parse_thermal_backoff(parse_workers, busy_seconds=busy)
+        if not sleep_s:
+            return cap
+        if reason:
+            log.info("Parse thermal: %s", reason)
+        waited = 0.0
+        while True:
+            _maybe_heartbeat()
+            step = min(sleep_s, 8.0)
+            time.sleep(step)
+            waited += step
+            if sleep_s < 8 or waited >= 90:
+                break
+            cap, sleep_s, reason = parse_thermal_backoff(parse_workers, busy_seconds=0)
+            if sleep_s < 8:
+                break
+        last_cool_at = time.monotonic()
+        return max(1, min(parse_workers, cap))
+
+    def _heartbeat_due() -> bool:
+        total = stats["parsed"] + stats["skipped"]
+        if total == 0:
+            return (time.monotonic() - last_heartbeat_at) >= 30.0
+        time_due = (time.monotonic() - last_heartbeat_at) >= 30.0
+        count_due = update_status and total > 0 and total % heartbeat_every == 0
+        return bool(count_due or time_due)
 
     def _maybe_heartbeat() -> None:
         nonlocal last_heartbeat_at, last_orchestration_at
         total = stats["parsed"] + stats["skipped"]
         if total == 0:
+            if (time.monotonic() - last_heartbeat_at) >= 30.0:
+                last_heartbeat_at = time.monotonic()
+                _advance_parse_stage(db, job_id, "Native forensic parsing")
             return
         time_due = (time.monotonic() - last_heartbeat_at) >= 30.0
         count_due = update_status and total > 0 and total % heartbeat_every == 0
@@ -1048,6 +1215,12 @@ def parse_job_artifacts_for_paths(
             except Exception as exc:
                 log.debug("Parse heartbeat orchestration merge skipped: %s", exc)
         db.commit()
+        _advance_parse_stage(
+            db,
+            job_id,
+            f"Native forensic parsing — {stats['parsed']:,} parsed this batch",
+            publish_counts=True,
+        )
 
     try:
         return _run_claimed_parse_batch(
@@ -1064,6 +1237,8 @@ def parse_job_artifacts_for_paths(
             commit_batch=commit_batch,
             heartbeat_fn=_maybe_heartbeat,
             backoff_fn=_maybe_cpu_backoff,
+            heartbeat_due_fn=_heartbeat_due,
+            worker_limit_fn=_thermal_worker_cap,
         )
     except Exception:
         rollback_aborted_transaction(db)
@@ -1091,6 +1266,8 @@ def _run_claimed_parse_batch(
     commit_batch: int,
     heartbeat_fn,
     backoff_fn,
+    heartbeat_due_fn=None,
+    worker_limit_fn=None,
 ) -> dict:
     by_part_budget: dict[tuple[str, int | None], list[dict]] = {}
     direct_minio: list[dict] = []
@@ -1135,6 +1312,8 @@ def _run_claimed_parse_batch(
             stats=stats,
             heartbeat_fn=heartbeat_fn,
             backoff_fn=backoff_fn,
+            heartbeat_due_fn=heartbeat_due_fn,
+            worker_limit_fn=worker_limit_fn,
         )
         work = []
         batch_bytes = 0
@@ -1190,13 +1369,84 @@ def _run_claimed_parse_batch(
                 db.rollback()
             except Exception:
                 pass
-        for norm, data in iter_files_from_part(part_uri, paths_set, max_bytes=budget):
-            artifact = by_path.get(norm)
-            if not artifact:
-                continue
-            _enqueue(artifact, artifact["file_path"], data)
-            # Drop reference ASAP for large SQLite blobs after enqueue/flush.
-            data = None
+
+        def _shard_still_reading() -> None:
+            _advance_parse_stage(
+                db,
+                job_id,
+                f"Streaming extract shard — {len(paths_set):,} files for native parsing",
+            )
+
+        try:
+            import queue
+            import threading
+
+            batches: queue.Queue = queue.Queue(maxsize=1)
+            failed: list[BaseException] = []
+
+            def _read_ahead() -> None:
+                ahead: list[tuple[dict, str, bytes | None]] = []
+                ahead_bytes = 0
+                try:
+                    for norm, data in iter_files_from_part(
+                        part_uri, paths_set, max_bytes=budget
+                    ):
+                        artifact = by_path.get(norm)
+                        if not artifact:
+                            continue
+                        size = len(data) if data else int(artifact.get("size_bytes") or 0)
+                        if ahead and (
+                            size >= _LARGE_FILE_BYTES or ahead_bytes + size > _PARSE_BATCH_BYTE_BUDGET
+                        ):
+                            batches.put(ahead)
+                            ahead = []
+                            ahead_bytes = 0
+                        ahead.append((artifact, artifact["file_path"], data))
+                        ahead_bytes += size
+                        if size >= _LARGE_FILE_BYTES or ahead_bytes >= _PARSE_BATCH_BYTE_BUDGET:
+                            batches.put(ahead)
+                            ahead = []
+                            ahead_bytes = 0
+                    if ahead:
+                        batches.put(ahead)
+                except Exception as exc:
+                    failed.append(exc)
+                finally:
+                    batches.put(None)
+
+            reader = threading.Thread(target=_read_ahead, name="parse-shard-read", daemon=True)
+            reader.start()
+            while True:
+                try:
+                    nxt = batches.get(timeout=15)
+                except queue.Empty:
+                    _shard_still_reading()
+                    continue
+                if nxt is None:
+                    break
+                # The reader is already filling the next batch while this one parses.
+                for artifact, path, data in nxt:
+                    _enqueue(artifact, path, data)
+                data = None
+            reader.join(timeout=5)
+            if failed:
+                raise failed[0]
+        except TransientStreamError as exc:
+            # Keep files already pulled from this shard. Unread claims go back
+            # to pending so the next pass retries them instead of skipping them
+            # or failing the source.
+            _flush_work()
+            _release_parsing_claims(db, [a["id"] for a in part_artifacts])
+            write_disk_log(
+                db,
+                job_id,
+                "Parse shard read interrupted — unread files returned to pending",
+                stage="parse",
+                level="warning",
+                metadata={"part_uri": part_uri, "error": str(exc)[:500]},
+            )
+            db.commit()
+            raise
 
     _flush_work()
     parsed = stats["parsed"]

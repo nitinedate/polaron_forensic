@@ -103,3 +103,45 @@ def test_exec_locked_retries_deadlock(monkeypatch):
     db = Mock()
     _exec_locked(db, "UPDATE job_artifacts SET parse_status='skipped' WHERE id=:id", {"id": "x"})
     assert calls["n"] == 2
+
+
+def test_parse_commits_once_per_batch_not_per_file(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.services import artifact_parse
+
+    commits: list[int] = []
+    db = SimpleNamespace(commit=lambda: commits.append(1))
+    monkeypatch.setattr(
+        artifact_parse,
+        "get_settings",
+        lambda: SimpleNamespace(parse_parallel_enabled=True),
+    )
+    monkeypatch.setattr(
+        artifact_parse,
+        "_parse_work_item",
+        lambda item, timeout: {
+            "artifact": item[0],
+            "path": item[1],
+            "kind": "parsed",
+            "parser_name": "text",
+            "records": [{"ok": True}],
+        },
+    )
+    monkeypatch.setattr(artifact_parse, "_apply_parse_outcome", lambda *args, **kwargs: (True, "parsed"))
+    work = [({"id": str(i)}, f"f{i}.txt", b"abc") for i in range(10)]
+    stats = {"parsed": 0, "skipped": 0}
+    artifact_parse._process_parse_work_parallel(
+        db,
+        "job",
+        work,
+        parse_workers=2,
+        timeout_sec=0,
+        commit_batch=4,
+        stats=stats,
+        heartbeat_fn=lambda: None,
+        backoff_fn=lambda: None,
+        heartbeat_due_fn=lambda: False,
+    )
+    assert stats["parsed"] == 10
+    assert len(commits) == 3

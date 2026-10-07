@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import logging
 import os
+import time
 from pathlib import Path
 
 from app.config import get_settings
@@ -12,6 +13,48 @@ from app.config import get_settings
 log = logging.getLogger("storage")
 _client = None
 _client_failed = False
+# Large tar.zst shards are read as fixed ranges. A dropped HTTP body then
+# retries a few megabytes instead of restarting a multi-gigabyte download.
+_RANGE_BYTES = 32 * 1024 * 1024
+_RANGE_ATTEMPTS = 5
+
+
+class TransientStreamError(OSError):
+    """A object-storage read broke and can be retried without changing the source."""
+
+
+def is_transient_stream_error(exc: BaseException) -> bool:
+    """True for a truncated or reset object download, not a missing or corrupt file."""
+    if isinstance(exc, TransientStreamError):
+        return True
+    name = type(exc).__name__.lower()
+    if name in {
+        "incompleteread",
+        "protocolerror",
+        "chunkedencodingerror",
+        "remotedisconnected",
+        "connectionreseterror",
+        "connectionabortederror",
+        "brokenpipeerror",
+        "timeouterror",
+        "readtimeouterror",
+        "connecttimeouterror",
+    }:
+        return True
+    text = str(exc).lower()
+    return any(
+        token in text
+        for token in (
+            "incompleteread",
+            "connection broken",
+            "connection reset",
+            "connection aborted",
+            "remote end closed",
+            "server closed",
+            "broken pipe",
+            "timed out",
+        )
+    )
 
 
 def _local_root() -> Path:
@@ -85,35 +128,15 @@ def put_file(key: str, file_path: Path, content_type: str = "application/octet-s
 def get_bytes(storage_uri: str, *, max_bytes: int | None = None) -> bytes | None:
     if not storage_uri:
         return None
-    if storage_uri.startswith("file://"):
-        path = Path(storage_uri[7:])
-        if not path.is_file():
-            return None
+    stream = open_object_stream(storage_uri)
+    if stream is None:
+        return None
+    try:
         if max_bytes is None:
-            return path.read_bytes()
-        with path.open("rb") as fh:
-            return fh.read(max_bytes)
-    if storage_uri.startswith("s3://"):
-        parts = storage_uri[5:].split("/", 1)
-        bucket, key = parts[0], parts[1] if len(parts) > 1 else ""
-        client = _minio_client()
-        if not client:
-            path = _local_root() / key.replace("/", os.sep)
-            if not path.is_file():
-                return None
-            if max_bytes is None:
-                return path.read_bytes()
-            with path.open("rb") as fh:
-                return fh.read(max_bytes)
-        resp = client.get_object(bucket, key)
-        try:
-            if max_bytes is None:
-                return resp.read()
-            return resp.read(max_bytes)
-        finally:
-            resp.close()
-            resp.release_conn()
-    return None
+            return stream.read()
+        return stream.read(max_bytes)
+    finally:
+        stream.close()
 
 
 class _ObjectStream:
@@ -147,10 +170,102 @@ class _ObjectStream:
         self.close()
 
 
-def open_object_stream(storage_uri: str) -> _ObjectStream | None:
+def _missing_object(exc: BaseException) -> bool:
+    code = str(getattr(exc, "code", "") or "")
+    return code in {"NoSuchKey", "NoSuchBucket"} or "NoSuchKey" in type(exc).__name__
+
+
+class _RangedS3Stream:
+    """File-like reader that fetches an object in fixed ranges.
+
+    ``http.client.IncompleteRead`` on a multi-gigabyte GET used to fail the
+    parse stage. Retrying the current range keeps the decompressor position.
+    """
+
+    def __init__(self, client, bucket: str, key: str, size: int):
+        self._client = client
+        self._bucket = bucket
+        self._key = key
+        self._size = max(0, int(size))
+        self._pos = 0
+        self._buf = b""
+
+    def readable(self) -> bool:
+        return True
+
+    def close(self) -> None:
+        self._buf = b""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+    def read(self, size: int = -1) -> bytes:
+        if size is None or size < 0:
+            size = self._size - self._pos
+        if size <= 0 or self._pos >= self._size:
+            return b""
+        out = bytearray()
+        while len(out) < size and self._pos < self._size:
+            if not self._buf:
+                self._fill()
+            if not self._buf:
+                break
+            take = min(size - len(out), len(self._buf))
+            out += self._buf[:take]
+            self._buf = self._buf[take:]
+            self._pos += take
+        return bytes(out)
+
+    def _fill(self) -> None:
+        start = self._pos
+        length = min(_RANGE_BYTES, self._size - start)
+        last: BaseException | None = None
+        for attempt in range(1, _RANGE_ATTEMPTS + 1):
+            resp = None
+            try:
+                resp = self._client.get_object(self._bucket, self._key, offset=start, length=length)
+                data = resp.read()
+                if len(data) != length:
+                    raise TransientStreamError(
+                        f"IncompleteRead({len(data)} bytes read, {length - len(data)} more expected)"
+                    )
+                self._buf = data
+                return
+            except Exception as exc:
+                last = exc
+                if not is_transient_stream_error(exc):
+                    raise
+                log.warning(
+                    "Object range read failed key=%s offset=%s attempt %s/%s: %s",
+                    self._key,
+                    start,
+                    attempt,
+                    _RANGE_ATTEMPTS,
+                    exc,
+                )
+                time.sleep(min(8.0, 0.4 * attempt))
+            finally:
+                if resp is not None:
+                    try:
+                        resp.close()
+                    finally:
+                        try:
+                            resp.release_conn()
+                        except Exception:
+                            pass
+        raise TransientStreamError(
+            f"Connection broken: IncompleteRead while reading {self._key} at offset {start}: {last}"
+        ) from last
+
+
+def open_object_stream(storage_uri: str):
     """Open a streaming read for an object without buffering the whole blob in RAM.
 
     Critical for multi-GB ``.tar.zst`` extract shards — ``get_bytes`` would OOM workers.
+    S3 objects are read in ranges so a dropped connection retries that slice.
     """
     if not storage_uri:
         return None
@@ -168,18 +283,19 @@ def open_object_stream(storage_uri: str) -> _ObjectStream | None:
             if not path.is_file():
                 return None
             return _ObjectStream(path.open("rb"))
-        resp = client.get_object(bucket, key)
-
-        def _closer() -> None:
+        last: BaseException | None = None
+        for attempt in range(1, 4):
             try:
-                resp.close()
-            finally:
-                try:
-                    resp.release_conn()
-                except Exception:
-                    pass
-
-        return _ObjectStream(resp, closer=_closer)
+                stat = client.stat_object(bucket, key)
+                return _RangedS3Stream(client, bucket, key, int(stat.size))
+            except Exception as exc:
+                last = exc
+                if _missing_object(exc):
+                    return None
+                if not is_transient_stream_error(exc) or attempt == 3:
+                    raise
+                time.sleep(min(4.0, 0.4 * attempt))
+        raise TransientStreamError(f"Could not stat {key}: {last}")
     return None
 
 

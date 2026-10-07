@@ -346,7 +346,33 @@ def _starts_with_any(path: str, prefixes: tuple[str, ...]) -> bool:
 
 
 def _ext(name: str) -> str:
-    return PurePosixPath(name).suffix.lower()
+    base = name.replace("\\", "/").rsplit("/", 1)[-1]
+    dot = base.rfind(".")
+    if dot <= 0 or dot == len(base) - 1:
+        return ""
+    return base[dot:].lower()
+
+
+def _windows_bulk_system_binary(path: str, ext: str) -> bool:
+    """True when a Windows system binary cannot be evidence under forensic rules.
+
+    WinSxS, driver store, and the rest of Windows\\*.dll are the bulk of a
+    desktop image. The scope pack already refuses them unless they sit in a
+    keep-tree (winevt, config, prefetch, …). Deciding that here avoids a full
+    handbook and regex pass on every one of those files.
+    """
+    if ext not in SYSTEM_BINARY_EXTENSIONS:
+        return False
+    from app.services.os_artifact_scope.windows import EXTENSIONS, KEEP_PREFIXES, NOISE_PREFIXES
+
+    # Pack extensions (.bin, .manifest, …) are evidence wherever they sit.
+    if ext in EXTENSIONS:
+        return False
+    if _starts_with_any(path, NOISE_PREFIXES):
+        return True
+    if path.startswith(("windows/", "program files/", "program files (x86)/")) or "/windows/" in f"/{path}/":
+        return not _starts_with_any(path, KEEP_PREFIXES)
+    return False
 
 
 def resolve_skip_system_paths(
@@ -515,7 +541,13 @@ def _special_name_match(base: str) -> bool:
     return False
 
 
-def matches_forensic_include(path: str, name: str | None = None, *, os_family: str | None = None) -> bool:
+def matches_forensic_include(
+    path: str,
+    name: str | None = None,
+    *,
+    os_family: str | None = None,
+    scope_hit: bool | None = None,
+) -> bool:
     """Return True if path is worth extracting for forensic encyclopedia / RAG."""
     family = (os_family or "").strip().lower()
     # Strong mobile trees must never bleed into a known disk-OS extraction just
@@ -531,7 +563,9 @@ def matches_forensic_include(path: str, name: str | None = None, *, os_family: s
     # coverage, never veto a hit made by the handbook rules below. On an
     # unidentified image `matches_os_scope` falls back to the union of all packs
     # so we over-collect rather than lose evidence.
-    if matches_os_scope(path, os_family=os_family, name=name):
+    if scope_hit is None:
+        scope_hit = matches_os_scope(path, os_family=os_family, name=name)
+    if scope_hit:
         return True
 
     if family in ("android", "ios"):
@@ -690,16 +724,31 @@ def should_extract_node(
         is_forensic_extract_waived,
     )
 
-    if is_critical_forensic_path(path) or is_forensic_extract_waived(path):
-        # Forensic hives/containers: only hard-cap at CRITICAL_HIVE_MAX_BYTES (2 GiB).
-        if CRITICAL_HIVE_MAX_BYTES > 0 and size_bytes > CRITICAL_HIVE_MAX_BYTES:
+    # The waiver scan walks dozens of markers. It only changes the answer when
+    # the file is large enough to hit a cap, so small files skip it entirely.
+    over_hive = CRITICAL_HIVE_MAX_BYTES > 0 and size_bytes > CRITICAL_HIVE_MAX_BYTES
+    over_cap = max_file_bytes > 0 and size_bytes > max_file_bytes
+    if over_hive or over_cap:
+        waived = is_critical_forensic_path(path) or is_forensic_extract_waived(path)
+        if over_hive and waived:
             return False, "too_large"
-    elif max_file_bytes > 0 and size_bytes > max_file_bytes:
-        return False, "too_large"
+        if over_cap and not waived:
+            return False, "too_large"
 
     mode_l = (mode or "full").strip().lower()
+    family = (os_family or "").strip().lower()
     if skip_system_paths is None:
         skip_system_paths = mode_l == "fast"
+
+    # Reject the common Windows binary trees before any scope or handbook scan.
+    if mode_l == "forensic" and family == "windows":
+        norm = _norm(path)
+        ext = _ext(norm)
+        if _windows_bulk_system_binary(norm, ext):
+            return False, "forensic_filter"
+    else:
+        norm = ""
+        ext = ""
 
     # A curated scope-pack hit outranks the generic skip lists. Without this,
     # ALWAYS_SKIP_PREFIXES_MINIMAL ("$extend/") silently discarded $UsnJrnl:$J —
@@ -725,10 +774,14 @@ def should_extract_node(
         return True, None
 
     if mode_l == "forensic":
-        if matches_forensic_include(path, os_family=os_family):
+        if not ext:
+            ext = _ext(_norm(path))
+        if matches_forensic_include(path, os_family=os_family, scope_hit=in_os_scope):
             return True, None
-        # Keep even tiny unknown files — prefs, sidecars, crypto headers, ads.
-        if size_bytes <= 8192:
+        # Tiny unknowns (prefs, sidecars, crypto headers). A small system
+        # binary is still noise — keeping every file under 8KB pulls hundreds
+        # of thousands of WinSxS DLLs into the extract plan.
+        if size_bytes <= 8192 and ext not in SYSTEM_BINARY_EXTENSIONS:
             return True, None
         return False, "forensic_filter"
 

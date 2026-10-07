@@ -23,6 +23,20 @@ def test_detect_windows_from_paths():
     assert info["confidence"] in {"medium", "high"}
 
 
+def test_windows_image_not_flipped_by_sparse_android_hits():
+    """Desktop chat DBs and browser databases must not relabel a Windows volume."""
+    nodes = [
+        {"path": "Windows/System32/config/SOFTWARE"},
+        {"path": "Windows/System32/config/SYSTEM"},
+        {"path": "Users/Alice/AppData/Local/Google/Chrome/User Data/Default/databases/foo.db"},
+        {"path": "Users/Alice/AppData/Local/WhatsApp/databases/msgstore.db"},
+    ]
+    nodes.extend({"path": f"Windows/WinSxS/amd64_{i}/foo.dll"} for i in range(80))
+    info = detect_os_from_paths(nodes)
+    assert info["family"] == "windows"
+    assert info["scores"]["windows"] > info["scores"]["android"]
+
+
 def test_detect_linux_from_paths():
     nodes = [
         {"path": "etc/passwd"},
@@ -78,6 +92,22 @@ def test_forensic_drops_winsxs_dll_keeps_media_and_evidence():
     assert matches_forensic_include("Windows/WinSxS/amd64_foo/photo.png")
 
     assert not matches_forensic_include("Windows/WinSxS/amd64_microsoft/foo.dll")
+    ok, why = should_extract_node(
+        "Windows/System32/ntdll.dll",
+        2_000_000,
+        mode="forensic",
+        max_file_bytes=100_000_000,
+        os_family="windows",
+    )
+    assert ok is False and why == "forensic_filter"
+    ok, why = should_extract_node(
+        "Windows/System32/winevt/Logs/helper.dll",
+        200_000,
+        mode="forensic",
+        max_file_bytes=100_000_000,
+        os_family="windows",
+    )
+    assert ok and why is None
     assert not matches_forensic_include("Windows/System32/driverstore/FileRepository/x/y.sys")
     assert not matches_forensic_include("Windows/Fonts/arial.ttf")
 
@@ -89,6 +119,15 @@ def test_forensic_drops_winsxs_dll_keeps_media_and_evidence():
         os_family="windows",
     )
     assert ok is False and why == "forensic_filter"
+
+    ok, why = should_extract_node(
+        "Windows/Temp/unknown_payload",
+        128,
+        mode="forensic",
+        max_file_bytes=0,
+        os_family="windows",
+    )
+    assert ok and why is None
 
     ok, why = should_extract_node(
         "Users/Bob/Desktop/notes.txt",

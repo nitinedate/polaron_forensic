@@ -83,8 +83,18 @@ def classify_stage(job, stage, *, now=None):
     progress_age = _age(stage.get("progress_at") or stage.get("started_at") or stage.get("updated_at"), now)
     if state == "failed":
         error = str(stage.get("error") or "").lower()
-        retryable = any(token in error for token in ("deadlock", "connection reset", "server closed", "process exited", "timed out", "stage process", "progressagent"))
-        return ("recover", "Transient stage failure") if retryable and int(stage.get("attempt") or 0) <= MAX_RECOVERY_ATTEMPTS else ("blocked", "Failed stage needs a source/dependency correction")
+        retryable = any(token in error for token in (
+            "deadlock", "connection reset", "connection broken", "connection aborted",
+            "incompleteread", "server closed", "broken pipe", "protocolerror",
+            "chunkedencoding", "remote disconnected", "transient stream",
+            "extract shard stream interrupted",
+            "process exited", "timed out", "stage process", "progressagent",
+        ))
+        # attempt counts every start of a long stage. A transient download
+        # failure must use the recovery budget, or a parse that has already
+        # resumed a few times is mislabeled as a bad source.
+        retries = int(stage.get("recovery_dispatches") or 0)
+        return ("recover", "Transient stage failure") if retryable and retries < MAX_RECOVERY_ATTEMPTS else ("blocked", "Failed stage needs a source/dependency correction")
     if state == "running" and progress_age < CHECK_AFTER_SECONDS:
         return "progressing", "Useful work advanced within the last minute"
     if state == "running":

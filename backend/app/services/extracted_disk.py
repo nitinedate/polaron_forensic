@@ -277,6 +277,7 @@ def _filter_nodes(
     settings,
     *,
     os_info: dict | None = None,
+    on_progress=None,
 ) -> tuple[list[dict], dict]:
     """Pre-filter file list before sharding — avoids expensive TSK reads on junk paths.
 
@@ -314,33 +315,69 @@ def _filter_nodes(
         os_vendor_mode = lambda: "keep"  # noqa: E731
         should_skip_os_vendor = lambda *a, **k: (False, None)  # noqa: E731
     stats["os_vendor_mode"] = os_vendor_mode()
-    for node in nodes:
+    total = len(nodes)
+    last_report = time.monotonic()
+    if on_progress and total:
+        on_progress(
+            f"Applying extract filters — 0 of {total:,} considered, 0 kept…",
+            {"files_considered": 0, "files_kept": 0, "files_total": total},
+        )
+    for index, node in enumerate(nodes, start=1):
         rel = node["path"]
         size = int(node.get("size_bytes") or 0)
         skip_vendor, vendor_rule = should_skip_os_vendor(rel, size_bytes=size, os_family=family)
         if skip_vendor:
             stats["filtered_out"] += 1
             stats[vendor_rule or "os_vendor_tree"] = stats.get(vendor_rule or "os_vendor_tree", 0) + 1
-            continue
-        ok, reason = should_extract_node_v2(
-            rel,
-            size,
-            mode=mode,
-            max_file_bytes=settings.extract_max_file_bytes,
-            skip_system_paths=skip_system,
-            os_family=family,
-            uncertain_max_bytes=settings.extract_uncertain_max_bytes,
-            noise_policy=noise_policy,
-            noise_ledger=noise_ledger,
-        )
-        if ok:
-            kept.append(node)
         else:
-            stats["filtered_out"] += 1
-            stats[reason or "other"] = stats.get(reason or "other", 0) + 1
+            ok, reason = should_extract_node_v2(
+                rel,
+                size,
+                mode=mode,
+                max_file_bytes=settings.extract_max_file_bytes,
+                skip_system_paths=skip_system,
+                os_family=family,
+                uncertain_max_bytes=settings.extract_uncertain_max_bytes,
+                noise_policy=noise_policy,
+                noise_ledger=noise_ledger,
+            )
+            if ok:
+                kept.append(node)
+            else:
+                stats["filtered_out"] += 1
+                stats[reason or "other"] = stats.get(reason or "other", 0) + 1
+        now = time.monotonic()
+        if on_progress and (index == total or index % 25_000 == 0 or (now - last_report) >= 15.0):
+            last_report = now
+            on_progress(
+                f"Applying extract filters — {index:,} of {total:,} considered, {len(kept):,} kept…",
+                {
+                    "files_considered": index,
+                    "files_kept": len(kept),
+                    "files_total": total,
+                },
+            )
+    kept, duplicate_paths = _unique_extract_nodes(kept)
+    stats["duplicate_paths"] = duplicate_paths
     stats["to_extract"] = len(kept)
     stats["noise"] = noise_ledger.as_dict()
     return kept, stats
+
+
+def _unique_extract_nodes(nodes: list[dict]) -> tuple[list[dict], int]:
+    """Keep one node per normalized path so the same file is not extracted twice."""
+    seen: set[str] = set()
+    unique: list[dict] = []
+    duplicates = 0
+    for node in nodes:
+        key = str(node.get("path") or "").replace("\\", "/")
+        if key and key in seen:
+            duplicates += 1
+            continue
+        if key:
+            seen.add(key)
+        unique.append(node)
+    return unique, duplicates
 
 
 def _shard_nodes(
@@ -1434,6 +1471,10 @@ def build_extracted_disk_to_minio(db, job_id: str, vd: VirtualDisk, *, schema_na
         )
         db.commit()
         _mark_live_step(job_id, "filter + save plan")
+
+        def on_filter_progress(message: str, metadata: dict | None = None) -> None:
+            write_disk_log_committed(schema_name, job_id, message, stage="extract", metadata=metadata)
+
         with disk_log_heartbeat(
             schema_name,
             job_id,
@@ -1441,7 +1482,9 @@ def build_extracted_disk_to_minio(db, job_id: str, vd: VirtualDisk, *, schema_na
             stage="extract",
             interval_sec=15.0,
         ):
-            nodes, filter_stats = _filter_nodes(all_nodes, settings, os_info=os_info)
+            nodes, filter_stats = _filter_nodes(
+                all_nodes, settings, os_info=os_info, on_progress=on_filter_progress
+            )
             if not nodes:
                 write_disk_log(db, job_id, "No files matched extraction filter", stage="extract", level="error")
                 db.commit()
@@ -1449,6 +1492,14 @@ def build_extracted_disk_to_minio(db, job_id: str, vd: VirtualDisk, *, schema_na
 
             from app.services.disk_manifest import upload_extract_nodes
 
+            write_disk_log(
+                db,
+                job_id,
+                f"Saving extract plan — {len(nodes):,} files…",
+                stage="extract",
+                metadata={"to_extract": len(nodes)},
+            )
+            db.commit()
             nodes_uri = upload_extract_nodes(job_id, nodes, zstd_level=settings.extract_zstd_level)
 
     if not nodes:
@@ -1641,7 +1692,14 @@ def build_extracted_disk_to_minio(db, job_id: str, vd: VirtualDisk, *, schema_na
         ):
             all_nodes = enumerate_all_files(vd, on_progress=on_enum_progress)
         os_info = detect_os_from_paths(all_nodes)
-        nodes, filter_stats = _filter_nodes(all_nodes, settings, os_info=os_info)
+        nodes, filter_stats = _filter_nodes(
+            all_nodes,
+            settings,
+            os_info=os_info,
+            on_progress=lambda message, metadata=None: write_disk_log_committed(
+                schema_name, job_id, message, stage="extract", metadata=metadata
+            ),
+        )
         from app.services.disk_manifest import upload_extract_nodes
 
         nodes_uri = upload_extract_nodes(job_id, nodes, zstd_level=settings.extract_zstd_level)

@@ -44,6 +44,8 @@ def stage(**overrides):
     (stage(status='waiting',updated_at=NOW-timedelta(seconds=61),error='GPU lease capacity unavailable'),'retry_dependency'),
     (stage(status='failed',error='damaged source database'),'blocked'),
     (stage(status='failed',error='connection reset',attempt=1),'recover'),
+    (stage(status='failed',error="('Connection broken: IncompleteRead(874677952 bytes read, 1131901466 more expected)', IncompleteRead(874677952 bytes read, 1131901466 more expected))",attempt=5,recovery_dispatches=0),'recover'),
+    (stage(status='failed',error='connection reset',attempt=1,recovery_dispatches=3),'blocked'),
 ])
 def test_meaningful_progress_and_bounded_waits(entry,decision):
     assert progress.classify_stage({},entry,now=NOW)[0]==decision

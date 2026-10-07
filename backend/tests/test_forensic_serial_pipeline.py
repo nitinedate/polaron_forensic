@@ -144,6 +144,162 @@ def test_unfinished_extraction_blocks_the_pipeline(change):
     assert not pipeline.extraction_barrier(row)[0]
 
 
+def test_policy_filter_skips_are_not_extractor_exceptions():
+    source = {"files_skipped": 347438, "filter_stats": {"filtered_out": 347438}}
+    assert pipeline.extraction_skip_split(source) == (0, 347438)
+    skipped, details = pipeline.extraction_stage_seed(source, completed_before_controller=True)
+    assert skipped == 0
+    assert "skip_reason" not in details
+    assert details["policy_skipped"] == 347438
+    row = {
+        "stage": "extraction",
+        "skipped_items": 347438,
+        "details": {"skip_reason": "Explicit extractor exceptions"},
+    }
+    assert pipeline.apply_extraction_skip_accounting(row, source)
+    assert row["skipped_items"] == 0
+    assert "skip_reason" not in row["details"]
+
+
+def test_unreadable_files_remain_extractor_exceptions():
+    source = {"files_skipped": 10, "filter_stats": {"filtered_out": 7}}
+    assert pipeline.extraction_skip_split(source) == (3, 7)
+    skipped, details = pipeline.extraction_stage_seed(source, completed_before_controller=True)
+    assert skipped == 3
+    assert details["skip_reason"] == "Unreadable files"
+
+
+def test_unique_extract_nodes_keeps_one_copy_of_a_repeated_path():
+    from app.services.extracted_disk import _unique_extract_nodes
+
+    nodes, duplicates = _unique_extract_nodes(
+        [
+            {"path": "Windows\\System32\\ntdll.dll"},
+            {"path": "Windows/System32/ntdll.dll"},
+            {"path": "Users/Alice/notes.txt"},
+        ]
+    )
+    assert duplicates == 1
+    assert [node["path"] for node in nodes] == [
+        "Windows\\System32\\ntdll.dll",
+        "Users/Alice/notes.txt",
+    ]
+
+
+def test_serial_parse_uses_the_parse_worker_cpus(monkeypatch):
+    monkeypatch.setattr("os.cpu_count", lambda: 16)
+    from app.services.artifact_parse import serial_parse_workers
+
+    assert serial_parse_workers() == 8
+
+
+def test_cool_or_busy_parse_keeps_its_cores(monkeypatch):
+    from app.services.artifact_parse import parse_thermal_backoff
+    from app.services.host_capacity import HostSnapshot
+
+    monkeypatch.setattr(
+        "app.services.host_capacity.probe_host",
+        lambda: HostSnapshot(cpu_logical=12, load_1m=20, cpu_temp_c=60, gpu_temp_c=46),
+    )
+    cap, sleep_s, reason = parse_thermal_backoff(8, busy_seconds=30)
+    assert cap == 8
+    assert sleep_s == 0
+    assert reason == ""
+
+
+def test_hot_chassis_rests_before_a_laptop_shutdown(monkeypatch):
+    from app.services.artifact_parse import parse_thermal_backoff
+    from app.services.host_capacity import HostSnapshot
+
+    monkeypatch.setattr(
+        "app.services.host_capacity.probe_host",
+        lambda: HostSnapshot(cpu_logical=12, load_1m=4, cpu_temp_c=None, gpu_temp_c=91),
+    )
+    cap, sleep_s, reason = parse_thermal_backoff(8, busy_seconds=1)
+    assert cap == 1
+    assert sleep_s >= 8
+    assert "shut down" in reason
+
+
+def test_hidden_cpu_temperature_rests_only_after_a_sustained_run(monkeypatch):
+    from app.services.artifact_parse import parse_thermal_backoff
+    from app.services.host_capacity import HostSnapshot
+
+    monkeypatch.setattr(
+        "app.services.host_capacity.probe_host",
+        lambda: HostSnapshot(cpu_logical=12, load_1m=11, cpu_temp_c=None, gpu_temp_c=None),
+    )
+    cap, sleep_s, _reason = parse_thermal_backoff(8, busy_seconds=10)
+    assert cap == 8 and sleep_s == 0
+    cap, sleep_s, reason = parse_thermal_backoff(8, busy_seconds=80)
+    assert cap == 8 and sleep_s == 4
+    assert "not visible" in reason
+
+
+def test_full_shard_claims_every_pending_file_on_one_part(monkeypatch):
+    claimed = []
+    monkeypatch.setattr(
+        "app.services.artifact_parse.fetchone",
+        lambda *args, **kwargs: {"part": "s3://parts/part-00011.tar.zst"},
+    )
+    monkeypatch.setattr(
+        "app.services.artifact_parse.fetchall",
+        lambda *args, **kwargs: [{"id": "a"}, {"id": "b"}, {"id": "c"}],
+    )
+    monkeypatch.setattr(
+        "app.services.artifact_parse._claim_artifacts_by_id",
+        lambda db, ids: claimed.append(list(ids)) or [{"id": item} for item in ids],
+    )
+    from app.services.artifact_parse import _claim_full_shard
+
+    rows = _claim_full_shard(object(), "job", "")
+    assert claimed == [["a", "b", "c"]]
+    assert [row["id"] for row in rows] == ["a", "b", "c"]
+
+
+def test_parse_stage_deadline_advances_during_a_long_batch(monkeypatch):
+    notes = []
+    monkeypatch.setattr(
+        "app.services.progress_agent.note_operation",
+        lambda *args, **kwargs: notes.append(kwargs),
+    )
+    from app.services.artifact_parse import _advance_parse_stage
+
+    _advance_parse_stage(object(), "job", "Streaming extract shard")
+    assert notes[0]["timeout_seconds"] == 900
+    assert notes[0]["advanced"] is True
+
+
+def test_materialize_progress_extends_the_stage_deadline(monkeypatch):
+    published = {}
+
+    def report(db, job_id, stage, *, total, completed, label):
+        published.update(stage=stage, total=total, completed=completed, label=label)
+
+    monkeypatch.setattr("app.services.forensic_serial_stages.report_progress", report)
+    monkeypatch.setattr(
+        "app.services.pipeline_progress.write_merged_pipeline_progress",
+        lambda *args, **kwargs: None,
+    )
+    from app.services.artifact_materialize import _publish_materialize_progress
+
+    _publish_materialize_progress(
+        object(),
+        "job",
+        completed=60000,
+        total=378805,
+        label="Registering artifacts",
+        activity={"entries_inspected": 60000},
+        status_sql="status='indexing'",
+    )
+    assert published == {
+        "stage": "materialize",
+        "total": 378805,
+        "completed": 60000,
+        "label": "Registering artifacts",
+    }
+
+
 def test_explicit_extraction_exceptions_are_accounted_for():
     row = {
         "extracted_disk_uri": "s3://derived/manifest",
@@ -496,6 +652,7 @@ def test_materialization_reads_unhashed_entries_and_disables_path_filter(monkeyp
         "app.services.artifact_materialize.materialize_index_entries", materialize
     )
     monkeypatch.setattr(stages, "report_progress", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stages, "_extend_materialize_deadline", lambda *args, **kwargs: None)
     monkeypatch.setattr("psycopg2.extras.execute_values", lambda *args, **kwargs: None)
     captured_keys = []
     monkeypatch.setattr("app.services.mobile_forensic.key_intake.capture_registered_keys", lambda _db, jid: captured_keys.append(jid))
@@ -513,6 +670,80 @@ def test_materialization_reads_unhashed_entries_and_disables_path_filter(monkeyp
     assert {row["path"] for row in captured["rows"]} == {"hashed.db", second_path}
     assert captured["phase1_filter"] is False
     assert bool(captured_keys) == (second_path.endswith("/files/key"))
+
+
+def test_materialize_collapses_duplicate_paths_instead_of_failing(monkeypatch):
+    captured = {}
+    manifest = {"index_uri": "s3://derived/index", "parts": ["s3://derived/part"]}
+    entries = [
+        {"path": "Windows/System32/ntdll.dll", "sha256": "abc", "part_id": 0},
+        {"path": "Windows\\System32\\ntdll.dll", "sha256": "abc", "part_id": 0},
+        {"path": "Users/Alice/notes.txt", "part_id": 0},
+    ]
+    monkeypatch.setattr(
+        stages,
+        "fetchone",
+        lambda *args: {"disk_source": manifest, "files_extracted": 3},
+    )
+    monkeypatch.setattr("app.services.disk_manifest.load_index_entries", lambda *args: entries)
+    monkeypatch.setattr(
+        "app.services.artifact_materialize.materialize_index_entries",
+        lambda db, job_id, rows, **kwargs: captured.update({"rows": rows}) or {"status": "ok"},
+    )
+    monkeypatch.setattr(stages, "report_progress", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stages, "_extend_materialize_deadline", lambda *args, **kwargs: None)
+    monkeypatch.setattr("psycopg2.extras.execute_values", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.services.disk_build_log.write_disk_log", lambda *args, **kwargs: None)
+
+    @contextmanager
+    def cursor():
+        yield object()
+
+    db = SimpleNamespace(
+        commit=lambda: None,
+        connection=lambda: SimpleNamespace(connection=SimpleNamespace(cursor=cursor)),
+    )
+    result = stages._materialize_full(db, "00000000-0000-0000-0000-000000000001")
+    assert result["expected_files"] == 2
+    assert {row["path"] for row in captured["rows"]} == {
+        "Windows/System32/ntdll.dll",
+        "Users/Alice/notes.txt",
+    }
+
+
+def test_combined_index_is_not_merged_with_shard_copies(monkeypatch):
+    import zstandard as zstd
+
+    from app.services import disk_manifest
+
+    def fake_get(uri):
+        if uri.endswith("/index"):
+            body = b'{"path":"a.dll","part_id":0}\n'
+            return zstd.ZstdCompressor().compress(body)
+        raise AssertionError(f"shard index should not be read: {uri}")
+
+    monkeypatch.setattr(disk_manifest, "get_bytes", fake_get)
+    rows = disk_manifest.load_index_entries(
+        {"index_uri": "s3://disk/index", "shard_indexes": {"0": "s3://disk/shard-0"}}
+    )
+    assert [row["path"] for row in rows] == ["a.dll"]
+
+
+def test_materialize_still_fails_when_index_is_short(monkeypatch):
+    manifest = {"index_uri": "s3://derived/index", "parts": ["s3://derived/part"]}
+    monkeypatch.setattr(
+        stages,
+        "fetchone",
+        lambda *args: {"disk_source": manifest, "files_extracted": 2},
+    )
+    monkeypatch.setattr(
+        "app.services.disk_manifest.load_index_entries",
+        lambda *args: [{"path": "only.db", "part_id": 0}],
+    )
+    monkeypatch.setattr(stages, "_extend_materialize_deadline", lambda *args, **kwargs: None)
+    db = SimpleNamespace(commit=lambda: None)
+    with pytest.raises(RuntimeError, match="accounts for 1 / 2"):
+        stages._materialize_full(db, "00000000-0000-0000-0000-000000000001")
 
 
 @pytest.mark.parametrize(
@@ -571,3 +802,53 @@ def test_oversized_mobile_database_is_an_explicit_exception(monkeypatch):
     )
     with pytest.raises(ValueError, match="read ceiling"):
         sqlite_counts._read_artifact_bytes(SimpleNamespace(info={}), "job", "large.db")
+
+
+def test_recovery_uses_the_idle_disk_pool(monkeypatch):
+    monkeypatch.setenv("AETHERIS_SERVICE", "forensic")
+    assert pipeline.queue_for_stage("recovery") == "disk-build"
+    assert pipeline.queue_for_stage("parse") == "disk-parse"
+    monkeypatch.setenv("AETHERIS_SERVICE", "mobile-android")
+    assert pipeline.queue_for_stage("recovery") != "disk-build"
+
+
+def test_deleted_path_hint_does_not_replace_parser_metadata():
+    from app.services.deleted_evidence import MERGE_DELETED_PATH_HINT_SQL
+
+    assert "? e.key" in MERGE_DELETED_PATH_HINT_SQL
+    assert "CAST(:hint AS jsonb) || COALESCE(metadata" not in MERGE_DELETED_PATH_HINT_SQL
+
+
+def test_recovery_overlap_queues_only_a_pending_stage(monkeypatch):
+    from app.services import disk_build_log
+
+    calls = {"queued": 0}
+    monkeypatch.setenv("AETHERIS_SERVICE", "forensic")
+
+    def fake_fetchone(_db, sql, params=None):
+        if "status='pending'" in sql:
+            calls["queued"] += 1
+            return {"id": "recovery-stage"}
+        return None
+
+    monkeypatch.setattr(pipeline, "ensure_serial_schema", lambda db: None)
+    monkeypatch.setattr(pipeline, "fetchone", fake_fetchone)
+    monkeypatch.setattr(disk_build_log, "write_disk_log", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        pipeline,
+        "_enqueue_recovery_overlap",
+        lambda schema, job, task_id: calls.update(queue="disk-build", task_id=task_id),
+    )
+    db = SimpleNamespace(commit=lambda: None)
+    result = pipeline.start_recovery_overlap(db, "job", schema_name="firm_p")
+    assert result["status"] == "queued"
+    assert calls["queue"] == "disk-build"
+    assert calls["queued"] == 1
+
+    def already_started(_db, sql, params=None):
+        return None
+
+    monkeypatch.setattr(pipeline, "fetchone", already_started)
+    held = pipeline.start_recovery_overlap(db, "job", schema_name="firm_p")
+    assert held["status"] == "held"
+    assert calls["queued"] == 1

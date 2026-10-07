@@ -102,11 +102,19 @@ def detect_os_from_paths(nodes: list[dict[str, Any]]) -> dict[str, Any]:
 
     mobile_scores = {k: scores[k] for k in ("android", "ios")}
     desktop_scores = {k: scores[k] for k in ("windows", "linux", "macos")}
-    if max(mobile_scores.values(), default=0) >= 6:
-        family = max(mobile_scores, key=lambda k: mobile_scores[k])
-        best = mobile_scores[family]
+    mobile_family = max(mobile_scores, key=lambda k: mobile_scores[k])
+    mobile_best = mobile_scores[mobile_family]
+    desktop_best = max(desktop_scores.values(), default=0)
+    # A phone dump must outscore the desktop image. Clearing a floor of 6 used
+    # to return Android/high for a Windows volume whose only mobile hits were
+    # a handful of browser databases or desktop chat stores (score 20) while
+    # Windows itself scored hundreds of thousands. The extract filter then
+    # applied the Android policy to the whole disk and stalled on the plan.
+    if mobile_best >= 6 and mobile_best > desktop_best:
+        family = mobile_family
+        best = mobile_best
         ranked = sorted(mobile_scores.values(), reverse=True)
-        second = ranked[1] if len(ranked) > 1 else 0
+        second = max(ranked[1] if len(ranked) > 1 else 0, desktop_best)
         if best >= 10 and best >= max(second * 2, 1):
             confidence = "high"
         elif best >= 6:

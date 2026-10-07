@@ -23,6 +23,33 @@ _PROGRESS_EVERY = 20000
 log = logging.getLogger("artifact_materialize")
 
 
+def _publish_materialize_progress(db, job_id, *, completed, total, label, activity, status_sql):
+    """Record visible registration progress and extend the stage deadline.
+
+    The UI counter lives on the job progress document. progressAgent only treats
+    pipeline_stage_runs.progress_at as useful work, and it cancels a running
+    stage once operation_deadline passes. Updating both keeps a long
+    registration from being killed and started over.
+    """
+    from app.services.forensic_serial_stages import report_progress
+    from app.services.pipeline_progress import write_merged_pipeline_progress
+
+    write_merged_pipeline_progress(
+        db,
+        job_id,
+        {
+            "phase": "materialize",
+            "completed": completed,
+            "total": total,
+            "label": label,
+            "materialize_activity": activity,
+        },
+        writer="materialize",
+        status_sql=status_sql,
+    )
+    report_progress(db, job_id, "materialize", total=total, completed=completed, label=label)
+
+
 def _load_index(manifest: dict) -> list[dict]:
     from app.services.disk_manifest import load_index_entries
 
@@ -62,27 +89,20 @@ def materialize_index_entries(
     inspected = 0
     last_progress = 0
     if update_status:
-        from app.services.pipeline_progress import write_merged_pipeline_progress
-
-        write_merged_pipeline_progress(
+        _publish_materialize_progress(
             db,
             job_id,
-            {
-                "phase": "materialize",
-                "completed": 0,
-                "total": total_entries,
-                "label": f"Registering artifacts from extracted evidence — 0 / {total_entries:,}",
-                "materialize_activity": {
-                    "entries_inspected": 0,
-                    "entries_total": total_entries,
-                    "artifacts_registered": 0,
-                    "skipped_noise": 0,
-                },
+            completed=0,
+            total=total_entries,
+            label=f"Registering artifacts from extracted evidence — 0 / {total_entries:,}",
+            activity={
+                "entries_inspected": 0,
+                "entries_total": total_entries,
+                "artifacts_registered": 0,
+                "skipped_noise": 0,
             },
-            writer="materialize",
             status_sql="status='indexing'",
         )
-        db.commit()
 
     enc_cache = _load_encyclopedia_cache(db)
     created = 0
@@ -114,30 +134,23 @@ def materialize_index_entries(
         if not include:
             skipped_noise += 1
             if update_status and inspected - last_progress >= _PROGRESS_EVERY:
-                from app.services.pipeline_progress import write_merged_pipeline_progress
-
-                write_merged_pipeline_progress(
+                _publish_materialize_progress(
                     db,
                     job_id,
-                    {
-                        "phase": "materialize",
-                        "completed": inspected,
-                        "total": total_entries,
-                        "label": (
-                            f"Registering artifacts from extracted evidence — "
-                            f"{inspected:,} / {total_entries:,} index records inspected"
-                        ),
-                        "materialize_activity": {
-                            "entries_inspected": inspected,
-                            "entries_total": total_entries,
-                            "artifacts_registered": created,
-                            "skipped_noise": skipped_noise,
-                        },
+                    completed=inspected,
+                    total=total_entries,
+                    label=(
+                        f"Registering artifacts from extracted evidence — "
+                        f"{inspected:,} / {total_entries:,} index records inspected"
+                    ),
+                    activity={
+                        "entries_inspected": inspected,
+                        "entries_total": total_entries,
+                        "artifacts_registered": created,
+                        "skipped_noise": skipped_noise,
                     },
-                    writer="materialize",
                     status_sql="status='indexing'",
                 )
-                db.commit()
                 last_progress = inspected
             continue
         ext = PurePosixPath(path.replace("\\", "/")).suffix.lower()
@@ -174,33 +187,23 @@ def materialize_index_entries(
             batch.clear()
 
         if update_status and (inspected - last_progress >= _PROGRESS_EVERY or inspected >= total_entries):
-            from app.services.pipeline_progress import write_merged_pipeline_progress
-
-            write_merged_pipeline_progress(
+            _publish_materialize_progress(
                 db,
                 job_id,
-                {
-                    "phase": "materialize",
-                    "completed": inspected,
-                    "total": total_entries,
-                    "label": (
-                        f"Registering artifacts from extracted evidence — "
-                        f"{inspected:,} / {total_entries:,} index records inspected"
-                    ),
-                    "materialize_activity": {
-                        "entries_inspected": inspected,
-                        "entries_total": total_entries,
-                        "artifacts_registered": created,
-                        "skipped_noise": skipped_noise,
-                    },
+                completed=inspected,
+                total=total_entries,
+                label=(
+                    f"Registering artifacts from extracted evidence — "
+                    f"{inspected:,} / {total_entries:,} index records inspected"
+                ),
+                activity={
+                    "entries_inspected": inspected,
+                    "entries_total": total_entries,
+                    "artifacts_registered": created,
+                    "skipped_noise": skipped_noise,
                 },
-                writer="materialize",
                 status_sql="status='indexing'",
             )
-            # Chunk commits make progress visible and make this idempotent stage
-            # resumable without a single huge transaction. ON CONFLICT protects
-            # already-registered paths.
-            db.commit()
             last_progress = inspected
 
     if batch:
@@ -208,24 +211,18 @@ def materialize_index_entries(
         db.flush()
 
     if update_status:
-        from app.services.pipeline_progress import write_merged_pipeline_progress
-
-        write_merged_pipeline_progress(
+        _publish_materialize_progress(
             db,
             job_id,
-            {
-                "phase": "materialize",
-                "completed": total_entries,
-                "total": total_entries,
-                "label": f"Artifact registration complete — {created:,} forensic artifacts registered",
-                "materialize_activity": {
-                    "entries_inspected": total_entries,
-                    "entries_total": total_entries,
-                    "artifacts_registered": created,
-                    "skipped_noise": skipped_noise,
-                },
+            completed=total_entries,
+            total=total_entries,
+            label=f"Artifact registration complete — {created:,} forensic artifacts registered",
+            activity={
+                "entries_inspected": total_entries,
+                "entries_total": total_entries,
+                "artifacts_registered": created,
+                "skipped_noise": skipped_noise,
             },
-            writer="materialize",
             status_sql="status='artifacts_registered'",
         )
         noise_note = f", filtered {skipped_noise:,} non-evidence paths" if skipped_noise else ""

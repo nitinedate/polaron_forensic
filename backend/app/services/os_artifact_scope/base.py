@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from pathlib import PurePosixPath
 
 # Sidecars are collected whenever the stem would be collected. Losing these is the
 # single most common cause of "the message was in AXIOM but not in our output".
@@ -181,6 +180,19 @@ _NUMERIC_RE = re.compile(r"^[0-9._-]{4,}$")
 
 def _norm(path: str) -> str:
     return (path or "").replace("\\", "/").strip("/").lower()
+
+
+def _basename(path: str) -> str:
+    slash = path.rfind("/")
+    return path[slash + 1:] if slash >= 0 else path
+
+
+def _suffix(base: str) -> str:
+    """Last suffix, matching PurePosixPath.suffix for ordinary names."""
+    dot = base.rfind(".")
+    if dot <= 0 or dot == len(base) - 1:
+        return ""
+    return base[dot:]
 
 
 def _contains_any(path: str, prefixes: tuple[str, ...]) -> bool:
